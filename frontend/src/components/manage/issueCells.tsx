@@ -25,17 +25,57 @@ export function SeverityPill({ severity }: { severity: IssueGroup['severity'] })
   )
 }
 
-// `file_kind` chip + a truncated, monospace `file_path` beneath it.
+// Edit link for an authorable file: a sample.toml / acquisition.toml warning
+// row jumps straight into the matching authoring form, auto-loaded by id
+// (issue 07). Acquisition identity is composite, so the link carries both ids
+// (mirrors the acquisition detail-page "Edit acquisition.toml" link). Other
+// file kinds (mdoc, mrc, run-scope, …) have no form — returns null.
+export function authorLinkFor(
+  group: IssueGroup,
+): { to: string; search: Record<string, string> } | null {
+  if (group.file_kind === 'sample_toml' && group.sample_id) {
+    return { to: '/author/sample', search: { id: group.sample_id } }
+  }
+  if (
+    group.file_kind === 'acquisition_toml' &&
+    group.sample_id &&
+    group.acquisition_id
+  ) {
+    return {
+      to: '/author/acquisition',
+      search: { id: group.acquisition_id, sampleId: group.sample_id },
+    }
+  }
+  return null
+}
+
+// `file_kind` chip + a truncated, monospace `file_path` beneath it. For an
+// authorable file the chip is an edit link into its authoring form (issue 07).
 export function FileCell({ group }: { group: IssueGroup }) {
+  const link = authorLinkFor(group)
+  const chip = (
+    <Chip
+      label={group.file_kind}
+      size="small"
+      variant="outlined"
+      clickable={link != null}
+      sx={{ fontFamily: 'monospace', fontSize: 11 }}
+    />
+  )
   return (
     <Stack spacing={0.5} sx={{ minWidth: 0 }}>
       <Box>
-        <Chip
-          label={group.file_kind}
-          size="small"
-          variant="outlined"
-          sx={{ fontFamily: 'monospace', fontSize: 11 }}
-        />
+        {link ? (
+          <CustomLink
+            to={link.to}
+            search={link.search}
+            aria-label={`Edit ${group.file_kind}`}
+          >
+            {chip}
+          </CustomLink>
+        ) : (
+          chip
+        )}
       </Box>
       {group.file_path ? (
         <Tooltip title={group.file_path}>
