@@ -192,3 +192,11 @@ export const GROUPS: Group[] = [
 
 // Flat view of every field, for iteration by later phases.
 export const FIELDS: Field[] = GROUPS.flatMap((g) => g.fields);
+
+// Project -> the only data_source it can have (ADR-0003). synapse data is never
+// simulation-derived, so the filter panel (and the forms) disable the opposing
+// simulation arm when synapse is selected. Mirrored from filter_fields.py.
+export const PROJECT_REQUIRES_DATA_SOURCE: Record<
+  string,
+  'experimental' | 'simulation'
+> = { synapse: 'experimental' };

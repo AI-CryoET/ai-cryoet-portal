@@ -2,7 +2,12 @@
 // AllDataBrowser). All pure functions over the registry + current URL search,
 // so notices/chips/disabled-state clear automatically (resolved decision 10:
 // derived state, no dismissal flag).
-import { FIELDS, GROUPS, type Field } from '~/utils/filterFields'
+import {
+  FIELDS,
+  GROUPS,
+  PROJECT_REQUIRES_DATA_SOURCE,
+  type Field,
+} from '~/utils/filterFields'
 import type { SamplesSearchParams } from '~/utils/samplesSearch'
 import { prettyDatasetType } from '~/components/landing/LandingFilters'
 
@@ -25,9 +30,12 @@ function projectIncludes(s: SamplesSearchParams, p: string): boolean {
   const v = (s as Record<string, unknown>).project as string[] | undefined
   return !!v && v.includes(p)
 }
-function projectSet(s: SamplesSearchParams): boolean {
+function selectedProjects(s: SamplesSearchParams): string[] {
   const v = (s as Record<string, unknown>).project as string[] | undefined
-  return !!v && v.length > 0
+  return Array.isArray(v) ? v : []
+}
+function projectSet(s: SamplesSearchParams): boolean {
+  return selectedProjects(s).length > 0
 }
 
 // Group ids to disable given the current search and (on single-arm routes) a
@@ -39,8 +47,21 @@ export function computeDisabledGroups(
 ): Set<string> {
   const arm = lockedDataSource ?? soleDataSource(s)
   const disabled = new Set<string>()
+  const projs = selectedProjects(s)
   for (const g of GROUPS) {
     if (g.appliesTo && arm && g.appliesTo !== arm) disabled.add(g.id)
+    // ADR-0003: an arm-gated group is disabled when every selected project
+    // forbids that arm (e.g. synapse ⇒ experimental disables the simulation
+    // arm). With no project set, or one project that allows the arm, it stays.
+    if (
+      g.appliesTo &&
+      projs.length > 0 &&
+      !projs.some((p) => {
+        const req = PROJECT_REQUIRES_DATA_SOURCE[p]
+        return req === undefined || req === g.appliesTo
+      })
+    )
+      disabled.add(g.id)
     if (
       g.requiresProject === 'chromatin' &&
       projectSet(s) &&

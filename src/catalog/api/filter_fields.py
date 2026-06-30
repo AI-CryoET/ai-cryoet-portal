@@ -227,3 +227,10 @@ GROUPS: list[Group] = [
 
 # Flat view of every field, for iteration by later phases.
 FIELDS: list[Field] = [f for g in GROUPS for f in g.fields]
+
+
+# Project -> the only data_source it can have (ADR-0003). synapse data is never
+# simulation-derived, so both the authoring forms and the landing-page filter
+# panel disable the opposing (simulation) arm when synapse is selected, exactly
+# as schema.py rejects the combination at ingest. Mirrored in filterFields.ts.
+PROJECT_REQUIRES_DATA_SOURCE: dict[str, str] = {"synapse": "experimental"}
