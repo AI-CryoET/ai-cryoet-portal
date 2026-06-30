@@ -54,7 +54,9 @@ def render() -> str:
             f"title: {_ts_str(s.title)}, repeatable: {str(s.repeatable).lower()}, "
             f"root: {str(s.root).lower()}, "
             f"requiresDataSource: {_ts_str_or_null(s.requires_data_source)}, "
-            f"crossRefLiterals: {_ts_str_array(s.cross_ref_literals)} "
+            f"crossRefLiterals: {_ts_str_array(s.cross_ref_literals)}, "
+            f"idNamespace: {_ts_str_or_null(s.id_namespace)}, "
+            f"immutableOnLoad: {str(s.immutable_on_load).lower()} "
             "},"
         )
 
@@ -87,6 +89,7 @@ export type FieldInput =
   | 'integer'
   | 'number'
   | 'select'
+  | 'multiselect'
   | 'boolean'
   | 'date';
 
@@ -113,6 +116,8 @@ export interface FormSection {{
   root: boolean; // fields at file top level (no [section] table)
   requiresDataSource: string | null; // gated section (md_source ⇒ simulation)
   crossRefLiterals: string[]; // literal cross-ref options (e.g. 'Frames')
+  idNamespace: string | null; // id namespace this section's id field feeds
+  immutableOnLoad: boolean; // loaded entries read-only; append-only (ADR-0004)
 }}
 
 export interface FormMeta {{

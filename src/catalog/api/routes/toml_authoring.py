@@ -220,6 +220,54 @@ def load_toml(
         tilt_series = [_row_fields(ts, ts_authored) for ts in ts_rows]
         if tilt_series:
             fields["tilt_series"] = tilt_series
+
+        # Processing log (ADR-0004): loaded entries seed read-only form blocks.
+        raw = (
+            session.execute(
+                select(orm.RawTomogramORM).where(
+                    orm.RawTomogramORM.sample_id == sample_id,
+                    orm.RawTomogramORM.acquisition_id == record_id,
+                )
+            )
+            .scalars()
+            .first()
+        )
+        if raw is not None:
+            raw_fields = _row_fields(raw, _authored("acquisition", "raw_tomogram"))
+            if raw_fields:
+                fields["raw_tomogram"] = raw_fields
+        pp_rows = (
+            session.execute(
+                select(orm.PostProcessedTomogramORM)
+                .where(
+                    orm.PostProcessedTomogramORM.sample_id == sample_id,
+                    orm.PostProcessedTomogramORM.acquisition_id == record_id,
+                )
+                .order_by(orm.PostProcessedTomogramORM.tomogram_id)
+            )
+            .scalars()
+            .all()
+        )
+        pp_authored = _authored("acquisition", "post_processed_tomogram")
+        post_processed = [_row_fields(pp, pp_authored) for pp in pp_rows]
+        if post_processed:
+            fields["post_processed_tomogram"] = post_processed
+        an_rows = (
+            session.execute(
+                select(orm.AnnotationORM)
+                .where(
+                    orm.AnnotationORM.sample_id == sample_id,
+                    orm.AnnotationORM.acquisition_id == record_id,
+                )
+                .order_by(orm.AnnotationORM.annotation_id)
+            )
+            .scalars()
+            .all()
+        )
+        an_authored = _authored("acquisition", "annotation")
+        annotations = [_row_fields(an, an_authored) for an in an_rows]
+        if annotations:
+            fields["annotation"] = annotations
         return {"fields": fields}
 
     raise HTTPException(404, f"load not supported for toml kind {kind!r}")

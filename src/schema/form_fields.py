@@ -23,7 +23,15 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from schema.schema import Acquisition, MdRun, MdSource, TiltSeries
+from schema.schema import (
+    Acquisition,
+    Annotation,
+    MdRun,
+    MdSource,
+    PostProcessedTomogram,
+    RawTomogram,
+    TiltSeries,
+)
 
 
 @dataclass(frozen=True)
@@ -41,8 +49,9 @@ class FormField:
     # Authored fields render; derived (MDOC/MRC/directory) fields are classified
     # but hidden — listed only so the completeness drift test stays honest.
     authored: bool = True
-    # Cross-reference: render a dropdown of in-form ids from this section
-    # (e.g. tilt_series.derived_from offers other tilt-series ids + "Frames").
+    # Cross-reference: render a dropdown of in-form ids from this *id namespace*
+    # (e.g. derived_from offers the "tilt_series" or "tomogram" namespace ids,
+    # plus the field's section literals like "Frames").
     cross_ref: str | None = None
     # API-assisted free-text: suggest ids of this kind from the loaded sample
     # context (e.g. md_source.md_run_id suggests the sample's known md_runs).
@@ -70,6 +79,13 @@ class FormSection:
     requires_data_source: str | None = None
     # Extra "literal" cross-ref options always offered alongside in-form ids.
     cross_ref_literals: tuple[str, ...] = ()
+    # The id namespace this section's required-id field feeds. Cross-ref fields
+    # name a namespace; the renderer pools ids across every section sharing it
+    # (raw + post-processed tomograms share the "tomogram" namespace).
+    id_namespace: str | None = None
+    # Processing-log immutability (ADR-0004): entries present when the file was
+    # loaded render read-only; only session-added entries stay editable.
+    immutable_on_load: bool = False
 
 
 @dataclass(frozen=True)
@@ -110,6 +126,22 @@ FORM_SECTIONS: list[FormSection] = [
     FormSection(
         "acquisition", "tilt_series", "Tilt series", TiltSeries,
         repeatable=True, cross_ref_literals=("Frames",),
+        id_namespace="tilt_series", immutable_on_load=True,
+    ),
+    # Processing log (ADR-0004): raw + post-processed tomograms share one id
+    # namespace ("tomogram") that derived_from / target_tomogram reference.
+    FormSection(
+        "acquisition", "raw_tomogram", "Raw tomogram", RawTomogram,
+        id_namespace="tomogram", immutable_on_load=True,
+    ),
+    FormSection(
+        "acquisition", "post_processed_tomogram", "Post-processed tomograms",
+        PostProcessedTomogram, repeatable=True,
+        id_namespace="tomogram", immutable_on_load=True,
+    ),
+    FormSection(
+        "acquisition", "annotation", "Annotations", Annotation,
+        repeatable=True, immutable_on_load=True,
     ),
 ]
 
@@ -198,6 +230,69 @@ FORM_FIELDS: list[FormField] = [
         "sample_id", "acquisition_id", "st_path", "zarr_path",
         "alignment_files", "mtime",
     ),
+
+    # ---- acquisition [raw_tomogram] — at most one reconstruction off frames --
+    FormField(
+        "acquisition", "raw_tomogram", "tomogram_id", "Tomogram id", "text",
+        required=True, alias="id", help="Folder name under Tomograms/.",
+    ),
+    FormField(
+        "acquisition", "raw_tomogram", "tilt_series_id", "Tilt series", "select",
+        cross_ref="tilt_series",
+        help="The tilt series this tomogram was reconstructed from.",
+    ),
+    FormField("acquisition", "raw_tomogram", "pipeline", "Pipeline", "text"),
+    FormField("acquisition", "raw_tomogram", "software", "Software", "text"),
+    FormField(
+        "acquisition", "raw_tomogram", "derived_from", "Derived from", "multiselect",
+        cross_ref="tomogram",
+        help="Other tomograms in this acquisition this one was derived from.",
+    ),
+    *_derived(
+        "acquisition", "raw_tomogram",
+        "image_size_x", "image_size_y", "image_size_z", "voxel_size",
+        "mrc_path", "zarr_path", "zarr_axes", "zarr_scale",
+    ),
+
+    # ---- acquisition [[post_processed_tomogram]] — one per processed output --
+    FormField(
+        "acquisition", "post_processed_tomogram", "tomogram_id", "Tomogram id",
+        "text", required=True, alias="id", help="Folder name under Tomograms/.",
+    ),
+    FormField(
+        "acquisition", "post_processed_tomogram", "tilt_series_id", "Tilt series",
+        "select", cross_ref="tilt_series",
+        help="The tilt series this tomogram was reconstructed from.",
+    ),
+    FormField("acquisition", "post_processed_tomogram", "denoising_software",
+              "Denoising software", "text"),
+    FormField("acquisition", "post_processed_tomogram", "ctf_software",
+              "CTF software", "text"),
+    FormField("acquisition", "post_processed_tomogram", "missing_wedge_software",
+              "Missing-wedge software", "text"),
+    FormField(
+        "acquisition", "post_processed_tomogram", "derived_from", "Derived from",
+        "multiselect", cross_ref="tomogram",
+        help="Other tomograms in this acquisition this one was derived from.",
+    ),
+    *_derived(
+        "acquisition", "post_processed_tomogram",
+        "image_size_x", "image_size_y", "image_size_z", "voxel_size",
+        "mrc_path", "zarr_path", "zarr_axes", "zarr_scale", "size_bytes",
+    ),
+
+    # ---- acquisition [[annotation]] — one per segmentation -----------------
+    FormField(
+        "acquisition", "annotation", "annotation_id", "Annotation id", "text",
+        required=True, alias="id", help="Folder name under Annotations/.",
+    ),
+    FormField("acquisition", "annotation", "type", "Type", "text"),
+    FormField(
+        "acquisition", "annotation", "target_tomogram", "Target tomogram", "select",
+        cross_ref="tomogram",
+        help="The tomogram in this acquisition this annotation segments.",
+    ),
+    *_derived("acquisition", "annotation", "files"),
 ]
 
 

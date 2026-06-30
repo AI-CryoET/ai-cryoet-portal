@@ -47,6 +47,18 @@ describe('buildPayload custom fields', () => {
     const out = buildPayload(fields, {}, [], { tags: ['a', 'b'] })
     expect(out).toEqual({ tags: ['a', 'b'] })
   })
+
+  it('splits a comma-joined multiselect cross-ref into a list', () => {
+    const rawFields = fieldsForSection('acquisition', 'raw_tomogram')
+    const out = buildPayload(rawFields, {
+      tomogram_id: 'tomo1',
+      derived_from: 'a, b',
+    })
+    expect(out.derived_from).toEqual(['a', 'b'])
+    // An empty multiselect is omitted (no `derived_from = []` litter).
+    const empty = buildPayload(rawFields, { tomogram_id: 'tomo1', derived_from: '' })
+    expect('derived_from' in empty).toBe(false)
+  })
 })
 
 describe('buildSectionedPayload (acquisition)', () => {
@@ -112,6 +124,25 @@ describe('hydrateSections + inferDataSource (acquisition)', () => {
     expect(
       inferDataSource(acqSections, { acquisition: { acquisition_id: 'Pos1' } }),
     ).toBe('experimental')
+  })
+
+  it('locks loaded processing-log entries and existing tilt series', () => {
+    const state = hydrateSections(acqSections, acqFields, {
+      acquisition: { acquisition_id: 'Pos1' },
+      tilt_series: [{ id: 'ts_raw' }],
+      raw_tomogram: { id: 'tomo_raw' },
+      annotation: [{ id: 'ann1' }],
+    })
+    // Immutable-on-load sections present in the file are read-only…
+    expect((state.tilt_series as SectionState[])[0].locked).toBe(true)
+    expect((state.raw_tomogram as SectionState).locked).toBe(true)
+    expect((state.annotation as SectionState[])[0].locked).toBe(true)
+    // …but [acquisition] stays editable, and an absent raw_tomogram would too.
+    expect((state.acquisition as SectionState).locked).toBeFalsy()
+    const blank = hydrateSections(acqSections, acqFields, {
+      acquisition: { acquisition_id: 'Pos1' },
+    })
+    expect((blank.raw_tomogram as SectionState).locked).toBeFalsy()
   })
 })
 

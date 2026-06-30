@@ -44,6 +44,11 @@ export function buildPayload(
       const n = Number(raw)
       if (Number.isNaN(n)) continue
       out[f.field] = n
+    } else if (f.input === 'multiselect') {
+      // Cross-ref list (tomogram derived_from): stored comma-joined in form
+      // state — ids are IdStr (no commas), so split round-trips losslessly.
+      const arr = raw.split(',').map((s) => s.trim()).filter(Boolean)
+      if (arr.length) out[f.field] = arr
     } else if (f.input === 'boolean') {
       out[f.field] = raw.toLowerCase() === 'true'
     } else {
@@ -176,6 +181,9 @@ export interface SectionState {
   values: Record<string, string>
   customFields: CustomField[]
   passthrough: Record<string, unknown>
+  // Present when the file was loaded → read-only (ADR-0004 immutability).
+  // Session-added entries are unlocked. Does not affect the built payload.
+  locked?: boolean
 }
 
 // Per-section state keyed by section name; repeatable sections hold an array.
@@ -235,20 +243,20 @@ export function hydrateSections(
       const arr = Array.isArray(seeded[s.section])
         ? (seeded[s.section] as unknown[])
         : []
-      state[s.section] = arr.map((entry) => {
-        const { values, customFields, passthrough } = hydrate(
-          fields,
-          dealias(fields, asRecord(entry)),
-        )
-        return { values, customFields, passthrough }
-      })
+      // Every loaded entry of an immutable section is read-only (append-only).
+      state[s.section] = arr.map((entry) => ({
+        ...hydrate(fields, dealias(fields, asRecord(entry))),
+        locked: s.immutableOnLoad,
+      }))
     } else {
+      const present = !s.root && seeded[s.section] != null
       const src = s.root ? seeded : asRecord(seeded[s.section])
-      const { values, customFields, passthrough } = hydrate(
-        fields,
-        dealias(fields, src),
-      )
-      state[s.section] = { values, customFields, passthrough }
+      state[s.section] = {
+        ...hydrate(fields, dealias(fields, src)),
+        // A loaded named entry (raw_tomogram) is read-only; an absent one
+        // stays editable so the user can author it.
+        locked: s.immutableOnLoad && present,
+      }
     }
   }
   return state

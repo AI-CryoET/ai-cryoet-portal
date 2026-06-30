@@ -308,3 +308,98 @@ def test_acquisition_load_by_composite_id(seeded_client):
     assert fields["acquisition"]["resolution"] == 3.4
     assert fields["md_source"]["md_run_id"] == "run01"
     assert [ts["tilt_series_id"] for ts in fields["tilt_series"]] == ["ts_raw"]
+
+
+# ── Issue 06: processing log (tomograms, annotations, cross-refs) ───────────
+
+
+def test_acquisition_processing_log_round_trips(client):
+    # [raw_tomogram], [[post_processed_tomogram]], [[annotation]] all serialize
+    # with cross-refs that resolve (AC: cross-references resolve at the seam).
+    resp = client.post(
+        "/toml/acquisition",
+        json={
+            "acquisition": {"acquisition_id": "Position_1"},
+            "tilt_series": [{"tilt_series_id": "ts_raw", "derived_from": "Frames"}],
+            "raw_tomogram": {
+                "tomogram_id": "tomo_raw",
+                "tilt_series_id": "ts_raw",
+                "software": "AreTomo",
+            },
+            "post_processed_tomogram": [
+                {
+                    "tomogram_id": "tomo_denoised",
+                    "tilt_series_id": "ts_raw",
+                    "derived_from": ["tomo_raw"],
+                    "denoising_software": "cryoCARE",
+                }
+            ],
+            "annotation": [{"annotation_id": "ann1", "target_tomogram": "tomo_denoised"}],
+        },
+    )
+    assert resp.status_code == 200
+    parsed = tomllib.loads(resp.text)
+    assert parsed["raw_tomogram"]["id"] == "tomo_raw"
+    assert parsed["post_processed_tomogram"][0]["derived_from"] == ["tomo_raw"]
+    assert parsed["annotation"][0]["target_tomogram"] == "tomo_denoised"
+
+
+def test_dangling_tomogram_target_returns_422(client):
+    # An annotation pointing at a non-existent tomogram is rejected at the seam.
+    resp = client.post(
+        "/toml/acquisition",
+        json={
+            "acquisition": {"acquisition_id": "Position_1"},
+            "annotation": [{"annotation_id": "ann1", "target_tomogram": "ghost"}],
+        },
+    )
+    assert resp.status_code == 422
+
+
+def test_dangling_derived_from_returns_422(client):
+    # A tomogram derived_from an unknown tomogram id is rejected.
+    resp = client.post(
+        "/toml/acquisition",
+        json={
+            "acquisition": {"acquisition_id": "Position_1"},
+            "raw_tomogram": {"tomogram_id": "tomo_raw", "derived_from": ["nope"]},
+        },
+    )
+    assert resp.status_code == 422
+
+
+def test_acquisition_load_includes_processing_log(seeded_client):
+    # Seed a tomogram + annotation, then load: the form receives them to render
+    # read-only (ADR-0004 immutability is enforced client-side on these).
+    from sqlalchemy.orm import sessionmaker
+
+    Session = sessionmaker(
+        bind=seeded_client.app.state.engine, future=True, expire_on_commit=False
+    )
+    s = Session()
+    try:
+        s.add(
+            orm.RawTomogramORM(
+                sample_id="samp1",
+                acquisition_id="Position_1",
+                tomogram_id="tomo_raw",
+                tilt_series_id="ts_raw",
+            )
+        )
+        s.add(
+            orm.AnnotationORM(
+                sample_id="samp1",
+                acquisition_id="Position_1",
+                annotation_id="ann1",
+                target_tomogram="tomo_raw",
+            )
+        )
+        s.commit()
+    finally:
+        s.close()
+
+    fields = seeded_client.get(
+        "/toml/acquisition/load/Position_1?sample_id=samp1"
+    ).json()["fields"]
+    assert fields["raw_tomogram"]["tomogram_id"] == "tomo_raw"
+    assert fields["annotation"][0]["target_tomogram"] == "tomo_raw"

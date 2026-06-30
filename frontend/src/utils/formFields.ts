@@ -8,6 +8,7 @@ export type FieldInput =
   | 'integer'
   | 'number'
   | 'select'
+  | 'multiselect'
   | 'boolean'
   | 'date';
 
@@ -34,6 +35,8 @@ export interface FormSection {
   root: boolean; // fields at file top level (no [section] table)
   requiresDataSource: string | null; // gated section (md_source ⇒ simulation)
   crossRefLiterals: string[]; // literal cross-ref options (e.g. 'Frames')
+  idNamespace: string | null; // id namespace this section's id field feeds
+  immutableOnLoad: boolean; // loaded entries read-only; append-only (ADR-0004)
 }
 
 export interface FormMeta {
@@ -53,10 +56,13 @@ export const FORM_META: Record<FormKind, FormMeta> = {
 };
 
 export const FORM_SECTIONS: FormSection[] = [
-  { form: 'md_run', section: 'md_run', title: '', repeatable: false, root: true, requiresDataSource: null, crossRefLiterals: [] },
-  { form: 'acquisition', section: 'acquisition', title: 'Acquisition', repeatable: false, root: false, requiresDataSource: null, crossRefLiterals: [] },
-  { form: 'acquisition', section: 'md_source', title: 'MD source (simulation)', repeatable: false, root: false, requiresDataSource: 'simulation', crossRefLiterals: [] },
-  { form: 'acquisition', section: 'tilt_series', title: 'Tilt series', repeatable: true, root: false, requiresDataSource: null, crossRefLiterals: ['Frames'] },
+  { form: 'md_run', section: 'md_run', title: '', repeatable: false, root: true, requiresDataSource: null, crossRefLiterals: [], idNamespace: null, immutableOnLoad: false },
+  { form: 'acquisition', section: 'acquisition', title: 'Acquisition', repeatable: false, root: false, requiresDataSource: null, crossRefLiterals: [], idNamespace: null, immutableOnLoad: false },
+  { form: 'acquisition', section: 'md_source', title: 'MD source (simulation)', repeatable: false, root: false, requiresDataSource: 'simulation', crossRefLiterals: [], idNamespace: null, immutableOnLoad: false },
+  { form: 'acquisition', section: 'tilt_series', title: 'Tilt series', repeatable: true, root: false, requiresDataSource: null, crossRefLiterals: ['Frames'], idNamespace: 'tilt_series', immutableOnLoad: true },
+  { form: 'acquisition', section: 'raw_tomogram', title: 'Raw tomogram', repeatable: false, root: false, requiresDataSource: null, crossRefLiterals: [], idNamespace: 'tomogram', immutableOnLoad: true },
+  { form: 'acquisition', section: 'post_processed_tomogram', title: 'Post-processed tomograms', repeatable: true, root: false, requiresDataSource: null, crossRefLiterals: [], idNamespace: 'tomogram', immutableOnLoad: true },
+  { form: 'acquisition', section: 'annotation', title: 'Annotations', repeatable: true, root: false, requiresDataSource: null, crossRefLiterals: [], idNamespace: null, immutableOnLoad: true },
 ];
 
 export const FORM_FIELDS: FormField[] = [
@@ -83,6 +89,20 @@ export const FORM_FIELDS: FormField[] = [
   { form: 'acquisition', section: 'tilt_series', field: 'is_aligned', label: 'Is aligned', input: 'boolean', required: false, isId: false, crossRef: null, apiSuggest: null, options: [], alias: null, help: '' },
   { form: 'acquisition', section: 'tilt_series', field: 'alignment_software', label: 'Alignment software', input: 'text', required: false, isId: false, crossRef: null, apiSuggest: null, options: [], alias: null, help: '' },
   { form: 'acquisition', section: 'tilt_series', field: 'alignment_method', label: 'Alignment method', input: 'text', required: false, isId: false, crossRef: null, apiSuggest: null, options: [], alias: null, help: '' },
+  { form: 'acquisition', section: 'raw_tomogram', field: 'tomogram_id', label: 'Tomogram id', input: 'text', required: true, isId: false, crossRef: null, apiSuggest: null, options: [], alias: 'id', help: 'Folder name under Tomograms/.' },
+  { form: 'acquisition', section: 'raw_tomogram', field: 'tilt_series_id', label: 'Tilt series', input: 'select', required: false, isId: false, crossRef: 'tilt_series', apiSuggest: null, options: [], alias: null, help: 'The tilt series this tomogram was reconstructed from.' },
+  { form: 'acquisition', section: 'raw_tomogram', field: 'pipeline', label: 'Pipeline', input: 'text', required: false, isId: false, crossRef: null, apiSuggest: null, options: [], alias: null, help: '' },
+  { form: 'acquisition', section: 'raw_tomogram', field: 'software', label: 'Software', input: 'text', required: false, isId: false, crossRef: null, apiSuggest: null, options: [], alias: null, help: '' },
+  { form: 'acquisition', section: 'raw_tomogram', field: 'derived_from', label: 'Derived from', input: 'multiselect', required: false, isId: false, crossRef: 'tomogram', apiSuggest: null, options: [], alias: null, help: 'Other tomograms in this acquisition this one was derived from.' },
+  { form: 'acquisition', section: 'post_processed_tomogram', field: 'tomogram_id', label: 'Tomogram id', input: 'text', required: true, isId: false, crossRef: null, apiSuggest: null, options: [], alias: 'id', help: 'Folder name under Tomograms/.' },
+  { form: 'acquisition', section: 'post_processed_tomogram', field: 'tilt_series_id', label: 'Tilt series', input: 'select', required: false, isId: false, crossRef: 'tilt_series', apiSuggest: null, options: [], alias: null, help: 'The tilt series this tomogram was reconstructed from.' },
+  { form: 'acquisition', section: 'post_processed_tomogram', field: 'denoising_software', label: 'Denoising software', input: 'text', required: false, isId: false, crossRef: null, apiSuggest: null, options: [], alias: null, help: '' },
+  { form: 'acquisition', section: 'post_processed_tomogram', field: 'ctf_software', label: 'CTF software', input: 'text', required: false, isId: false, crossRef: null, apiSuggest: null, options: [], alias: null, help: '' },
+  { form: 'acquisition', section: 'post_processed_tomogram', field: 'missing_wedge_software', label: 'Missing-wedge software', input: 'text', required: false, isId: false, crossRef: null, apiSuggest: null, options: [], alias: null, help: '' },
+  { form: 'acquisition', section: 'post_processed_tomogram', field: 'derived_from', label: 'Derived from', input: 'multiselect', required: false, isId: false, crossRef: 'tomogram', apiSuggest: null, options: [], alias: null, help: 'Other tomograms in this acquisition this one was derived from.' },
+  { form: 'acquisition', section: 'annotation', field: 'annotation_id', label: 'Annotation id', input: 'text', required: true, isId: false, crossRef: null, apiSuggest: null, options: [], alias: 'id', help: 'Folder name under Annotations/.' },
+  { form: 'acquisition', section: 'annotation', field: 'type', label: 'Type', input: 'text', required: false, isId: false, crossRef: null, apiSuggest: null, options: [], alias: null, help: '' },
+  { form: 'acquisition', section: 'annotation', field: 'target_tomogram', label: 'Target tomogram', input: 'select', required: false, isId: false, crossRef: 'tomogram', apiSuggest: null, options: [], alias: null, help: 'The tomogram in this acquisition this annotation segments.' },
 ];
 
 export function fieldsFor(form: FormKind): FormField[] {

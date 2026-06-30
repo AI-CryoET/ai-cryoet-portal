@@ -167,6 +167,43 @@ describe('AuthoringForm (acquisition)', () => {
     )
   })
 
+  it("annotation target_tomogram offers in-form tomogram ids", async () => {
+    render(<AuthoringForm form="acquisition" />)
+    // Author a raw tomogram id, then add an annotation.
+    await userEvent.type(screen.getByLabelText(/Tomogram id/), 'tomo_raw')
+    await userEvent.click(screen.getByRole('button', { name: /Add annotations/i }))
+    // The annotation's target dropdown is sourced from the tomogram namespace.
+    await userEvent.click(screen.getByLabelText(/Target tomogram/))
+    expect(
+      screen.getByRole('option', { name: 'tomo_raw' }),
+    ).toBeInTheDocument()
+  })
+
+  it('renders loaded processing-log entries read-only (immutability)', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      jsonResponse({
+        fields: {
+          acquisition: { acquisition_id: 'Pos1' },
+          tilt_series: [{ id: 'ts_raw', derived_from: 'Frames' }],
+          raw_tomogram: { id: 'tomo_raw', software: 'AreTomo' },
+        },
+      }),
+    )
+    render(
+      <AuthoringForm form="acquisition" initialId="Pos1" initialSampleId="samp1" />,
+    )
+    // Loaded tilt-series + raw-tomogram fields are disabled; no remove button.
+    await waitFor(() =>
+      expect(screen.getByLabelText(/Tilt series id/)).toBeDisabled(),
+    )
+    expect(screen.getByLabelText(/^Software$/)).toBeDisabled()
+    expect(
+      screen.queryByRole('button', { name: /Remove Tilt series entry/ }),
+    ).not.toBeInTheDocument()
+    // [acquisition] stays editable.
+    expect(screen.getByLabelText(/Acquisition id/)).not.toBeDisabled()
+  })
+
   it('auto-loads the acquisition from the edit-link search params', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       jsonResponse({

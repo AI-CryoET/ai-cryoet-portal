@@ -55,6 +55,23 @@ function pathFor(section: FormSection, field: string, index?: number): string {
   return `${section.section}.${field}`
 }
 
+// Options for a cross-ref dropdown: the field's section literals (e.g. "Frames")
+// plus every in-form id in the named namespace. A field whose own section feeds
+// the same namespace excludes its own id (no self-reference).
+function crossRefOptionsFor(
+  field: FormField,
+  section: FormSection,
+  namespaces: Record<string, string[]>,
+  ownId: string,
+): string[] {
+  const ids = field.crossRef ? (namespaces[field.crossRef] ?? []) : []
+  const pool =
+    section.idNamespace === field.crossRef
+      ? ids.filter((id) => id !== ownId)
+      : ids
+  return [...section.crossRefLiterals, ...pool]
+}
+
 // Generic renderer: builds a form from the authored-field registry (ADR-0002).
 // One root section is a flat file (md_run.toml); named + repeatable sections
 // compose acquisition.toml's [acquisition] / [md_source] / [[tilt_series]].
@@ -87,6 +104,26 @@ export function AuthoringForm({ form, initialId, initialSampleId }: Props) {
   // Set on pull-from-API load: data may lag the on-disk file (ADR-0004).
   const [stale, setStale] = React.useState(false)
   const [seedError, setSeedError] = React.useState<string | undefined>()
+
+  // In-form id namespaces feeding cross-ref dropdowns: each section's
+  // required-id field contributes to its namespace ("tomogram" pools raw +
+  // post-processed ids). Includes locked (loaded) ids so a new annotation can
+  // target an existing tomogram.
+  const namespaces = React.useMemo(() => {
+    const ns: Record<string, string[]> = {}
+    for (const s of sections) {
+      if (!s.idNamespace) continue
+      const idField = sectionFields(s.section).find((f) => f.required)?.field
+      if (!idField) continue
+      const entries = state[s.section]
+      const list = Array.isArray(entries) ? entries : entries ? [entries] : []
+      for (const e of list) {
+        const v = (e.values[idField] ?? '').trim()
+        if (v) (ns[s.idNamespace] ??= []).push(v)
+      }
+    }
+    return ns
+  }, [sections, sectionFields, state])
 
   // Replace form state from a seeded source (upload / API load).
   const seed = (seeded: Record<string, unknown>, fromApi: boolean) => {
@@ -296,6 +333,7 @@ export function AuthoringForm({ form, initialId, initialSampleId }: Props) {
               fields={sectionFields(s.section)}
               entries={(state[s.section] as SectionState[]) ?? []}
               errors={errors}
+              namespaces={namespaces}
               onAdd={() => addEntry(s.section)}
               onRemove={(i) => removeEntry(s.section, i)}
               onChange={(i, field, v) => setValue(s.section, field, v, i)}
@@ -308,6 +346,7 @@ export function AuthoringForm({ form, initialId, initialSampleId }: Props) {
               state={(state[s.section] as SectionState) ?? emptySection()}
               errors={errors}
               mdRunIds={mdRunIds}
+              namespaces={namespaces}
               onChange={(field, v) => setValue(s.section, field, v)}
               onCustomChange={(c) => setCustom(s.section, c)}
             />
@@ -346,6 +385,7 @@ function ScalarSection({
   state,
   errors,
   mdRunIds,
+  namespaces,
   onChange,
   onCustomChange,
 }: {
@@ -354,14 +394,19 @@ function ScalarSection({
   state: SectionState
   errors: Record<string, string>
   mdRunIds: string[]
+  namespaces: Record<string, string[]>
   onChange: (field: string, v: string) => void
   onCustomChange: (next: CustomField[]) => void
 }) {
+  const locked = state.locked ?? false
+  const idFieldName = fields.find((f) => f.required)?.field
+  const ownId = idFieldName ? (state.values[idFieldName] ?? '').trim() : ''
   return (
     <Box>
       {section.title && (
         <Typography variant="subtitle1" sx={{ fontWeight: 600, mb: 1 }}>
           {section.title}
+          {locked && ' (read-only)'}
         </Typography>
       )}
       <Stack spacing={2}>
@@ -372,26 +417,41 @@ function ScalarSection({
             value={state.values[f.field] ?? ''}
             error={errors[pathFor(section, f.field)]}
             mdRunIds={mdRunIds}
+            disabled={locked}
+            crossRefOptions={
+              f.crossRef
+                ? crossRefOptionsFor(f, section, namespaces, ownId)
+                : undefined
+            }
             onChange={(v) => onChange(f.field, v)}
           />
         ))}
-        <CustomFields
-          fields={state.customFields}
-          onChange={onCustomChange}
-          label={section.title ? `${section.title} — custom fields` : undefined}
-        />
+        {/* ponytail: a loaded immutable section is read-only — no append UI.
+            Any uploaded scalar extras still round-trip via build, just hidden. */}
+        {!locked && (
+          <CustomFields
+            fields={state.customFields}
+            onChange={onCustomChange}
+            label={
+              section.title ? `${section.title} — custom fields` : undefined
+            }
+          />
+        )}
       </Stack>
     </Box>
   )
 }
 
-// Repeatable [[table]] (tilt_series): add/remove entries. derived_from offers
-// the section's literals ("Frames") plus the other entries' ids in this form.
+// Repeatable [[table]] (tilt_series / tomograms / annotations): add/remove
+// entries. Cross-ref fields offer the section literals plus in-form ids from
+// the field's namespace. Loaded entries are read-only; only session-added
+// entries are editable and removable (ADR-0004 append-only).
 function RepeatableSection({
   section,
   fields,
   entries,
   errors,
+  namespaces,
   onAdd,
   onRemove,
   onChange,
@@ -400,6 +460,7 @@ function RepeatableSection({
   fields: FormField[]
   entries: SectionState[]
   errors: Record<string, string>
+  namespaces: Record<string, string[]>
   onAdd: () => void
   onRemove: (index: number) => void
   onChange: (index: number, field: string, v: string) => void
@@ -412,26 +473,28 @@ function RepeatableSection({
       </Typography>
       <Stack spacing={2}>
         {entries.map((entry, i) => {
-          // Cross-ref options: literals + the other entries' ids.
-          const otherIds = idFieldName
-            ? entries
-                .map((e, j) => (j === i ? '' : (e.values[idFieldName] ?? '').trim()))
-                .filter(Boolean)
-            : []
-          const crossRefOptions = [...section.crossRefLiterals, ...otherIds]
+          const locked = entry.locked ?? false
+          const ownId = idFieldName ? (entry.values[idFieldName] ?? '').trim() : ''
           return (
             <Box
               key={i}
               sx={{ border: 1, borderColor: 'divider', borderRadius: 1, p: 2 }}
             >
-              <Stack direction="row" justifyContent="flex-end">
-                <IconButton
-                  aria-label={`Remove ${section.title} entry`}
-                  onClick={() => onRemove(i)}
-                  size="small"
-                >
-                  <DeleteOutlineIcon fontSize="small" />
-                </IconButton>
+              <Stack direction="row" justifyContent="flex-end" alignItems="center">
+                {locked && (
+                  <Typography variant="caption" color="text.secondary">
+                    read-only
+                  </Typography>
+                )}
+                {!locked && (
+                  <IconButton
+                    aria-label={`Remove ${section.title} entry`}
+                    onClick={() => onRemove(i)}
+                    size="small"
+                  >
+                    <DeleteOutlineIcon fontSize="small" />
+                  </IconButton>
+                )}
               </Stack>
               <Stack spacing={2}>
                 {fields.map((f) => (
@@ -440,7 +503,12 @@ function RepeatableSection({
                     field={f}
                     value={entry.values[f.field] ?? ''}
                     error={errors[pathFor(section, f.field, i)]}
-                    crossRefOptions={f.crossRef ? crossRefOptions : undefined}
+                    disabled={locked}
+                    crossRefOptions={
+                      f.crossRef
+                        ? crossRefOptionsFor(f, section, namespaces, ownId)
+                        : undefined
+                    }
                     onChange={(v) => onChange(i, f.field, v)}
                   />
                 ))}
@@ -463,6 +531,7 @@ function Field({
   onChange,
   mdRunIds = [],
   crossRefOptions,
+  disabled = false,
 }: {
   field: FormField
   value: string
@@ -470,6 +539,7 @@ function Field({
   onChange: (v: string) => void
   mdRunIds?: string[]
   crossRefOptions?: string[]
+  disabled?: boolean
 }) {
   const help = error ?? field.help
 
@@ -478,9 +548,36 @@ function Field({
     return (
       <Autocomplete
         freeSolo
+        disabled={disabled}
         options={mdRunIds}
         value={value}
         onInputChange={(_, v) => onChange(v)}
+        renderInput={(params) => (
+          <TextField
+            {...params}
+            label={field.label}
+            helperText={help}
+            error={Boolean(error)}
+            size="small"
+          />
+        )}
+      />
+    )
+  }
+
+  // Cross-ref list (tomogram derived_from): multi-select of in-form ids,
+  // stored comma-joined in form state.
+  if (field.input === 'multiselect') {
+    const selected = value
+      ? value.split(',').map((s) => s.trim()).filter(Boolean)
+      : []
+    return (
+      <Autocomplete
+        multiple
+        disabled={disabled}
+        options={crossRefOptions ?? []}
+        value={selected}
+        onChange={(_, v) => onChange(v.join(','))}
         renderInput={(params) => (
           <TextField
             {...params}
@@ -510,6 +607,7 @@ function Field({
         value={value}
         onChange={(e) => onChange(e.target.value)}
         required={field.required}
+        disabled={disabled}
         helperText={help}
         error={Boolean(error)}
         fullWidth
@@ -534,6 +632,7 @@ function Field({
       value={value}
       onChange={(e) => onChange(e.target.value)}
       required={field.required}
+      disabled={disabled}
       type={numeric ? 'number' : 'text'}
       slotProps={
         field.input === 'integer' ? { htmlInput: { step: 1 } } : undefined
