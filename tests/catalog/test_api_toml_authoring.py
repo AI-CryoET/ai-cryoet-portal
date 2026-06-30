@@ -42,6 +42,24 @@ def seeded_client(tmp_path):
             )
         )
         s.add(orm.MdRunORM(sample_id="samp1", md_run_id="run01", seed=42, timestep=2.0))
+        s.add(
+            orm.AcquisitionORM(
+                sample_id="samp1", acquisition_id="Position_1", resolution=3.4
+            )
+        )
+        s.add(
+            orm.MdSourceORM(
+                sample_id="samp1", acquisition_id="Position_1", md_run_id="run01"
+            )
+        )
+        s.add(
+            orm.TiltSeriesORM(
+                sample_id="samp1",
+                acquisition_id="Position_1",
+                tilt_series_id="ts_raw",
+                derived_from="Frames",
+            )
+        )
         s.commit()
     finally:
         s.close()
@@ -188,3 +206,105 @@ def test_load_unknown_id_returns_404(seeded_client):
 
 def test_load_unsupported_kind_returns_404(seeded_client):
     assert seeded_client.get("/toml/sample/load/x").status_code == 404
+
+
+# ── Acquisition form (issue 05): [acquisition] + [[tilt_series]] + [md_source] ─
+
+
+def test_valid_acquisition_downloads_nested_toml(client):
+    resp = client.post(
+        "/toml/acquisition",
+        json={
+            "acquisition": {
+                "acquisition_id": "Position_1",
+                "resolution": 3.4,
+                "acquisition_quality": 4,
+            },
+            "tilt_series": [
+                {"tilt_series_id": "ts_raw", "derived_from": "Frames"},
+                {"tilt_series_id": "ts_aligned", "derived_from": "ts_raw"},
+            ],
+        },
+    )
+    assert resp.status_code == 200
+    assert resp.headers["content-disposition"] == (
+        'attachment; filename="acquisition.toml"'
+    )
+    parsed = tomllib.loads(resp.text)
+    # Directory-derived acquisition id is dropped; [acquisition] keeps its values.
+    assert "acquisition_id" not in parsed["acquisition"]
+    assert parsed["acquisition"] == {"resolution": 3.4, "acquisition_quality": 4}
+    # [[tilt_series]] entries survive; ids are written (folder names).
+    assert [ts["id"] for ts in parsed["tilt_series"]] == ["ts_raw", "ts_aligned"]
+    assert parsed["tilt_series"][1]["derived_from"] == "ts_raw"
+    # No empty md_source / processing-log tables leak into the output.
+    assert "md_source" not in parsed
+    assert "post_processed_tomogram" not in parsed
+    assert "annotation" not in parsed
+
+
+def test_acquisition_quality_out_of_range_returns_422(client):
+    resp = client.post(
+        "/toml/acquisition",
+        json={"acquisition": {"acquisition_id": "Position_1", "acquisition_quality": 7}},
+    )
+    assert resp.status_code == 422
+    located = {tuple(e["loc"]) for e in resp.json()["errors"]}
+    assert ("acquisition", "acquisition_quality") in located
+
+
+def test_acquisition_md_source_emitted(client):
+    resp = client.post(
+        "/toml/acquisition",
+        json={
+            "acquisition": {"acquisition_id": "Position_1"},
+            "md_source": {"md_run_id": "run01", "frame": 5},
+        },
+    )
+    assert resp.status_code == 200
+    parsed = tomllib.loads(resp.text)
+    assert parsed["md_source"] == {"md_run_id": "run01", "frame": 5}
+
+
+def test_acquisition_dangling_tilt_series_ref_returns_422(client):
+    resp = client.post(
+        "/toml/acquisition",
+        json={
+            "acquisition": {"acquisition_id": "Position_1"},
+            "tilt_series": [{"tilt_series_id": "ts1", "derived_from": "nope"}],
+        },
+    )
+    assert resp.status_code == 422
+
+
+def test_acquisition_parse_round_trips_nested_tables(client):
+    toml = (
+        "[acquisition]\nresolution = 3.4\n\n"
+        '[[tilt_series]]\nid = "ts_raw"\nderived_from = "Frames"\n'
+    )
+    parsed = client.post("/toml/acquisition/parse", json={"toml": toml}).json()["fields"]
+    assert parsed["acquisition"] == {"resolution": 3.4}
+    assert parsed["tilt_series"] == [{"id": "ts_raw", "derived_from": "Frames"}]
+
+
+# ── md_run_id suggestions + composite acquisition load ──────────────────────
+
+
+def test_md_run_id_suggestions(seeded_client):
+    resp = seeded_client.get("/toml/md-run-ids/samp1")
+    assert resp.status_code == 200
+    assert resp.json()["ids"] == ["run01"]
+
+
+def test_acquisition_load_requires_sample_id(seeded_client):
+    assert seeded_client.get("/toml/acquisition/load/Position_1").status_code == 422
+
+
+def test_acquisition_load_by_composite_id(seeded_client):
+    resp = seeded_client.get("/toml/acquisition/load/Position_1?sample_id=samp1")
+    assert resp.status_code == 200
+    fields = resp.json()["fields"]
+    assert fields["acquisition"]["acquisition_id"] == "Position_1"
+    assert fields["acquisition"]["resolution"] == 3.4
+    assert fields["md_source"]["md_run_id"] == "run01"
+    assert [ts["tilt_series_id"] for ts in fields["tilt_series"]] == ["ts_raw"]

@@ -15,16 +15,25 @@ from schema.generate_form_fields import _OUT, render
 
 
 def test_every_model_field_is_classified():
-    for kind, model in FORMS.items():
-        classified = {ff.field for ff in FORM_FIELDS if ff.form == kind}
+    # Per section: every field on the section's backing model must be
+    # classified (authored or derived) so adding a schema field can't silently
+    # leave a form stale.
+    for (form, section), model in FORMS.items():
+        classified = {
+            ff.field
+            for ff in FORM_FIELDS
+            if ff.form == form and ff.section == section
+        }
         model_fields = set(model.model_fields)
         missing = model_fields - classified
         assert not missing, (
-            f"{kind}: schema fields not classified in form_fields.py: {sorted(missing)}"
+            f"{form}/{section}: schema fields not classified in form_fields.py: "
+            f"{sorted(missing)}"
         )
         stray = classified - model_fields
         assert not stray, (
-            f"{kind}: form_fields.py names fields absent from {model.__name__}: {sorted(stray)}"
+            f"{form}/{section}: form_fields.py names fields absent from "
+            f"{model.__name__}: {sorted(stray)}"
         )
 
 

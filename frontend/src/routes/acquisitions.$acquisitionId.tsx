@@ -232,6 +232,17 @@ function AcquisitionDetailRoute() {
         }
       />
 
+      {/* Edit links carry the composite identity so the form auto-loads the
+          right acquisition (acquisition_id alone isn't unique). */}
+      <CustomLink
+        to="/author/acquisition"
+        search={{ id: acquisitionId, sampleId }}
+        variant="body2"
+        fontWeight={700}
+      >
+        Edit acquisition.toml
+      </CustomLink>
+
       <Divider />
 
       {/* ── Tilt series + path ─────────────────────────────────────── */}

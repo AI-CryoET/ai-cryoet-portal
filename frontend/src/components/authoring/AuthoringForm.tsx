@@ -1,6 +1,7 @@
 import React from 'react'
 import {
   Alert,
+  Autocomplete,
   Box,
   Button,
   Divider,
@@ -15,57 +16,107 @@ import {
   FORM_META,
   ID_PATTERN,
   fieldsFor,
+  fieldsForSection,
+  sectionsFor,
   type FormField,
   type FormKind,
+  type FormSection,
 } from '~/utils/formFields'
 import {
-  buildPayload,
+  buildSectionedPayload,
+  emptySection,
   errorsByField,
-  hydrate,
+  fetchMdRunIds,
+  hydrateSections,
+  inferDataSource,
   loadToml,
   parseToml,
   postToml,
   type CustomField,
   type CustomFieldType,
+  type DataSource,
+  type SectionsState,
+  type SectionState,
 } from '~/utils/authoring'
 
-type Props = { form: FormKind }
+type Props = {
+  form: FormKind
+  // Search-param auto-load (ADR-0004): seed from the portal on mount. For the
+  // composite-keyed acquisition, initialSampleId resolves the record.
+  initialId?: string
+  initialSampleId?: string
+}
+
+// Dotted error/lookup path mirroring the backend loc: root fields are bare,
+// named-table fields are `section.field`, repeatable are `section.i.field`.
+function pathFor(section: FormSection, field: string, index?: number): string {
+  if (section.root) return field
+  if (index !== undefined) return `${section.section}.${index}.${field}`
+  return `${section.section}.${field}`
+}
 
 // Generic renderer: builds a form from the authored-field registry (ADR-0002).
-// Scalar inputs + enum dropdowns; required + IdStr structural checks happen
-// here, all schema rules on submit (backend-authoritative, ADR-0001).
-export function AuthoringForm({ form }: Props) {
+// One root section is a flat file (md_run.toml); named + repeatable sections
+// compose acquisition.toml's [acquisition] / [md_source] / [[tilt_series]].
+// Required + IdStr structural checks happen here; all schema rules on submit
+// (backend-authoritative, ADR-0001).
+export function AuthoringForm({ form, initialId, initialSampleId }: Props) {
   const meta = FORM_META[form]
-  const fields = fieldsFor(form)
-  const idField = fields.find((f) => f.isId)
-
-  const [values, setValues] = React.useState<Record<string, string>>({})
-  const [customFields, setCustomFields] = React.useState<CustomField[]>([])
-  const [passthrough, setPassthrough] = React.useState<Record<string, unknown>>(
-    {},
+  const sections = sectionsFor(form)
+  const idField = fieldsFor(form).find((f) => f.isId)
+  const idSection = idField
+    ? sections.find((s) => s.section === idField.section)
+    : undefined
+  const gated = sections.some((s) => s.requiresDataSource)
+  const needsSampleId = meta.placement.includes('{sample_id}')
+  const wantsMdRunIds = fieldsFor(form).some((f) => f.apiSuggest === 'md_run')
+  const sectionFields = React.useCallback(
+    (section: string) => fieldsForSection(form, section),
+    [form],
   )
+
+  const [state, setState] = React.useState<SectionsState>(() =>
+    hydrateSections(sections, sectionFields, {}),
+  )
+  const [dataSource, setDataSource] = React.useState<DataSource>('experimental')
+  const [sampleId, setSampleId] = React.useState(initialSampleId ?? '')
+  const [mdRunIds, setMdRunIds] = React.useState<string[]>([])
   const [errors, setErrors] = React.useState<Record<string, string>>({})
+  const [recordErrors, setRecordErrors] = React.useState<string[]>([])
   const [done, setDone] = React.useState(false)
   // Set on pull-from-API load: data may lag the on-disk file (ADR-0004).
   const [stale, setStale] = React.useState(false)
   const [seedError, setSeedError] = React.useState<string | undefined>()
 
-  const set = (field: string, v: string) => {
-    setValues((prev) => ({ ...prev, [field]: v }))
-    setDone(false)
-  }
-
   // Replace form state from a seeded source (upload / API load).
   const seed = (seeded: Record<string, unknown>, fromApi: boolean) => {
-    const next = hydrate(fields, seeded)
-    setValues(next.values)
-    setCustomFields(next.customFields)
-    setPassthrough(next.passthrough)
+    setState(hydrateSections(sections, sectionFields, seeded))
+    setDataSource(inferDataSource(sections, seeded))
     setErrors({})
+    setRecordErrors([])
     setDone(false)
     setSeedError(undefined)
     setStale(fromApi)
   }
+
+  // Auto-load once on mount when the route supplies an id (edit links).
+  React.useEffect(() => {
+    if (!initialId) return
+    loadToml(form, initialId, initialSampleId)
+      .then((seeded) => seed(seeded, true))
+      .catch((err) =>
+        setSeedError(err instanceof Error ? err.message : String(err)),
+      )
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // md_run_id suggestions once a sample context exists.
+  React.useEffect(() => {
+    if (!wantsMdRunIds || !sampleId.trim()) return
+    fetchMdRunIds(sampleId.trim())
+      .then(setMdRunIds)
+      .catch(() => setMdRunIds([]))
+  }, [wantsMdRunIds, sampleId])
 
   async function handleUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
@@ -83,38 +134,102 @@ export function AuthoringForm({ form }: Props) {
     const id = loadId.trim()
     if (!id) return
     try {
-      seed(await loadToml(form, id), true)
+      seed(await loadToml(form, id, sampleId.trim() || undefined), true)
     } catch (err) {
       setSeedError(err instanceof Error ? err.message : String(err))
     }
   }
 
-  const idValue = (idField && values[idField.field]?.trim()) || ''
+  // Update one scalar (or one repeatable entry's) field value.
+  const setValue = (section: string, field: string, v: string, index?: number) => {
+    setDone(false)
+    setState((prev) => {
+      const next = { ...prev }
+      if (index === undefined) {
+        const st = (next[section] as SectionState) ?? emptySection()
+        next[section] = { ...st, values: { ...st.values, [field]: v } }
+      } else {
+        const arr = [...((next[section] as SectionState[]) ?? [])]
+        const e = arr[index] ?? emptySection()
+        arr[index] = { ...e, values: { ...e.values, [field]: v } }
+        next[section] = arr
+      }
+      return next
+    })
+  }
+
+  const setCustom = (section: string, custom: CustomField[]) => {
+    setDone(false)
+    setState((prev) => ({
+      ...prev,
+      [section]: { ...(prev[section] as SectionState), customFields: custom },
+    }))
+  }
+
+  const addEntry = (section: string) => {
+    setDone(false)
+    setState((prev) => ({
+      ...prev,
+      [section]: [...((prev[section] as SectionState[]) ?? []), emptySection()],
+    }))
+  }
+  const removeEntry = (section: string, index: number) => {
+    setDone(false)
+    setState((prev) => ({
+      ...prev,
+      [section]: ((prev[section] as SectionState[]) ?? []).filter(
+        (_, i) => i !== index,
+      ),
+    }))
+  }
+
+  const idValue =
+    (idSection &&
+      (state[idSection.section] as SectionState | undefined)?.values[
+        idField!.field
+      ]?.trim()) ||
+    ''
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     setDone(false)
     // Thin structural check on the id (the full IdStr rules run on the backend).
-    if (idField) {
+    if (idField && idSection) {
+      const key = pathFor(idSection, idField.field)
       if (!idValue) {
-        setErrors({ [idField.field]: 'Required' })
+        setErrors({ [key]: 'Required' })
+        setRecordErrors([])
         return
       }
       if (!ID_PATTERN.test(idValue)) {
-        setErrors({ [idField.field]: 'Invalid id: letters, digits, . _ - only' })
+        setErrors({ [key]: 'Invalid id: letters, digits, . _ - only' })
+        setRecordErrors([])
         return
       }
     }
-    const payload = buildPayload(fields, values, customFields, passthrough)
+    const payload = buildSectionedPayload(
+      sections,
+      sectionFields,
+      state,
+      dataSource,
+    )
     const result = await postToml(form, payload, meta.filename)
     if (result.status === 'invalid') {
       setErrors(errorsByField(result.errors))
+      setRecordErrors(
+        result.errors.filter((er) => er.loc.length === 0).map((er) => er.msg),
+      )
       return
     }
     setErrors({})
+    setRecordErrors([])
     triggerDownload(result.blob, result.filename)
     setDone(true)
   }
+
+  const placement = meta.placement
+    .replace('{id}', idValue || '<id>')
+    .replace('{sample_id}', sampleId.trim() || '<sample_id>')
 
   return (
     <Box component="form" onSubmit={handleSubmit} noValidate>
@@ -129,6 +244,14 @@ export function AuthoringForm({ form }: Props) {
               onChange={handleUpload}
             />
           </Button>
+          {needsSampleId && (
+            <TextField
+              label="Sample id"
+              value={sampleId}
+              onChange={(e) => setSampleId(e.target.value)}
+              size="small"
+            />
+          )}
           <TextField
             label="Load from portal by id"
             value={loadId}
@@ -148,21 +271,60 @@ export function AuthoringForm({ form }: Props) {
           </Alert>
         )}
 
-        {fields.map((f) => (
-          <Field
-            key={f.field}
-            field={f}
-            value={values[f.field] ?? ''}
-            error={errors[f.field]}
-            onChange={(v) => set(f.field, v)}
-          />
-        ))}
+        {gated && (
+          <TextField
+            select
+            label="Data source"
+            value={dataSource}
+            onChange={(e) => setDataSource(e.target.value as DataSource)}
+            size="small"
+            sx={{ minWidth: 220 }}
+            helperText="Simulation acquisitions record an MD source."
+          >
+            <MenuItem value="experimental">Experimental</MenuItem>
+            <MenuItem value="simulation">Simulation</MenuItem>
+          </TextField>
+        )}
 
-        <CustomFields fields={customFields} onChange={setCustomFields} />
+        {sections.map((s) => {
+          if (s.requiresDataSource && s.requiresDataSource !== dataSource)
+            return null
+          return s.repeatable ? (
+            <RepeatableSection
+              key={s.section}
+              section={s}
+              fields={sectionFields(s.section)}
+              entries={(state[s.section] as SectionState[]) ?? []}
+              errors={errors}
+              onAdd={() => addEntry(s.section)}
+              onRemove={(i) => removeEntry(s.section, i)}
+              onChange={(i, field, v) => setValue(s.section, field, v, i)}
+            />
+          ) : (
+            <ScalarSection
+              key={s.section}
+              section={s}
+              fields={sectionFields(s.section)}
+              state={(state[s.section] as SectionState) ?? emptySection()}
+              errors={errors}
+              mdRunIds={mdRunIds}
+              onChange={(field, v) => setValue(s.section, field, v)}
+              onCustomChange={(c) => setCustom(s.section, c)}
+            />
+          )
+        })}
+
+        {recordErrors.length > 0 && (
+          <Alert severity="error">
+            {recordErrors.map((m, i) => (
+              <div key={i}>{m}</div>
+            ))}
+          </Alert>
+        )}
 
         {idField && (
           <Typography variant="body2" color="text.secondary">
-            Save as <code>{meta.placement.replace('{id}', idValue || '<id>')}</code>
+            Save as <code>{placement}</code>
           </Typography>
         )}
 
@@ -172,10 +334,124 @@ export function AuthoringForm({ form }: Props) {
           </Button>
         </Box>
 
-        {done && (
-          <Alert severity="success">Downloaded {meta.filename}.</Alert>
-        )}
+        {done && <Alert severity="success">Downloaded {meta.filename}.</Alert>}
       </Stack>
+    </Box>
+  )
+}
+
+function ScalarSection({
+  section,
+  fields,
+  state,
+  errors,
+  mdRunIds,
+  onChange,
+  onCustomChange,
+}: {
+  section: FormSection
+  fields: FormField[]
+  state: SectionState
+  errors: Record<string, string>
+  mdRunIds: string[]
+  onChange: (field: string, v: string) => void
+  onCustomChange: (next: CustomField[]) => void
+}) {
+  return (
+    <Box>
+      {section.title && (
+        <Typography variant="subtitle1" sx={{ fontWeight: 600, mb: 1 }}>
+          {section.title}
+        </Typography>
+      )}
+      <Stack spacing={2}>
+        {fields.map((f) => (
+          <Field
+            key={f.field}
+            field={f}
+            value={state.values[f.field] ?? ''}
+            error={errors[pathFor(section, f.field)]}
+            mdRunIds={mdRunIds}
+            onChange={(v) => onChange(f.field, v)}
+          />
+        ))}
+        <CustomFields
+          fields={state.customFields}
+          onChange={onCustomChange}
+          label={section.title ? `${section.title} — custom fields` : undefined}
+        />
+      </Stack>
+    </Box>
+  )
+}
+
+// Repeatable [[table]] (tilt_series): add/remove entries. derived_from offers
+// the section's literals ("Frames") plus the other entries' ids in this form.
+function RepeatableSection({
+  section,
+  fields,
+  entries,
+  errors,
+  onAdd,
+  onRemove,
+  onChange,
+}: {
+  section: FormSection
+  fields: FormField[]
+  entries: SectionState[]
+  errors: Record<string, string>
+  onAdd: () => void
+  onRemove: (index: number) => void
+  onChange: (index: number, field: string, v: string) => void
+}) {
+  const idFieldName = fields.find((f) => f.required)?.field
+  return (
+    <Box>
+      <Typography variant="subtitle1" sx={{ fontWeight: 600, mb: 1 }}>
+        {section.title}
+      </Typography>
+      <Stack spacing={2}>
+        {entries.map((entry, i) => {
+          // Cross-ref options: literals + the other entries' ids.
+          const otherIds = idFieldName
+            ? entries
+                .map((e, j) => (j === i ? '' : (e.values[idFieldName] ?? '').trim()))
+                .filter(Boolean)
+            : []
+          const crossRefOptions = [...section.crossRefLiterals, ...otherIds]
+          return (
+            <Box
+              key={i}
+              sx={{ border: 1, borderColor: 'divider', borderRadius: 1, p: 2 }}
+            >
+              <Stack direction="row" justifyContent="flex-end">
+                <IconButton
+                  aria-label={`Remove ${section.title} entry`}
+                  onClick={() => onRemove(i)}
+                  size="small"
+                >
+                  <DeleteOutlineIcon fontSize="small" />
+                </IconButton>
+              </Stack>
+              <Stack spacing={2}>
+                {fields.map((f) => (
+                  <Field
+                    key={f.field}
+                    field={f}
+                    value={entry.values[f.field] ?? ''}
+                    error={errors[pathFor(section, f.field, i)]}
+                    crossRefOptions={f.crossRef ? crossRefOptions : undefined}
+                    onChange={(v) => onChange(i, f.field, v)}
+                  />
+                ))}
+              </Stack>
+            </Box>
+          )
+        })}
+      </Stack>
+      <Button onClick={onAdd} size="small" sx={{ mt: 1 }}>
+        Add {section.title.toLowerCase()}
+      </Button>
     </Box>
   )
 }
@@ -185,12 +461,72 @@ function Field({
   value,
   error,
   onChange,
+  mdRunIds = [],
+  crossRefOptions,
 }: {
   field: FormField
   value: string
   error?: string
   onChange: (v: string) => void
+  mdRunIds?: string[]
+  crossRefOptions?: string[]
 }) {
+  const help = error ?? field.help
+
+  // API-assisted free text (md_run_id): suggestions + free entry.
+  if (field.apiSuggest) {
+    return (
+      <Autocomplete
+        freeSolo
+        options={mdRunIds}
+        value={value}
+        onInputChange={(_, v) => onChange(v)}
+        renderInput={(params) => (
+          <TextField
+            {...params}
+            label={field.label}
+            helperText={help}
+            error={Boolean(error)}
+            size="small"
+          />
+        )}
+      />
+    )
+  }
+
+  // Cross-ref (derived_from) or fixed-option (quality) dropdown.
+  if (field.crossRef || field.input === 'select' || field.input === 'boolean') {
+    const options =
+      field.input === 'boolean'
+        ? [
+            { value: 'true', label: 'Yes' },
+            { value: 'false', label: 'No' },
+          ]
+        : (crossRefOptions ?? field.options).map((o) => ({ value: o, label: o }))
+    return (
+      <TextField
+        select
+        label={field.label}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        required={field.required}
+        helperText={help}
+        error={Boolean(error)}
+        fullWidth
+        size="small"
+      >
+        <MenuItem value="">
+          <em>—</em>
+        </MenuItem>
+        {options.map((o) => (
+          <MenuItem key={o.value} value={o.value}>
+            {o.label}
+          </MenuItem>
+        ))}
+      </TextField>
+    )
+  }
+
   const numeric = field.input === 'integer' || field.input === 'number'
   return (
     <TextField
@@ -202,7 +538,7 @@ function Field({
       slotProps={
         field.input === 'integer' ? { htmlInput: { step: 1 } } : undefined
       }
-      helperText={error ?? field.help}
+      helperText={help}
       error={Boolean(error)}
       fullWidth
       size="small"
@@ -215,9 +551,11 @@ function Field({
 function CustomFields({
   fields,
   onChange,
+  label = 'Custom fields',
 }: {
   fields: CustomField[]
   onChange: (next: CustomField[]) => void
+  label?: string
 }) {
   const update = (i: number, patch: Partial<CustomField>) =>
     onChange(fields.map((c, j) => (j === i ? { ...c, ...patch } : c)))
@@ -229,7 +567,7 @@ function CustomFields({
     <Box>
       <Divider sx={{ mb: 2 }} />
       <Typography variant="subtitle2" gutterBottom>
-        Custom fields
+        {label}
       </Typography>
       <Stack spacing={1}>
         {fields.map((c, i) => (

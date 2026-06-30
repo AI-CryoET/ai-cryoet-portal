@@ -1,4 +1,6 @@
-import type { FormField, FormKind } from '~/utils/formFields'
+import type { FormField, FormKind, FormSection } from '~/utils/formFields'
+
+export type DataSource = 'experimental' | 'simulation'
 
 // Field-level error from the backend (POST /toml/{kind} -> 422). `loc` is
 // normalized to model field names server-side, so loc[0] keys a form field.
@@ -42,6 +44,8 @@ export function buildPayload(
       const n = Number(raw)
       if (Number.isNaN(n)) continue
       out[f.field] = n
+    } else if (f.input === 'boolean') {
+      out[f.field] = raw.toLowerCase() === 'true'
     } else {
       out[f.field] = raw
     }
@@ -115,11 +119,17 @@ export async function parseToml(
 }
 
 // Seed mode: pull-from-API. Load an existing record's authored fields by id.
+// Acquisition identity is composite, so a sampleId is passed through as a query
+// param (mirrors the acquisition detail route's sampleId search param).
 export async function loadToml(
   form: FormKind,
   id: string,
+  sampleId?: string,
 ): Promise<Record<string, unknown>> {
-  const res = await fetch(`/api/toml/${form}/load/${encodeURIComponent(id)}`)
+  const qs = sampleId ? `?sample_id=${encodeURIComponent(sampleId)}` : ''
+  const res = await fetch(
+    `/api/toml/${form}/load/${encodeURIComponent(id)}${qs}`,
+  )
   if (res.status === 404) throw new Error(`No ${form} found with id "${id}"`)
   if (!res.ok) throw new Error(`load failed: ${res.status}`)
   return ((await res.json()) as { fields: Record<string, unknown> }).fields
@@ -145,14 +155,138 @@ export async function postToml(
   return { status: 'ok', blob: await res.blob(), filename }
 }
 
-// First inline message per field, keyed by loc[0].
+// First inline message per field, keyed by the full dotted loc path
+// (e.g. 'seed', 'acquisition.acquisition_quality', 'tilt_series.0.id'). The
+// renderer looks each field up by its section path; errors with no matching
+// field (whole-record cross-ref failures, loc=[]) fall through to a summary.
 export function errorsByField(
   errors: TomlFieldError[],
 ): Record<string, string> {
   const out: Record<string, string> = {}
   for (const e of errors) {
-    const key = String(e.loc[0] ?? '')
+    const key = e.loc.join('.')
     if (key && !(key in out)) out[key] = e.msg
   }
   return out
+}
+
+// ── Sectioned forms (acquisition): one block per TOML table ─────────────────
+
+export interface SectionState {
+  values: Record<string, string>
+  customFields: CustomField[]
+  passthrough: Record<string, unknown>
+}
+
+// Per-section state keyed by section name; repeatable sections hold an array.
+export type SectionsState = Record<string, SectionState | SectionState[]>
+
+export function emptySection(): SectionState {
+  return { values: {}, customFields: [], passthrough: {} }
+}
+
+// Which data_source a seeded file implies: present iff a gated section is
+// present (md_source ⇒ simulation). Defaults to experimental otherwise.
+export function inferDataSource(
+  sections: FormSection[],
+  seeded: Record<string, unknown>,
+): DataSource {
+  for (const s of sections) {
+    if (s.requiresDataSource && seeded[s.section] != null) {
+      return s.requiresDataSource as DataSource
+    }
+  }
+  return 'experimental'
+}
+
+// Rename uploaded TOML keys back to model field names where they differ
+// (tilt_series authors its id as `id`, the field is `tilt_series_id`).
+function dealias(
+  fields: FormField[],
+  raw: Record<string, unknown>,
+): Record<string, unknown> {
+  const out = { ...raw }
+  for (const f of fields) {
+    if (f.alias && f.alias in out && !(f.field in out)) {
+      out[f.field] = out[f.alias]
+      delete out[f.alias]
+    }
+  }
+  return out
+}
+
+function asRecord(v: unknown): Record<string, unknown> {
+  return v && typeof v === 'object' && !Array.isArray(v)
+    ? (v as Record<string, unknown>)
+    : {}
+}
+
+// Seed every section from a parsed/loaded file. Root sections read top-level
+// keys; named sections read their table; repeatable sections read their array.
+export function hydrateSections(
+  sections: FormSection[],
+  fieldsFor: (section: string) => FormField[],
+  seeded: Record<string, unknown>,
+): SectionsState {
+  const state: SectionsState = {}
+  for (const s of sections) {
+    const fields = fieldsFor(s.section)
+    if (s.repeatable) {
+      const arr = Array.isArray(seeded[s.section])
+        ? (seeded[s.section] as unknown[])
+        : []
+      state[s.section] = arr.map((entry) => {
+        const { values, customFields, passthrough } = hydrate(
+          fields,
+          dealias(fields, asRecord(entry)),
+        )
+        return { values, customFields, passthrough }
+      })
+    } else {
+      const src = s.root ? seeded : asRecord(seeded[s.section])
+      const { values, customFields, passthrough } = hydrate(
+        fields,
+        dealias(fields, src),
+      )
+      state[s.section] = { values, customFields, passthrough }
+    }
+  }
+  return state
+}
+
+// Build the nested POST payload from section state. Gated sections whose
+// data_source is inactive are omitted; empty named sections / repeatable
+// entries are dropped so the file carries only filled tables.
+export function buildSectionedPayload(
+  sections: FormSection[],
+  fieldsFor: (section: string) => FormField[],
+  state: SectionsState,
+  dataSource: DataSource,
+): Record<string, unknown> {
+  const out: Record<string, unknown> = {}
+  for (const s of sections) {
+    if (s.requiresDataSource && s.requiresDataSource !== dataSource) continue
+    const fields = fieldsFor(s.section)
+    if (s.repeatable) {
+      const entries = (state[s.section] as SectionState[] | undefined) ?? []
+      const built = entries
+        .map((e) => buildPayload(fields, e.values, e.customFields, e.passthrough))
+        .filter((o) => Object.keys(o).length > 0)
+      if (built.length) out[s.section] = built
+    } else {
+      const st = (state[s.section] as SectionState | undefined) ?? emptySection()
+      const obj = buildPayload(fields, st.values, st.customFields, st.passthrough)
+      if (s.root) Object.assign(out, obj)
+      else if (Object.keys(obj).length) out[s.section] = obj
+    }
+  }
+  return out
+}
+
+// md_source.md_run_id suggestions: the sample's known runs (free text still ok).
+export async function fetchMdRunIds(sampleId: string): Promise<string[]> {
+  const res = await fetch(`/api/toml/md-run-ids/${encodeURIComponent(sampleId)}`)
+  if (!res.ok) return []
+  const ids = ((await res.json()) as { ids?: string[] }).ids
+  return Array.isArray(ids) ? ids : []
 }

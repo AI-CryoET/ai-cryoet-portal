@@ -2,8 +2,14 @@
 // Regenerate: `pixi run form-fields`. Parity guarded by
 // tests/test_form_fields_drift.py.
 
-export type FormKind = 'md_run';
-export type FieldInput = 'text' | 'integer' | 'number' | 'select' | 'date';
+export type FormKind = 'acquisition' | 'md_run';
+export type FieldInput =
+  | 'text'
+  | 'integer'
+  | 'number'
+  | 'select'
+  | 'boolean'
+  | 'date';
 
 export interface FormField {
   form: FormKind;
@@ -13,7 +19,21 @@ export interface FormField {
   input: FieldInput;
   required: boolean;
   isId: boolean; // intended-id field: drives the placement hint, not written
+  crossRef: string | null; // dropdown of in-form ids from this section
+  apiSuggest: string | null; // API-suggested free-text (e.g. 'md_run')
+  options: string[]; // fixed select options (e.g. quality 1–5)
+  alias: string | null; // TOML key when it differs from the field name
   help: string;
+}
+
+export interface FormSection {
+  form: FormKind;
+  section: string; // toml table name
+  title: string; // display heading ('' for a root single-section form)
+  repeatable: boolean; // [[table]] — add/remove entries
+  root: boolean; // fields at file top level (no [section] table)
+  requiresDataSource: string | null; // gated section (md_source ⇒ simulation)
+  crossRefLiterals: string[]; // literal cross-ref options (e.g. 'Frames')
 }
 
 export interface FormMeta {
@@ -28,19 +48,51 @@ export interface FormMeta {
 export const ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 
 export const FORM_META: Record<FormKind, FormMeta> = {
+  acquisition: { form: 'acquisition', title: 'Acquisition', placement: '{sample_id}/{id}/acquisition.toml', filename: 'acquisition.toml' },
   md_run: { form: 'md_run', title: 'MD run', placement: 'MdRuns/{id}/md_run.toml', filename: 'md_run.toml' },
 };
 
+export const FORM_SECTIONS: FormSection[] = [
+  { form: 'md_run', section: 'md_run', title: '', repeatable: false, root: true, requiresDataSource: null, crossRefLiterals: [] },
+  { form: 'acquisition', section: 'acquisition', title: 'Acquisition', repeatable: false, root: false, requiresDataSource: null, crossRefLiterals: [] },
+  { form: 'acquisition', section: 'md_source', title: 'MD source (simulation)', repeatable: false, root: false, requiresDataSource: 'simulation', crossRefLiterals: [] },
+  { form: 'acquisition', section: 'tilt_series', title: 'Tilt series', repeatable: true, root: false, requiresDataSource: null, crossRefLiterals: ['Frames'] },
+];
+
 export const FORM_FIELDS: FormField[] = [
-  { form: 'md_run', section: 'md_run', field: 'md_run_id', label: 'Run id', input: 'text', required: true, isId: true, help: 'Folder name under MdRuns/. Sets identity; not written into the file.' },
-  { form: 'md_run', section: 'md_run', field: 'seed', label: 'Seed', input: 'integer', required: false, isId: false, help: 'Random seed for the simulation run.' },
-  { form: 'md_run', section: 'md_run', field: 'sample_time', label: 'Sample time', input: 'number', required: false, isId: false, help: 'Total simulated time.' },
-  { form: 'md_run', section: 'md_run', field: 'timestep', label: 'Timestep', input: 'number', required: false, isId: false, help: 'Integration timestep.' },
-  { form: 'md_run', section: 'md_run', field: 'computer', label: 'Computer', input: 'text', required: false, isId: false, help: 'Machine the run executed on.' },
-  { form: 'md_run', section: 'md_run', field: 'reference_contact', label: 'Reference / contact', input: 'text', required: false, isId: false, help: '' },
-  { form: 'md_run', section: 'md_run', field: 'force_field_version', label: 'Force field version', input: 'text', required: false, isId: false, help: '' },
+  { form: 'md_run', section: 'md_run', field: 'md_run_id', label: 'Run id', input: 'text', required: true, isId: true, crossRef: null, apiSuggest: null, options: [], alias: null, help: 'Folder name under MdRuns/. Sets identity; not written into the file.' },
+  { form: 'md_run', section: 'md_run', field: 'seed', label: 'Seed', input: 'integer', required: false, isId: false, crossRef: null, apiSuggest: null, options: [], alias: null, help: 'Random seed for the simulation run.' },
+  { form: 'md_run', section: 'md_run', field: 'sample_time', label: 'Sample time', input: 'number', required: false, isId: false, crossRef: null, apiSuggest: null, options: [], alias: null, help: 'Total simulated time.' },
+  { form: 'md_run', section: 'md_run', field: 'timestep', label: 'Timestep', input: 'number', required: false, isId: false, crossRef: null, apiSuggest: null, options: [], alias: null, help: 'Integration timestep.' },
+  { form: 'md_run', section: 'md_run', field: 'computer', label: 'Computer', input: 'text', required: false, isId: false, crossRef: null, apiSuggest: null, options: [], alias: null, help: 'Machine the run executed on.' },
+  { form: 'md_run', section: 'md_run', field: 'reference_contact', label: 'Reference / contact', input: 'text', required: false, isId: false, crossRef: null, apiSuggest: null, options: [], alias: null, help: '' },
+  { form: 'md_run', section: 'md_run', field: 'force_field_version', label: 'Force field version', input: 'text', required: false, isId: false, crossRef: null, apiSuggest: null, options: [], alias: null, help: '' },
+  { form: 'acquisition', section: 'acquisition', field: 'acquisition_id', label: 'Acquisition id', input: 'text', required: true, isId: true, crossRef: null, apiSuggest: null, options: [], alias: null, help: 'Acquisition folder name. Sets identity; not written into the file.' },
+  { form: 'acquisition', section: 'acquisition', field: 'resolution', label: 'Resolution (Å)', input: 'number', required: false, isId: false, crossRef: null, apiSuggest: null, options: [], alias: null, help: 'Nominal resolution.' },
+  { form: 'acquisition', section: 'acquisition', field: 'tilt_spacing', label: 'Tilt spacing (°)', input: 'number', required: false, isId: false, crossRef: null, apiSuggest: null, options: [], alias: null, help: 'Nominal tilt spacing.' },
+  { form: 'acquisition', section: 'acquisition', field: 'defocus_range', label: 'Defocus range (µm)', input: 'text', required: false, isId: false, crossRef: null, apiSuggest: null, options: [], alias: null, help: 'Target defocus range, free text.' },
+  { form: 'acquisition', section: 'acquisition', field: 'energy_filter', label: 'Energy filter', input: 'text', required: false, isId: false, crossRef: null, apiSuggest: null, options: [], alias: null, help: '' },
+  { form: 'acquisition', section: 'acquisition', field: 'phase_plate', label: 'Phase plate', input: 'boolean', required: false, isId: false, crossRef: null, apiSuggest: null, options: [], alias: null, help: '' },
+  { form: 'acquisition', section: 'acquisition', field: 'microscope', label: 'Microscope', input: 'text', required: false, isId: false, crossRef: null, apiSuggest: null, options: [], alias: null, help: '' },
+  { form: 'acquisition', section: 'acquisition', field: 'facility', label: 'Facility', input: 'text', required: false, isId: false, crossRef: null, apiSuggest: null, options: [], alias: null, help: 'Imaging facility, e.g. Janelia.' },
+  { form: 'acquisition', section: 'acquisition', field: 'acquisition_quality', label: 'Quality (1–5)', input: 'select', required: false, isId: false, crossRef: null, apiSuggest: null, options: ['1', '2', '3', '4', '5'], alias: null, help: '5 Excellent … 1 Low (alignability + projection-image survival).' },
+  { form: 'acquisition', section: 'md_source', field: 'md_run_id', label: 'MD run id', input: 'text', required: false, isId: false, crossRef: null, apiSuggest: 'md_run', options: [], alias: null, help: 'The simulation run this acquisition came from. Suggested from the sample\'s runs; free text also accepted.' },
+  { form: 'acquisition', section: 'md_source', field: 'frame', label: 'Frame', input: 'integer', required: false, isId: false, crossRef: null, apiSuggest: null, options: [], alias: null, help: 'Frame / snapshot index within the run.' },
+  { form: 'acquisition', section: 'tilt_series', field: 'tilt_series_id', label: 'Tilt series id', input: 'text', required: true, isId: false, crossRef: null, apiSuggest: null, options: [], alias: 'id', help: 'Folder name under TiltSeries/.' },
+  { form: 'acquisition', section: 'tilt_series', field: 'derived_from', label: 'Derived from', input: 'select', required: false, isId: false, crossRef: 'tilt_series', apiSuggest: null, options: [], alias: null, help: '"Frames" (raw) or another tilt series in this acquisition.' },
+  { form: 'acquisition', section: 'tilt_series', field: 'is_aligned', label: 'Is aligned', input: 'boolean', required: false, isId: false, crossRef: null, apiSuggest: null, options: [], alias: null, help: '' },
+  { form: 'acquisition', section: 'tilt_series', field: 'alignment_software', label: 'Alignment software', input: 'text', required: false, isId: false, crossRef: null, apiSuggest: null, options: [], alias: null, help: '' },
+  { form: 'acquisition', section: 'tilt_series', field: 'alignment_method', label: 'Alignment method', input: 'text', required: false, isId: false, crossRef: null, apiSuggest: null, options: [], alias: null, help: '' },
 ];
 
 export function fieldsFor(form: FormKind): FormField[] {
   return FORM_FIELDS.filter((f) => f.form === form);
+}
+
+export function sectionsFor(form: FormKind): FormSection[] {
+  return FORM_SECTIONS.filter((s) => s.form === form);
+}
+
+export function fieldsForSection(form: FormKind, section: string): FormField[] {
+  return FORM_FIELDS.filter((f) => f.form === form && f.section === section);
 }

@@ -8,7 +8,8 @@ changes:
     pixi run form-fields
 
 ``tests/test_form_fields_drift.py`` fails if the committed file differs from a
-fresh ``render()``.
+fresh ``render()``. Only *authored* fields are emitted — derived fields exist in
+``form_fields.py`` solely for the completeness drift test and are never rendered.
 """
 
 from __future__ import annotations
@@ -16,7 +17,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-from schema.form_fields import FORM_FIELDS, FORM_META, FORMS
+from schema.form_fields import FORM_FIELDS, FORM_META, FORM_SECTIONS
 from schema.schema import _ID_PATTERN
 
 _OUT = Path(__file__).resolve().parents[2] / "frontend" / "src" / "utils" / "formFields.ts"
@@ -26,8 +27,16 @@ def _ts_str(value: str) -> str:
     return "'" + value.replace("\\", "\\\\").replace("'", "\\'") + "'"
 
 
+def _ts_str_or_null(value: str | None) -> str:
+    return _ts_str(value) if value is not None else "null"
+
+
+def _ts_str_array(values) -> str:
+    return "[" + ", ".join(_ts_str(v) for v in values) + "]"
+
+
 def render() -> str:
-    kinds = sorted(FORMS)
+    kinds = sorted({m.form for m in FORM_META})
     kind_union = " | ".join(_ts_str(k) for k in kinds)
 
     meta_lines = []
@@ -37,14 +46,33 @@ def render() -> str:
             f"placement: {_ts_str(m.placement)}, filename: {_ts_str(m.filename)} }},"
         )
 
+    section_lines = []
+    for s in FORM_SECTIONS:
+        section_lines.append(
+            "  { "
+            f"form: {_ts_str(s.form)}, section: {_ts_str(s.section)}, "
+            f"title: {_ts_str(s.title)}, repeatable: {str(s.repeatable).lower()}, "
+            f"root: {str(s.root).lower()}, "
+            f"requiresDataSource: {_ts_str_or_null(s.requires_data_source)}, "
+            f"crossRefLiterals: {_ts_str_array(s.cross_ref_literals)} "
+            "},"
+        )
+
     field_lines = []
     for f in FORM_FIELDS:
+        if not f.authored:
+            continue
         field_lines.append(
             "  { "
             f"form: {_ts_str(f.form)}, section: {_ts_str(f.section)}, "
             f"field: {_ts_str(f.field)}, label: {_ts_str(f.label)}, "
             f"input: {_ts_str(f.input)}, required: {str(f.required).lower()}, "
-            f"isId: {str(f.is_id).lower()}, help: {_ts_str(f.help)} "
+            f"isId: {str(f.is_id).lower()}, "
+            f"crossRef: {_ts_str_or_null(f.cross_ref)}, "
+            f"apiSuggest: {_ts_str_or_null(f.api_suggest)}, "
+            f"options: {_ts_str_array(f.options)}, "
+            f"alias: {_ts_str_or_null(f.alias)}, "
+            f"help: {_ts_str(f.help)} "
             "},"
         )
 
@@ -54,7 +82,13 @@ def render() -> str:
 // tests/test_form_fields_drift.py.
 
 export type FormKind = {kind_union};
-export type FieldInput = 'text' | 'integer' | 'number' | 'select' | 'date';
+export type FieldInput =
+  | 'text'
+  | 'integer'
+  | 'number'
+  | 'select'
+  | 'boolean'
+  | 'date';
 
 export interface FormField {{
   form: FormKind;
@@ -64,7 +98,21 @@ export interface FormField {{
   input: FieldInput;
   required: boolean;
   isId: boolean; // intended-id field: drives the placement hint, not written
+  crossRef: string | null; // dropdown of in-form ids from this section
+  apiSuggest: string | null; // API-suggested free-text (e.g. 'md_run')
+  options: string[]; // fixed select options (e.g. quality 1–5)
+  alias: string | null; // TOML key when it differs from the field name
   help: string;
+}}
+
+export interface FormSection {{
+  form: FormKind;
+  section: string; // toml table name
+  title: string; // display heading ('' for a root single-section form)
+  repeatable: boolean; // [[table]] — add/remove entries
+  root: boolean; // fields at file top level (no [section] table)
+  requiresDataSource: string | null; // gated section (md_source ⇒ simulation)
+  crossRefLiterals: string[]; // literal cross-ref options (e.g. 'Frames')
 }}
 
 export interface FormMeta {{
@@ -82,12 +130,24 @@ export const FORM_META: Record<FormKind, FormMeta> = {{
 {chr(10).join(meta_lines)}
 }};
 
+export const FORM_SECTIONS: FormSection[] = [
+{chr(10).join(section_lines)}
+];
+
 export const FORM_FIELDS: FormField[] = [
 {chr(10).join(field_lines)}
 ];
 
 export function fieldsFor(form: FormKind): FormField[] {{
   return FORM_FIELDS.filter((f) => f.form === form);
+}}
+
+export function sectionsFor(form: FormKind): FormSection[] {{
+  return FORM_SECTIONS.filter((s) => s.form === form);
+}}
+
+export function fieldsForSection(form: FormKind, section: string): FormField[] {{
+  return FORM_FIELDS.filter((f) => f.form === form && f.section === section);
 }}
 """
 

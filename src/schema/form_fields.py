@@ -6,37 +6,70 @@ forms expose and how to render them. Codegen'd to
 completeness and the codegen-parity drift tests live in
 ``tests/test_form_fields_drift.py``.
 
-Only the **authored** subset of each model is rendered. The directory-derived
-identity field (``md_run_id``, injected from the folder name by the loader) is
-classified here as the non-persisted *intended-id* field (``is_id=True``): the
-form collects it to drive the "save as …" placement hint and to satisfy
-model validation, but the endpoint omits it from the written file.
+Each form is split into **sections** (``FORM_SECTIONS``), one per TOML table.
+A section is either *root* (its fields sit at the top level of the file, like
+``md_run.toml``), a named ``[table]``, or a repeatable ``[[table]]``. Every
+field on a section's backing model must be classified in ``FORM_FIELDS`` —
+authored fields render; ``authored=False`` fields are MDOC/MRC/directory-derived
+and are listed only so the completeness drift test can prove nothing was missed.
 
-Tracer bullet (issue 02) covers ``md_run`` only; ``sample`` / ``acquisition``
-are added by later issues. Each form's backing model is listed in ``FORMS`` so
-the completeness test fails when a new field on a covered model is left
-unclassified.
+The directory-derived identity field (``md_run_id`` / ``acquisition_id``) is the
+non-persisted *intended-id* field (``is_id=True``): collected to drive the
+"save as …" placement hint and to satisfy model validation, but dropped from the
+written file by the endpoint.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 
-from schema.schema import MdRun
+from schema.schema import Acquisition, MdRun, MdSource, TiltSeries
 
 
 @dataclass(frozen=True)
 class FormField:
-    form: str  # 'md_run' (later: 'sample' | 'acquisition')
+    form: str  # 'md_run' | 'acquisition'
     section: str  # toml table the field belongs to
     field: str  # model field name; also the TOML key (except the id field)
     label: str
-    input: str  # 'text' | 'integer' | 'number' | 'select' | 'date'
+    input: str  # 'text' | 'integer' | 'number' | 'select' | 'boolean' | 'date'
     required: bool = False
     # The non-persisted intended-id field: collected for the placement hint and
     # model validation, never written into the output file (directory-derived).
     is_id: bool = False
     help: str = ""
+    # Authored fields render; derived (MDOC/MRC/directory) fields are classified
+    # but hidden — listed only so the completeness drift test stays honest.
+    authored: bool = True
+    # Cross-reference: render a dropdown of in-form ids from this section
+    # (e.g. tilt_series.derived_from offers other tilt-series ids + "Frames").
+    cross_ref: str | None = None
+    # API-assisted free-text: suggest ids of this kind from the loaded sample
+    # context (e.g. md_source.md_run_id suggests the sample's known md_runs).
+    api_suggest: str | None = None
+    # Fixed select options (e.g. acquisition_quality 1–5).
+    options: tuple[str, ...] = ()
+    # Model alias, when the TOML key differs from the field name (tilt_series_id
+    # is authored as ``id``). Used to remap uploaded keys back to the field.
+    alias: str | None = None
+
+
+@dataclass(frozen=True)
+class FormSection:
+    form: str
+    section: str  # toml table name
+    title: str  # display heading ('' for a root single-section form)
+    # Python-only: backing model for the completeness drift test. Not codegen'd.
+    model: type
+    # [[table]] — add/remove multiple entries.
+    repeatable: bool = False
+    # Fields sit at the file's top level (md_run.toml) rather than under a
+    # ``[section]`` table. Drives whether the payload nests under the key.
+    root: bool = False
+    # Section appears only for this data_source (md_source ⇒ simulation).
+    requires_data_source: str | None = None
+    # Extra "literal" cross-ref options always offered alongside in-form ids.
+    cross_ref_literals: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -56,7 +89,37 @@ FORM_META: list[FormMeta] = [
         placement="MdRuns/{id}/md_run.toml",
         filename="md_run.toml",
     ),
+    FormMeta(
+        form="acquisition",
+        title="Acquisition",
+        placement="{sample_id}/{id}/acquisition.toml",
+        filename="acquisition.toml",
+    ),
 ]
+
+
+FORM_SECTIONS: list[FormSection] = [
+    # md_run.toml is a flat top-level file: one root section, no [md_run] table.
+    FormSection("md_run", "md_run", "", MdRun, root=True),
+    # acquisition.toml: [acquisition] + optional [md_source] + [[tilt_series]].
+    FormSection("acquisition", "acquisition", "Acquisition", Acquisition),
+    FormSection(
+        "acquisition", "md_source", "MD source (simulation)", MdSource,
+        requires_data_source="simulation",
+    ),
+    FormSection(
+        "acquisition", "tilt_series", "Tilt series", TiltSeries,
+        repeatable=True, cross_ref_literals=("Frames",),
+    ),
+]
+
+
+def _derived(form: str, section: str, *fields: str) -> list[FormField]:
+    """Classify MDOC/MRC/directory-derived fields: accounted for by the
+    completeness drift test, never rendered (``authored=False``)."""
+    return [
+        FormField(form, section, f, f, "text", authored=False) for f in fields
+    ]
 
 
 FORM_FIELDS: list[FormField] = [
@@ -76,11 +139,68 @@ FORM_FIELDS: list[FormField] = [
               help="Machine the run executed on."),
     FormField("md_run", "md_run", "reference_contact", "Reference / contact", "text"),
     FormField("md_run", "md_run", "force_field_version", "Force field version", "text"),
+
+    # ---- acquisition [acquisition] — researcher-authored imaging params ----
+    FormField(
+        "acquisition", "acquisition", "acquisition_id", "Acquisition id", "text",
+        required=True, is_id=True,
+        help="Acquisition folder name. Sets identity; not written into the file.",
+    ),
+    FormField("acquisition", "acquisition", "resolution", "Resolution (Å)", "number",
+              help="Nominal resolution."),
+    FormField("acquisition", "acquisition", "tilt_spacing", "Tilt spacing (°)", "number",
+              help="Nominal tilt spacing."),
+    FormField("acquisition", "acquisition", "defocus_range", "Defocus range (µm)", "text",
+              help="Target defocus range, free text."),
+    FormField("acquisition", "acquisition", "energy_filter", "Energy filter", "text"),
+    FormField("acquisition", "acquisition", "phase_plate", "Phase plate", "boolean"),
+    FormField("acquisition", "acquisition", "microscope", "Microscope", "text"),
+    FormField("acquisition", "acquisition", "facility", "Facility", "text",
+              help="Imaging facility, e.g. Janelia."),
+    FormField(
+        "acquisition", "acquisition", "acquisition_quality", "Quality (1–5)", "select",
+        options=("1", "2", "3", "4", "5"),
+        help="5 Excellent … 1 Low (alignability + projection-image survival).",
+    ),
+    # MDOC / MRC / frame-extension / directory-derived — classified, not rendered.
+    *_derived(
+        "acquisition", "acquisition",
+        "pixel_size", "dose_per_tilt", "total_dose", "tilt_min", "tilt_max",
+        "tilt_axis", "tilt_angles", "defocus_per_image", "date_collected",
+        "voltage", "energy_filter_slit_width", "frame_count", "camera", "path",
+    ),
+
+    # ---- acquisition [md_source] — simulation provenance ------------------
+    FormField(
+        "acquisition", "md_source", "md_run_id", "MD run id", "text",
+        api_suggest="md_run",
+        help="The simulation run this acquisition came from. "
+             "Suggested from the sample's runs; free text also accepted.",
+    ),
+    FormField("acquisition", "md_source", "frame", "Frame", "integer",
+              help="Frame / snapshot index within the run."),
+
+    # ---- acquisition [[tilt_series]] — one per tilt series ----------------
+    FormField(
+        "acquisition", "tilt_series", "tilt_series_id", "Tilt series id", "text",
+        required=True, alias="id", help="Folder name under TiltSeries/.",
+    ),
+    FormField(
+        "acquisition", "tilt_series", "derived_from", "Derived from", "select",
+        cross_ref="tilt_series",
+        help='"Frames" (raw) or another tilt series in this acquisition.',
+    ),
+    FormField("acquisition", "tilt_series", "is_aligned", "Is aligned", "boolean"),
+    FormField("acquisition", "tilt_series", "alignment_software", "Alignment software", "text"),
+    FormField("acquisition", "tilt_series", "alignment_method", "Alignment method", "text"),
+    *_derived(
+        "acquisition", "tilt_series",
+        "sample_id", "acquisition_id", "st_path", "zarr_path",
+        "alignment_files", "mtime",
+    ),
 ]
 
 
-# Form kind -> backing Pydantic model. Drives the completeness drift test:
-# every field on a covered model must be classified in FORM_FIELDS.
-FORMS = {
-    "md_run": MdRun,
-}
+# Section identity -> backing Pydantic model. Drives the completeness drift
+# test: every field on a section's model must be classified in FORM_FIELDS.
+FORMS = {(s.form, s.section): s.model for s in FORM_SECTIONS}

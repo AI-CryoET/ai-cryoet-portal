@@ -95,6 +95,100 @@ describe('AuthoringForm (md_run)', () => {
   })
 })
 
+describe('AuthoringForm (acquisition)', () => {
+  it('renders [acquisition] fields and a constrained 1–5 quality dropdown', () => {
+    render(<AuthoringForm form="acquisition" />)
+    expect(screen.getByLabelText(/Acquisition id/)).toBeInTheDocument()
+    expect(screen.getByLabelText(/Resolution/)).toBeInTheDocument()
+    // Quality is a select limited to 1–5 (can't enter an out-of-range value).
+    const quality = screen.getByLabelText(/Quality/)
+    expect(quality).toBeInTheDocument()
+  })
+
+  it('gates [md_source] on the simulation data source', async () => {
+    render(<AuthoringForm form="acquisition" />)
+    // Experimental (default): no MD source field.
+    expect(screen.queryByLabelText(/MD run id/)).not.toBeInTheDocument()
+    // Switch to simulation → md_source appears.
+    const select = screen.getByLabelText(/Data source/)
+    await userEvent.click(select)
+    await userEvent.click(screen.getByRole('option', { name: /Simulation/ }))
+    expect(screen.getByLabelText(/MD run id/)).toBeInTheDocument()
+  })
+
+  it('adds and removes tilt-series entries', async () => {
+    render(<AuthoringForm form="acquisition" />)
+    expect(screen.queryByLabelText(/Tilt series id/)).not.toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: /Add tilt series/ }))
+    expect(screen.getByLabelText(/Tilt series id/)).toBeInTheDocument()
+    await userEvent.click(
+      screen.getByRole('button', { name: /Remove Tilt series entry/ }),
+    )
+    expect(screen.queryByLabelText(/Tilt series id/)).not.toBeInTheDocument()
+  })
+
+  it("derived_from offers 'Frames' and another in-form tilt-series id", async () => {
+    render(<AuthoringForm form="acquisition" />)
+    const add = screen.getByRole('button', { name: /Add tilt series/ })
+    await userEvent.click(add)
+    await userEvent.click(add)
+    // Give the first entry an id so it becomes a derived_from option.
+    const ids = screen.getAllByLabelText(/Tilt series id/)
+    await userEvent.type(ids[0], 'ts_raw')
+    // Open the second entry's derived_from dropdown.
+    const derivedFroms = screen.getAllByLabelText(/Derived from/)
+    await userEvent.click(derivedFroms[1])
+    expect(screen.getByRole('option', { name: 'Frames' })).toBeInTheDocument()
+    expect(screen.getByRole('option', { name: 'ts_raw' })).toBeInTheDocument()
+  })
+
+  it('shows a backend 422 inline on the nested quality field', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          errors: [
+            {
+              loc: ['acquisition', 'acquisition_quality'],
+              msg: 'Input should be less than or equal to 5',
+              type: 'less_than_equal',
+            },
+          ],
+        }),
+        { status: 422, headers: { 'Content-Type': 'application/json' } },
+      ),
+    )
+    render(<AuthoringForm form="acquisition" />)
+    await userEvent.type(screen.getByLabelText(/Acquisition id/), 'Pos1')
+    await userEvent.click(screen.getByRole('button', { name: /Download/ }))
+    await waitFor(() =>
+      expect(
+        screen.getByText('Input should be less than or equal to 5'),
+      ).toBeInTheDocument(),
+    )
+  })
+
+  it('auto-loads the acquisition from the edit-link search params', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      jsonResponse({
+        fields: {
+          acquisition: { acquisition_id: 'Pos1', resolution: 3.4 },
+          md_source: { md_run_id: 'run01' },
+        },
+      }),
+    )
+    render(
+      <AuthoringForm form="acquisition" initialId="Pos1" initialSampleId="samp1" />,
+    )
+    await waitFor(() =>
+      expect(screen.getByLabelText(/Acquisition id/)).toHaveValue('Pos1'),
+    )
+    expect(screen.getByLabelText(/Resolution/)).toHaveValue(3.4)
+    // md_source present in the file → simulation inferred → field shown.
+    expect(screen.getByLabelText(/MD run id/)).toBeInTheDocument()
+    expect(screen.getByText(/may lag the on-disk file/)).toBeInTheDocument()
+  })
+})
+
 function jsonResponse(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
