@@ -52,4 +52,52 @@ describe('AuthoringForm (md_run)', () => {
     expect(screen.getByText('Required')).toBeInTheDocument()
     expect(fetchSpy).not.toHaveBeenCalled()
   })
+
+  it('loading by id populates the form and shows the staleness warning', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      jsonResponse({ fields: { md_run_id: 'run01', seed: 42 } }),
+    )
+    render(<AuthoringForm form="md_run" />)
+    await userEvent.type(screen.getByLabelText(/Load from portal by id/), 'run01')
+    await userEvent.click(screen.getByRole('button', { name: /^Load$/ }))
+    await waitFor(() =>
+      expect(screen.getByLabelText(/Run id/)).toHaveValue('run01'),
+    )
+    expect(screen.getByLabelText(/Seed/)).toHaveValue(42)
+    expect(screen.getByText(/may lag the on-disk file/)).toBeInTheDocument()
+  })
+
+  it('renders an uploaded scalar extra as an editable custom-field row', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      jsonResponse({ fields: { seed: 1, custom_note: 'keep me' } }),
+    )
+    render(<AuthoringForm form="md_run" />)
+    const file = new File(['seed = 1\ncustom_note = "keep me"\n'], 'md_run.toml')
+    // The hidden file input sits inside the "Upload" label button.
+    const input = document.querySelector(
+      'input[type="file"]',
+    ) as HTMLInputElement
+    await userEvent.upload(input, file)
+    await waitFor(() =>
+      expect(screen.getByDisplayValue('custom_note')).toBeInTheDocument(),
+    )
+    expect(screen.getByDisplayValue('keep me')).toBeInTheDocument()
+  })
+
+  it('adds a custom field row on demand', async () => {
+    render(<AuthoringForm form="md_run" />)
+    await userEvent.click(
+      screen.getByRole('button', { name: /Add custom field/ }),
+    )
+    expect(screen.getByLabelText(/^Key$/)).toBeInTheDocument()
+    expect(screen.getByLabelText(/^Value$/)).toBeInTheDocument()
+    expect(screen.getByLabelText(/^Type$/)).toBeInTheDocument()
+  })
 })
+
+function jsonResponse(body: unknown, status = 200) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { 'Content-Type': 'application/json' },
+  })
+}

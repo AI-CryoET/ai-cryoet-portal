@@ -9,11 +9,18 @@ errors from ``ValidationError.errors()``. Output omits comments, the
 
 from __future__ import annotations
 
+import tomllib
+
 import tomli_w
-from fastapi import APIRouter, Body, HTTPException
+from fastapi import APIRouter, Body, Depends, HTTPException
 from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, ValidationError
+from sqlalchemy import select
+from sqlalchemy.orm import Session
 
+from catalog import orm
+from catalog.api.deps import get_session
+from catalog.api.schemas import MdRunOut
 from schema.schema import MdRun
 
 router = APIRouter()
@@ -83,3 +90,47 @@ def author_toml(kind: str, payload: dict = Body(...)):
         media_type="application/toml",
         headers={"Content-Disposition": f'attachment; filename="{kind}.toml"'},
     )
+
+
+@router.post("/{kind}/parse")
+def parse_toml(kind: str, payload: dict = Body(...)):
+    """Seed mode: upload (ADR-0004). Parse a posted ``.toml`` body into form
+    state with the backend ``tomllib`` loader — keeps TOML parsing off the
+    frontend. Unknown/extra keys come through verbatim; the renderer splits
+    registry fields from extras. Bad TOML -> 422 (no validation here; schema
+    rules run on generate)."""
+    if kind not in _MODELS:
+        raise HTTPException(404, f"unknown toml kind {kind!r}")
+    try:
+        fields = tomllib.loads(payload.get("toml", ""))
+    except tomllib.TOMLDecodeError as exc:
+        return JSONResponse(
+            status_code=422,
+            content={"errors": [{"loc": [], "msg": str(exc), "type": "toml_parse"}]},
+        )
+    return {"fields": fields}
+
+
+@router.get("/{kind}/load/{record_id}")
+def load_toml(kind: str, record_id: str, session: Session = Depends(get_session)):
+    """Seed mode: pull-from-API (ADR-0004). Load an existing record's authored
+    fields by id from the catalog DB. The data may lag the on-disk file — the
+    renderer surfaces a staleness warning for this mode. Only ``md_run`` is
+    wired here (tracer bullet); other kinds added with their forms."""
+    if kind != "md_run":
+        raise HTTPException(404, f"load not supported for toml kind {kind!r}")
+    row = (
+        session.execute(
+            select(orm.MdRunORM).where(orm.MdRunORM.md_run_id == record_id)
+        )
+        .scalars()
+        .first()
+    )
+    if row is None:
+        raise HTTPException(404, f"no {kind} with id {record_id!r}")
+    fields = {
+        name: getattr(row, name)
+        for name in MdRunOut.model_fields
+        if getattr(row, name, None) is not None
+    }
+    return {"fields": fields}
