@@ -205,7 +205,8 @@ def test_load_unknown_id_returns_404(seeded_client):
 
 
 def test_load_unsupported_kind_returns_404(seeded_client):
-    assert seeded_client.get("/toml/sample/load/x").status_code == 404
+    # md_run, acquisition, sample are supported; an unknown kind 404s.
+    assert seeded_client.get("/toml/not_a_kind/load/x").status_code == 404
 
 
 # ── Acquisition form (issue 05): [acquisition] + [[tilt_series]] + [md_source] ─

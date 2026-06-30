@@ -5,8 +5,14 @@ import {
   Box,
   Button,
   Divider,
+  FormControl,
+  FormControlLabel,
+  FormHelperText,
+  FormLabel,
   IconButton,
   MenuItem,
+  Radio,
+  RadioGroup,
   Stack,
   TextField,
   Typography,
@@ -18,23 +24,31 @@ import {
   fieldsFor,
   fieldsForSection,
   sectionsFor,
+  type DataSource,
   type FormField,
   type FormKind,
   type FormSection,
 } from '~/utils/formFields'
+import { PROJECT_REQUIRES_DATA_SOURCE } from '~/utils/filterFields'
 import {
+  buildCompositePayload,
   buildSectionedPayload,
+  emptyEntry,
   emptySection,
   errorsByField,
+  errorsByPath,
   fetchMdRunIds,
+  hydrateComposite,
   hydrateSections,
   inferDataSource,
+  inferSectionedDataSource,
   loadToml,
   parseToml,
   postToml,
+  type CompositeSection,
   type CustomField,
   type CustomFieldType,
-  type DataSource,
+  type SectionEntry,
   type SectionsState,
   type SectionState,
 } from '~/utils/authoring'
@@ -45,6 +59,27 @@ type Props = {
   // composite-keyed acquisition, initialSampleId resolves the record.
   initialId?: string
   initialSampleId?: string
+}
+
+// Sample is a composite form with project-gated sections (requiresProject) and
+// arbitrary-block reverse-inference; md_run + acquisition are driven by the
+// generic sectioned renderer (root/repeatable/cross-ref/immutable sections).
+function isProjectGated(form: FormKind): boolean {
+  return sectionsFor(form).some((s) => s.requiresProject != null)
+}
+
+// Dispatch to the renderer matching the form's shape. Both consume the same
+// authored-field registry (ADR-0002); they differ only in section semantics.
+export function AuthoringForm({ form, initialId, initialSampleId }: Props) {
+  return isProjectGated(form) ? (
+    <CompositeAuthoringForm form={form} autoLoadId={initialId} />
+  ) : (
+    <SectionedAuthoringForm
+      form={form}
+      initialId={initialId}
+      initialSampleId={initialSampleId}
+    />
+  )
 }
 
 // Dotted error/lookup path mirroring the backend loc: root fields are bare,
@@ -74,10 +109,10 @@ function crossRefOptionsFor(
 
 // Generic renderer: builds a form from the authored-field registry (ADR-0002).
 // One root section is a flat file (md_run.toml); named + repeatable sections
-// compose acquisition.toml's [acquisition] / [md_source] / [[tilt_series]].
-// Required + IdStr structural checks happen here; all schema rules on submit
-// (backend-authoritative, ADR-0001).
-export function AuthoringForm({ form, initialId, initialSampleId }: Props) {
+// compose acquisition.toml's [acquisition] / [md_source] / [[tilt_series]] /
+// processing log. Required + IdStr structural checks happen here; all schema
+// rules on submit (backend-authoritative, ADR-0001).
+function SectionedAuthoringForm({ form, initialId, initialSampleId }: Props) {
   const meta = FORM_META[form]
   const sections = sectionsFor(form)
   const idField = fieldsFor(form).find((f) => f.isId)
@@ -128,7 +163,7 @@ export function AuthoringForm({ form, initialId, initialSampleId }: Props) {
   // Replace form state from a seeded source (upload / API load).
   const seed = (seeded: Record<string, unknown>, fromApi: boolean) => {
     setState(hydrateSections(sections, sectionFields, seeded))
-    setDataSource(inferDataSource(sections, seeded))
+    setDataSource(inferSectionedDataSource(sections, seeded))
     setErrors({})
     setRecordErrors([])
     setDone(false)
@@ -625,7 +660,12 @@ function Field({
     )
   }
 
+  // select / boolean / cross-ref are handled by the dropdown branch above; this
+  // covers text / integer / number / date / list (list = comma-separated text).
   const numeric = field.input === 'integer' || field.input === 'number'
+  const slotProps: Record<string, unknown> = {}
+  if (field.input === 'integer') slotProps.htmlInput = { step: 1 }
+  if (field.input === 'date') slotProps.inputLabel = { shrink: true }
   return (
     <TextField
       label={field.label}
@@ -633,10 +673,9 @@ function Field({
       onChange={(e) => onChange(e.target.value)}
       required={field.required}
       disabled={disabled}
-      type={numeric ? 'number' : 'text'}
-      slotProps={
-        field.input === 'integer' ? { htmlInput: { step: 1 } } : undefined
-      }
+      type={field.input === 'date' ? 'date' : numeric ? 'number' : 'text'}
+      slotProps={Object.keys(slotProps).length ? slotProps : undefined}
+      // 'list' inputs are comma-separated; the help text explains the format.
       helperText={help}
       error={Boolean(error)}
       fullWidth
@@ -724,4 +763,355 @@ function triggerDownload(blob: Blob, filename: string) {
   a.click()
   a.remove()
   URL.revokeObjectURL(url)
+}
+
+// ── Composite (sectioned) form: sample ───────────────────────────────────────
+// Nested sections with conditional gating reused from the filter model
+// (requiresDataSource / requiresProject + the synapse rule, ADR-0003) and
+// repeatable array sections. The non-persisted data_source toggle plus the
+// project drive which sections show; on upload the arm is reverse-inferred
+// (ADR-0004).
+
+function initState(form: FormKind): Record<string, CompositeSection> {
+  const out: Record<string, CompositeSection> = {}
+  for (const s of sectionsFor(form)) out[s.section] = s.repeatable ? [] : emptyEntry()
+  return out
+}
+
+function CompositeAuthoringForm({
+  form,
+  autoLoadId,
+}: {
+  form: FormKind
+  autoLoadId?: string
+}) {
+  const meta = FORM_META[form]
+  const sections = sectionsFor(form)
+
+  const [state, setState] = React.useState<Record<string, CompositeSection>>(() =>
+    initState(form),
+  )
+  const [arm, setArm] = React.useState<DataSource>('experimental')
+  const [armLocked, setArmLocked] = React.useState(false)
+  const [passthrough, setPassthrough] = React.useState<Record<string, unknown>>(
+    {},
+  )
+  const [errors, setErrors] = React.useState<Record<string, string>>({})
+  const [generalError, setGeneralError] = React.useState<string | undefined>()
+  const [done, setDone] = React.useState(false)
+  const [stale, setStale] = React.useState(false)
+  const [conflict, setConflict] = React.useState(false)
+  const [seedError, setSeedError] = React.useState<string | undefined>()
+  const [loadId, setLoadId] = React.useState(autoLoadId ?? '')
+
+  const sampleEntry = state['sample'] as SectionEntry
+  const project = sampleEntry.values['project'] ?? ''
+  const requiredArm = PROJECT_REQUIRES_DATA_SOURCE[project] as DataSource | undefined
+  const effectiveArm = requiredArm ?? arm // synapse ⇒ experimental (ADR-0003)
+  const armDisabled = Boolean(requiredArm) || armLocked
+  const idValue = (sampleEntry.values['sample_id'] ?? '').trim()
+
+  // Replace form state from a seeded source (upload / API load).
+  const seed = (seeded: Record<string, unknown>, fromApi: boolean) => {
+    const h = hydrateComposite(form, seeded)
+    setState(h.state)
+    setPassthrough(h.passthrough)
+    setErrors({})
+    setGeneralError(undefined)
+    setDone(false)
+    setSeedError(undefined)
+    if (fromApi) {
+      // API-seeded: locked from the record + staleness warning (ADR-0004).
+      setStale(true)
+      setConflict(false)
+      if (h.dataSource) {
+        setArm(h.dataSource)
+        setArmLocked(true)
+      } else {
+        setArmLocked(false)
+      }
+    } else {
+      setStale(false)
+      const inferred = inferDataSource(seeded)
+      if (inferred.kind === 'ambiguous') {
+        setArmLocked(false) // conflict / none → editable
+        setConflict(inferred.reason === 'conflict')
+      } else {
+        setArm(inferred.kind) // single-sided → infer + lock
+        setArmLocked(true)
+        setConflict(false)
+      }
+    }
+  }
+
+  async function handleUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    e.target.value = '' // allow re-uploading the same file
+    if (!file) return
+    try {
+      seed(await parseToml(form, await file.text()), false)
+    } catch (err) {
+      setSeedError(err instanceof Error ? err.message : String(err))
+    }
+  }
+
+  async function handleLoad(id: string) {
+    const trimmed = id.trim()
+    if (!trimmed) return
+    try {
+      seed(await loadToml(form, trimmed), true)
+    } catch (err) {
+      setSeedError(err instanceof Error ? err.message : String(err))
+    }
+  }
+
+  // Deep-link auto-load (?id=…): pull from the API once on mount.
+  React.useEffect(() => {
+    if (autoLoadId) handleLoad(autoLoadId)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoLoadId, form])
+
+  // One update path for both repeatable (by idx) and single sections.
+  const updateEntry = (
+    section: string,
+    idx: number | undefined,
+    patch: (e: SectionEntry) => SectionEntry,
+  ) =>
+    setState((prev) => {
+      const cur = prev[section]
+      if (Array.isArray(cur)) {
+        return { ...prev, [section]: cur.map((e, i) => (i === idx ? patch(e) : e)) }
+      }
+      return { ...prev, [section]: patch(cur as SectionEntry) }
+    })
+
+  const setEntryValue = (
+    section: string,
+    field: string,
+    v: string,
+    idx?: number,
+  ) => {
+    setDone(false)
+    updateEntry(section, idx, (e) => ({
+      ...e,
+      values: { ...e.values, [field]: v },
+    }))
+  }
+
+  const setEntryCustom = (section: string, custom: CustomField[], idx?: number) =>
+    updateEntry(section, idx, (e) => ({ ...e, custom }))
+
+  const addEntry = (section: string) =>
+    setState((prev) => ({
+      ...prev,
+      [section]: [...(prev[section] as SectionEntry[]), emptyEntry()],
+    }))
+  const removeEntry = (section: string, idx: number) =>
+    setState((prev) => ({
+      ...prev,
+      [section]: (prev[section] as SectionEntry[]).filter((_, i) => i !== idx),
+    }))
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    setDone(false)
+    // Thin id check (full IdStr rules run on the backend); id is optional here.
+    if (idValue && !ID_PATTERN.test(idValue)) {
+      setErrors({ 'sample.sample_id': 'Invalid id: letters, digits, . _ - only' })
+      setGeneralError(undefined)
+      return
+    }
+    const payload = buildCompositePayload(form, state, passthrough)
+    const result = await postToml(form, payload, meta.filename)
+    if (result.status === 'invalid') {
+      const byPath = errorsByPath(result.errors)
+      setErrors(byPath)
+      setGeneralError(byPath[''])
+      return
+    }
+    setErrors({})
+    setGeneralError(undefined)
+    triggerDownload(result.blob, result.filename)
+    setDone(true)
+  }
+
+  const fieldKey = (section: string, fieldName: string, idx?: number) =>
+    idx === undefined ? `${section}.${fieldName}` : `${section}.${idx}.${fieldName}`
+
+  const visible = (s: FormSection) => {
+    if (s.requiresProject === 'chromatin' && project === 'synapse') return false
+    if (s.requiresDataSource && s.requiresDataSource !== effectiveArm) return false
+    return true
+  }
+  // chromatin is hidden for synapse (above) and disabled for any other
+  // non-chromatin project — gating reused from the filter logic.
+  const sectionDisabled = (s: FormSection) =>
+    s.requiresProject === 'chromatin' && project !== '' && project !== 'chromatin'
+
+  const renderFields = (
+    section: string,
+    entry: SectionEntry,
+    idx: number | undefined,
+    disabled: boolean,
+  ) =>
+    fieldsForSection(form, section)
+      .filter((f) => !f.derived)
+      .map((f) => (
+        <Field
+          key={f.field}
+          field={f}
+          value={entry.values[f.field] ?? ''}
+          error={errors[fieldKey(section, f.field, idx)]}
+          onChange={(v) => setEntryValue(section, f.field, v, idx)}
+          disabled={disabled}
+        />
+      ))
+
+  return (
+    <Box component="form" onSubmit={handleSubmit} noValidate>
+      <Stack spacing={2}>
+        <Stack direction="row" spacing={2} alignItems="center" flexWrap="wrap">
+          <Button variant="outlined" component="label" size="small">
+            Upload {meta.filename}
+            <input
+              type="file"
+              accept=".toml,text/plain"
+              hidden
+              onChange={handleUpload}
+            />
+          </Button>
+          <TextField
+            label="Load from portal by id"
+            value={loadId}
+            onChange={(e) => setLoadId(e.target.value)}
+            size="small"
+          />
+          <Button variant="outlined" size="small" onClick={() => handleLoad(loadId)}>
+            Load
+          </Button>
+        </Stack>
+
+        {seedError && <Alert severity="error">{seedError}</Alert>}
+        {conflict && (
+          <Alert severity="warning">
+            This file has both experimental and simulation blocks. Pick the data
+            source manually, then remove whichever blocks don't belong.
+          </Alert>
+        )}
+        {stale && (
+          <Alert severity="warning">
+            Loaded from the portal — this may lag the on-disk file. Re-check
+            before saving over newer changes.
+          </Alert>
+        )}
+        {generalError && <Alert severity="error">{generalError}</Alert>}
+
+        {sections.map((s) => {
+          if (!visible(s)) return null
+          const disabled = sectionDisabled(s)
+          return (
+            <Box key={s.section}>
+              <Divider sx={{ mb: 1.5 }} />
+              <Typography variant="subtitle1" gutterBottom>
+                {s.title}
+              </Typography>
+
+              {s.section === 'sample' && (
+                <FormControl disabled={armDisabled} sx={{ mb: 1.5 }}>
+                  <FormLabel>Data source</FormLabel>
+                  <RadioGroup
+                    row
+                    value={effectiveArm}
+                    onChange={(e) => {
+                      setArm(e.target.value as DataSource)
+                      setDone(false)
+                    }}
+                  >
+                    <FormControlLabel
+                      value="experimental"
+                      control={<Radio />}
+                      label="Experimental"
+                    />
+                    <FormControlLabel
+                      value="simulation"
+                      control={<Radio />}
+                      label="Simulation"
+                    />
+                  </RadioGroup>
+                  <FormHelperText>
+                    {requiredArm
+                      ? 'Forced to experimental — synapse data is never simulation-derived.'
+                      : armLocked
+                        ? 'Inferred from the loaded file.'
+                        : 'Drives which sections apply. Not written into the file.'}
+                  </FormHelperText>
+                </FormControl>
+              )}
+
+              {s.repeatable ? (
+                <Stack spacing={2}>
+                  {(state[s.section] as SectionEntry[]).map((entry, idx) => (
+                    <Box
+                      key={idx}
+                      sx={{ border: 1, borderColor: 'divider', borderRadius: 1, p: 2 }}
+                    >
+                      <Stack spacing={2}>
+                        {renderFields(s.section, entry, idx, disabled)}
+                        <CustomFields
+                          fields={entry.custom}
+                          onChange={(c) => setEntryCustom(s.section, c, idx)}
+                        />
+                      </Stack>
+                      <Button
+                        onClick={() => removeEntry(s.section, idx)}
+                        size="small"
+                        color="error"
+                        startIcon={<DeleteOutlineIcon />}
+                        sx={{ mt: 1 }}
+                      >
+                        Remove {s.title}
+                      </Button>
+                    </Box>
+                  ))}
+                  <Box>
+                    <Button onClick={() => addEntry(s.section)} size="small">
+                      Add {s.title}
+                    </Button>
+                  </Box>
+                </Stack>
+              ) : (
+                <Stack spacing={2}>
+                  {renderFields(
+                    s.section,
+                    state[s.section] as SectionEntry,
+                    undefined,
+                    disabled,
+                  )}
+                  {!disabled && (
+                    <CustomFields
+                      fields={(state[s.section] as SectionEntry).custom}
+                      onChange={(c) => setEntryCustom(s.section, c)}
+                    />
+                  )}
+                </Stack>
+              )}
+            </Box>
+          )
+        })}
+
+        <Typography variant="body2" color="text.secondary">
+          Save as{' '}
+          <code>{meta.placement.replace('{id}', idValue || '<id>')}</code>
+        </Typography>
+
+        <Box>
+          <Button type="submit" variant="contained">
+            Download {meta.filename}
+          </Button>
+        </Box>
+
+        {done && <Alert severity="success">Downloaded {meta.filename}.</Alert>}
+      </Stack>
+    </Box>
+  )
 }

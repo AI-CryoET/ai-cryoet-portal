@@ -8,43 +8,67 @@ completeness and the codegen-parity drift tests live in
 
 Each form is split into **sections** (``FORM_SECTIONS``), one per TOML table.
 A section is either *root* (its fields sit at the top level of the file, like
-``md_run.toml``), a named ``[table]``, or a repeatable ``[[table]]``. Every
-field on a section's backing model must be classified in ``FORM_FIELDS`` —
-authored fields render; ``authored=False`` fields are MDOC/MRC/directory-derived
-and are listed only so the completeness drift test can prove nothing was missed.
+``md_run.toml``), a named ``[table]``, or a repeatable ``[[table]]``. Only the
+**authored** subset of each section's model is rendered. Two field roles are
+collected but not written as ordinary values:
 
-The directory-derived identity field (``md_run_id`` / ``acquisition_id``) is the
-non-persisted *intended-id* field (``is_id=True``): collected to drive the
-"save as …" placement hint and to satisfy model validation, but dropped from the
-written file by the endpoint.
+- the directory-derived identity field (``md_run_id`` / ``acquisition_id`` /
+  ``sample_id``, injected from the folder name by the loader) is the
+  non-persisted *intended-id* field (``is_id=True``): it drives the "save as …"
+  placement hint and satisfies model validation, but the endpoint drops it;
+- ``derived=True`` fields are populated on ingest (MDOC/MRC/directory) and are
+  never authored — they are classified here only so the completeness drift test
+  stays honest, and the renderer skips them.
+
+The ``sample`` and ``acquisition`` forms are **composite**: their backing model
+(``SampleRecord`` / ``AcquisitionFile``) is built from nested sub-models, one
+per TOML table, so ``FORM_SECTIONS`` records the per-section structure (title,
+repeatability, conditional gating, cross-ref/immutability metadata). The
+``md_run`` form is flat — a single root section whose model *is* the form model.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from schema.schema import (
     Acquisition,
+    AcquisitionFile,
     Annotation,
+    Chromatin,
+    Fiducial,
+    Freezing,
+    Label,
+    LabName,
     MdRun,
     MdSource,
+    Milling,
     PostProcessedTomogram,
+    Project,
     RawTomogram,
+    Sample,
+    SampleRecord,
     TiltSeries,
 )
 
 
 @dataclass(frozen=True)
 class FormField:
-    form: str  # 'md_run' | 'acquisition'
+    form: str  # 'md_run' | 'acquisition' | 'sample'
     section: str  # toml table the field belongs to
     field: str  # model field name; also the TOML key (except the id field)
     label: str
-    input: str  # 'text' | 'integer' | 'number' | 'select' | 'boolean' | 'date'
+    # 'text' | 'integer' | 'number' | 'select' | 'multiselect' | 'boolean'
+    # | 'date' | 'list'
+    input: str
     required: bool = False
     # The non-persisted intended-id field: collected for the placement hint and
     # model validation, never written into the output file (directory-derived).
     is_id: bool = False
+    # Ingest-populated (MDOC/MRC/directory) — classified for the drift test but
+    # not rendered as an authored input.
+    derived: bool = False
+    options: tuple[str, ...] = ()  # enum / fixed select choices (e.g. quality 1-5)
     help: str = ""
     # Authored fields render; derived (MDOC/MRC/directory) fields are classified
     # but hidden — listed only so the completeness drift test stays honest.
@@ -56,8 +80,6 @@ class FormField:
     # API-assisted free-text: suggest ids of this kind from the loaded sample
     # context (e.g. md_source.md_run_id suggests the sample's known md_runs).
     api_suggest: str | None = None
-    # Fixed select options (e.g. acquisition_quality 1–5).
-    options: tuple[str, ...] = ()
     # Model alias, when the TOML key differs from the field name (tilt_series_id
     # is authored as ``id``). Used to remap uploaded keys back to the field.
     alias: str | None = None
@@ -66,17 +88,23 @@ class FormField:
 @dataclass(frozen=True)
 class FormSection:
     form: str
-    section: str  # toml table name
+    section: str  # nested key on the form model; the TOML table name
     title: str  # display heading ('' for a root single-section form)
-    # Python-only: backing model for the completeness drift test. Not codegen'd.
-    model: type
+    # Pydantic sub-model backing this section. Used by the completeness drift
+    # test and (server-side) never emitted to TS.
+    model: type = field(default=object, repr=False)
     # [[table]] — add/remove multiple entries.
     repeatable: bool = False
     # Fields sit at the file's top level (md_run.toml) rather than under a
     # ``[section]`` table. Drives whether the payload nests under the key.
     root: bool = False
-    # Section appears only for this data_source (md_source ⇒ simulation).
-    requires_data_source: str | None = None
+    # Conditional gating, mirroring the filter GROUPS metadata (filter_fields.py
+    # / filterFields.ts): an arm-gated section shows only for that data_source
+    # (md_source ⇒ simulation); a chromatin-gated section hides for synapse and
+    # disables for other non-chromatin projects (see ADR-0003 + the filter
+    # gating).
+    requires_data_source: str | None = None  # 'experimental' | 'simulation'
+    requires_project: str | None = None  # 'chromatin'
     # Extra "literal" cross-ref options always offered alongside in-form ids.
     cross_ref_literals: tuple[str, ...] = ()
     # The id namespace this section's required-id field feeds. Cross-ref fields
@@ -96,6 +124,9 @@ class FormMeta:
     # id is the directory name, not file content — hint only.
     placement: str
     filename: str
+    # Composite forms post nested ``{section: data}`` and render per-section;
+    # flat forms post their fields at the top level.
+    composite: bool = False
 
 
 FORM_META: list[FormMeta] = [
@@ -110,38 +141,81 @@ FORM_META: list[FormMeta] = [
         title="Acquisition",
         placement="{sample_id}/{id}/acquisition.toml",
         filename="acquisition.toml",
+        composite=True,
+    ),
+    FormMeta(
+        form="sample",
+        title="Sample",
+        placement="{id}/sample.toml",
+        filename="sample.toml",
+        composite=True,
     ),
 ]
+
+
+# Top-level fields of a composite form's model that are not authored as form
+# sections. ``acquisitions`` is the acquisition form's domain; ``simulation``
+# (only the derived dataset_type) and ``md_run`` (its own md_run.toml file) are
+# not authored in sample.toml. Pinned so a *new* sub-model can't slip in
+# unclassified (test_form_fields_drift).
+EXCLUDED_TOP_FIELDS: dict[str, set[str]] = {
+    "sample": {"simulation", "md_run", "acquisitions"},
+}
 
 
 FORM_SECTIONS: list[FormSection] = [
     # md_run.toml is a flat top-level file: one root section, no [md_run] table.
     FormSection("md_run", "md_run", "", MdRun, root=True),
-    # acquisition.toml: [acquisition] + optional [md_source] + [[tilt_series]].
-    FormSection("acquisition", "acquisition", "Acquisition", Acquisition),
+
+    # ---- acquisition.toml (composite; [acquisition] + optional [md_source] +
+    #      [[tilt_series]] + processing log) ---------------------------------
+    FormSection("acquisition", "acquisition", "Acquisition", model=Acquisition),
     FormSection(
-        "acquisition", "md_source", "MD source (simulation)", MdSource,
+        "acquisition", "md_source", "MD source (simulation)", model=MdSource,
         requires_data_source="simulation",
     ),
     FormSection(
-        "acquisition", "tilt_series", "Tilt series", TiltSeries,
+        "acquisition", "tilt_series", "Tilt series", model=TiltSeries,
         repeatable=True, cross_ref_literals=("Frames",),
         id_namespace="tilt_series", immutable_on_load=True,
     ),
     # Processing log (ADR-0004): raw + post-processed tomograms share one id
     # namespace ("tomogram") that derived_from / target_tomogram reference.
     FormSection(
-        "acquisition", "raw_tomogram", "Raw tomogram", RawTomogram,
+        "acquisition", "raw_tomogram", "Raw tomogram", model=RawTomogram,
         id_namespace="tomogram", immutable_on_load=True,
     ),
     FormSection(
         "acquisition", "post_processed_tomogram", "Post-processed tomograms",
-        PostProcessedTomogram, repeatable=True,
+        model=PostProcessedTomogram, repeatable=True,
         id_namespace="tomogram", immutable_on_load=True,
     ),
     FormSection(
-        "acquisition", "annotation", "Annotations", Annotation,
+        "acquisition", "annotation", "Annotations", model=Annotation,
         repeatable=True, immutable_on_load=True,
+    ),
+
+    # ---- sample.toml (composite; mirrors templates/sample.toml) -----------
+    FormSection("sample", "sample", "Sample", model=Sample),
+    FormSection(
+        "sample", "chromatin", "Chromatin", model=Chromatin,
+        requires_project="chromatin",
+    ),
+    FormSection(
+        "sample", "label", "Gold-nanoparticle labels", model=Label,
+        repeatable=True, requires_data_source="experimental",
+    ),
+    FormSection(
+        "sample", "fiducial", "Fiducial AuNP", model=Fiducial,
+        requires_data_source="experimental",
+    ),
+    FormSection(
+        "sample", "freezing", "Freezing / grid prep", model=Freezing,
+        requires_data_source="experimental",
+    ),
+    FormSection(
+        "sample", "milling", "Milling", model=Milling,
+        requires_data_source="experimental",
     ),
 ]
 
@@ -293,9 +367,92 @@ FORM_FIELDS: list[FormField] = [
         help="The tomogram in this acquisition this annotation segments.",
     ),
     *_derived("acquisition", "annotation", "files"),
+
+    # ---- sample / [sample] ------------------------------------------------
+    FormField(
+        "sample", "sample", "sample_id", "Sample id", "text",
+        is_id=True,
+        help="Sample directory name. Sets identity; not written into the file.",
+    ),
+    # data_source is the non-persisted arm shape control (derived from the
+    # directory on ingest): it drives which sections show but is never written.
+    # The renderer surfaces it as a dedicated experimental/simulation toggle.
+    FormField("sample", "sample", "data_source", "Data source", "select", derived=True),
+    FormField(
+        "sample", "sample", "project", "Project", "select",
+        required=True, options=tuple(p.value for p in Project),
+    ),
+    FormField(
+        "sample", "sample", "lab_name", "Lab", "select",
+        options=tuple(n.value for n in LabName),
+    ),
+    FormField("sample", "sample", "type", "Type", "text",
+              help="e.g. tissue | cellular | reconstituted"),
+    FormField("sample", "sample", "cell_type", "Cell type", "text"),
+    FormField("sample", "sample", "description", "Description", "text"),
+    FormField("sample", "sample", "path", "Path", "text", derived=True),
+
+    # ---- sample / [chromatin] --------------------------------------------
+    FormField("sample", "chromatin", "substrate", "Substrate", "text",
+              help="e.g. synthetic | native | n/a"),
+    FormField("sample", "chromatin", "linker_length_bp", "Linker length (bp)", "number"),
+    FormField("sample", "chromatin", "linker_pattern", "Linker pattern", "list",
+              help="List of ints, e.g. 20, 50, 20, 50"),
+    FormField("sample", "chromatin", "linker_distribution", "Linker distribution", "text"),
+    FormField("sample", "chromatin", "buffer", "Buffer", "text"),
+    FormField("sample", "chromatin", "ptm", "PTM", "text"),
+    FormField("sample", "chromatin", "histone_variants", "Histone variants", "text"),
+    FormField("sample", "chromatin", "transcription_factors", "Transcription factors", "text"),
+    FormField("sample", "chromatin", "nucleosome_count", "Nucleosome count", "integer"),
+    FormField("sample", "chromatin", "dna_length_bp", "DNA length (bp)", "integer"),
+    FormField("sample", "chromatin", "nucleosome_uM", "Nucleosome (uM)", "number"),
+    FormField("sample", "chromatin", "sequence_identity", "Sequence identity", "text"),
+    FormField("sample", "chromatin", "nucleosome_footprint", "Nucleosome footprint", "list",
+              help="List of ints"),
+    FormField("sample", "chromatin", "linker_length_fraction",
+              "Linker length fraction", "number", derived=True),
+
+    # ---- sample / [[label]] (repeatable) ---------------------------------
+    FormField("sample", "label", "label_target", "Label target", "text",
+              help="protein name, e.g. AMPAR, NMDAR"),
+    FormField("sample", "label", "aunp_type", "AuNP type", "text",
+              help="monomer, dimer, trimer, …"),
+    FormField("sample", "label", "aunp_size_nm", "AuNP size (nm)", "list",
+              help="float or list, e.g. 1.4 or 1.4, 2.2"),
+    FormField("sample", "label", "conjugation", "Conjugation", "text"),
+    FormField("sample", "label", "conjugation_target", "Conjugation target", "text"),
+    FormField("sample", "label", "fluorophore", "Fluorophore", "text"),
+    FormField("sample", "label", "notes", "Notes", "text"),
+
+    # ---- sample / [fiducial] ---------------------------------------------
+    FormField("sample", "fiducial", "aunp_size_nm", "AuNP size (nm)", "number"),
+    FormField("sample", "fiducial", "vendor", "Vendor", "text"),
+    FormField("sample", "fiducial", "catalog_number", "Catalog number", "text"),
+    FormField("sample", "fiducial", "product_name", "Product name", "text"),
+    FormField("sample", "fiducial", "concentration_value", "Concentration value", "number"),
+    FormField("sample", "fiducial", "concentration_unit", "Concentration unit", "text"),
+
+    # ---- sample / [freezing] ---------------------------------------------
+    FormField("sample", "freezing", "grid_type", "Grid type", "text"),
+    FormField("sample", "freezing", "solution_type", "Solution type", "text"),
+    FormField("sample", "freezing", "cryoprotectant", "Cryoprotectant", "text"),
+    FormField("sample", "freezing", "method", "Method", "text",
+              help="plunge_frozen | HPF"),
+    FormField("sample", "freezing", "planchette_size", "Planchette size", "text"),
+    FormField("sample", "freezing", "spacer_thickness", "Spacer thickness", "text"),
+
+    # ---- sample / [milling] ----------------------------------------------
+    FormField("sample", "milling", "scheme", "Scheme", "text", help="e.g. cryo-FIB"),
+    FormField("sample", "milling", "date", "Milling date", "date"),
+    FormField("sample", "milling", "quality", "Quality", "text"),
 ]
 
 
-# Section identity -> backing Pydantic model. Drives the completeness drift
-# test: every field on a section's model must be classified in FORM_FIELDS.
-FORMS = {(s.form, s.section): s.model for s in FORM_SECTIONS}
+# Form kind -> backing Pydantic model. Drives the completeness drift test:
+# every field on a covered model (recursing into a composite form's section
+# sub-models) must be classified in FORM_FIELDS.
+FORMS = {
+    "md_run": MdRun,
+    "acquisition": AcquisitionFile,
+    "sample": SampleRecord,
+}

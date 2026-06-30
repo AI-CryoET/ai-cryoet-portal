@@ -43,7 +43,8 @@ def render() -> str:
     for m in sorted(FORM_META, key=lambda m: m.form):
         meta_lines.append(
             f"  {m.form}: {{ form: {_ts_str(m.form)}, title: {_ts_str(m.title)}, "
-            f"placement: {_ts_str(m.placement)}, filename: {_ts_str(m.filename)} }},"
+            f"placement: {_ts_str(m.placement)}, filename: {_ts_str(m.filename)}, "
+            f"composite: {str(m.composite).lower()} }},"
         )
 
     section_lines = []
@@ -54,6 +55,7 @@ def render() -> str:
             f"title: {_ts_str(s.title)}, repeatable: {str(s.repeatable).lower()}, "
             f"root: {str(s.root).lower()}, "
             f"requiresDataSource: {_ts_str_or_null(s.requires_data_source)}, "
+            f"requiresProject: {_ts_str_or_null(s.requires_project)}, "
             f"crossRefLiterals: {_ts_str_array(s.cross_ref_literals)}, "
             f"idNamespace: {_ts_str_or_null(s.id_namespace)}, "
             f"immutableOnLoad: {str(s.immutable_on_load).lower()} "
@@ -69,7 +71,7 @@ def render() -> str:
             f"form: {_ts_str(f.form)}, section: {_ts_str(f.section)}, "
             f"field: {_ts_str(f.field)}, label: {_ts_str(f.label)}, "
             f"input: {_ts_str(f.input)}, required: {str(f.required).lower()}, "
-            f"isId: {str(f.is_id).lower()}, "
+            f"isId: {str(f.is_id).lower()}, derived: {str(f.derived).lower()}, "
             f"crossRef: {_ts_str_or_null(f.cross_ref)}, "
             f"apiSuggest: {_ts_str_or_null(f.api_suggest)}, "
             f"options: {_ts_str_array(f.options)}, "
@@ -91,7 +93,9 @@ export type FieldInput =
   | 'select'
   | 'multiselect'
   | 'boolean'
-  | 'date';
+  | 'date'
+  | 'list';
+export type DataSource = 'experimental' | 'simulation';
 
 export interface FormField {{
   form: FormKind;
@@ -101,20 +105,22 @@ export interface FormField {{
   input: FieldInput;
   required: boolean;
   isId: boolean; // intended-id field: drives the placement hint, not written
-  crossRef: string | null; // dropdown of in-form ids from this section
+  derived: boolean; // ingest-populated; collected for round-trip, not rendered
+  crossRef: string | null; // dropdown of in-form ids from this namespace
   apiSuggest: string | null; // API-suggested free-text (e.g. 'md_run')
-  options: string[]; // fixed select options (e.g. quality 1–5)
+  options: string[]; // fixed select options (e.g. quality 1–5, enum choices)
   alias: string | null; // TOML key when it differs from the field name
   help: string;
 }}
 
 export interface FormSection {{
   form: FormKind;
-  section: string; // toml table name
+  section: string; // nested key on the form model; the TOML table name
   title: string; // display heading ('' for a root single-section form)
   repeatable: boolean; // [[table]] — add/remove entries
   root: boolean; // fields at file top level (no [section] table)
-  requiresDataSource: string | null; // gated section (md_source ⇒ simulation)
+  requiresDataSource: string | null; // arm-gated (md_source ⇒ simulation)
+  requiresProject: string | null; // chromatin: hide for synapse, disable else
   crossRefLiterals: string[]; // literal cross-ref options (e.g. 'Frames')
   idNamespace: string | null; // id namespace this section's id field feeds
   immutableOnLoad: boolean; // loaded entries read-only; append-only (ADR-0004)
@@ -125,6 +131,7 @@ export interface FormMeta {{
   title: string;
   placement: string; // hint template; {{id}} filled from the intended-id field
   filename: string;
+  composite: boolean; // nested per-section form vs flat single-model form
 }}
 
 // Shared id check (mirrors schema.py _ID_PATTERN). Thin structural guard only —

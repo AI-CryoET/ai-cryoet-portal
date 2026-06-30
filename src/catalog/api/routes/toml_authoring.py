@@ -4,12 +4,13 @@ Validates posted JSON against the matching Pydantic model and is
 status-discriminated: valid -> 200 with the clean value-only ``.toml`` body and
 a ``Content-Disposition`` attachment header; invalid -> 422 with field-level
 errors from ``ValidationError.errors()``. Output omits comments, the
-``#:schema`` pragma, empty fields, and the directory-derived identity key.
+``#:schema`` pragma, empty fields/tables, and directory-derived identity keys.
 """
 
 from __future__ import annotations
 
 import tomllib
+from enum import Enum
 
 import tomli_w
 from fastapi import APIRouter, Body, Depends, HTTPException
@@ -21,25 +22,68 @@ from sqlalchemy.orm import Session
 from catalog import orm
 from catalog.api.deps import get_session
 from catalog.api.schemas import MdRunOut
-from schema.form_fields import FORM_FIELDS
-from schema.schema import AcquisitionFile, MdRun
+from schema.form_fields import FORM_FIELDS, FORM_META
+from schema.schema import AcquisitionFile, MdRun, SampleRecord
 
 router = APIRouter()
+
+_META = {m.form: m for m in FORM_META}
 
 # kind -> Pydantic model.
 _MODELS: dict[str, type[BaseModel]] = {
     "md_run": MdRun,
     "acquisition": AcquisitionFile,
+    "sample": SampleRecord,
 }
 
-# kind -> dotted path of the identity field to drop from output: the id is the
-# directory name, not file content (the loader injects it from the folder), so
-# it's collected for validation + the placement hint but never written. Keyed
-# by serialized (by_alias) names along the path.
-_ID_PATHS: dict[str, tuple[str, ...]] = {
-    "md_run": ("id",),
-    "acquisition": ("acquisition", "acquisition_id"),
+# Composite forms: (section, field) pairs to strip from output — the
+# directory-derived identity (is_id) and ingest-derived (derived) fields are
+# never part of the file, no matter what the client posts. Built from the
+# registry so a new derived field is dropped automatically.
+_COMPOSITE_DROP: dict[str, list[tuple[str, str]]] = {}
+for _ff in FORM_FIELDS:
+    if _ff.is_id or _ff.derived:
+        _COMPOSITE_DROP.setdefault(_ff.form, []).append((_ff.section, _ff.field))
+
+# kind -> top-level serialized (by_alias) id key to drop: the identity field is
+# the directory name, not file content. Only flat forms post their id at the
+# top level; composite forms (sample / acquisition) never post the
+# directory-derived id at the top level, so there's nothing to strip there.
+_ID_KEYS: dict[str, str] = {
+    "md_run": "id",
 }
+
+# Sample sections backed by a 1:1 sub-entity table, for pull-from-API load.
+_SAMPLE_SECTION_ORM: dict[str, type] = {
+    "chromatin": orm.ChromatinORM,
+    "fiducial": orm.FiducialORM,
+    "freezing": orm.FreezingORM,
+    "milling": orm.MillingORM,
+}
+
+
+def _enum_val(v):
+    return v.value if isinstance(v, Enum) else v
+
+
+def _toml_safe(v):
+    """Make a ``model_dump`` value tomli_w-serializable and clean: enums become
+    their value; empty tables/arrays are dropped (ADR-0001 "empties omitted").
+    Dates stay native ``datetime.date`` so they serialize as TOML date literals
+    (``mode='json'`` would stringify them into quoted strings)."""
+    if isinstance(v, Enum):
+        return v.value
+    if isinstance(v, dict):
+        out = {}
+        for k, x in v.items():
+            sx = _toml_safe(x)
+            if sx == [] or sx == {}:  # omit empty table / empty array
+                continue
+            out[k] = sx
+        return out
+    if isinstance(v, list):
+        return [_toml_safe(x) for x in v]
+    return v
 
 
 def _field_errors(exc: ValidationError, model: type[BaseModel]) -> list[dict]:
@@ -60,29 +104,6 @@ def _field_errors(exc: ValidationError, model: type[BaseModel]) -> list[dict]:
     return out
 
 
-def _pop_path(data: dict, path: tuple[str, ...]) -> None:
-    """Drop the identity key at a (possibly nested) path; no-op if absent."""
-    node = data
-    for key in path[:-1]:
-        node = node.get(key) if isinstance(node, dict) else None
-        if not isinstance(node, dict):
-            return
-    node.pop(path[-1], None)
-
-
-def _drop_empty(value):
-    """Recursively drop empty collections so an unfilled repeatable / table
-    (TOML ``foo = []``) doesn't litter the output. ``None`` is left in place:
-    exclude_none already removed model nulls, and a nested null from an extra
-    field must still reach tomli_w so it 422s rather than vanishing."""
-    if isinstance(value, dict):
-        cleaned = {k: _drop_empty(v) for k, v in value.items()}
-        return {k: v for k, v in cleaned.items() if v != [] and v != {}}
-    if isinstance(value, list):
-        return [_drop_empty(v) for v in value]
-    return value
-
-
 @router.post("/{kind}")
 def author_toml(kind: str, payload: dict = Body(...)):
     model = _MODELS.get(kind)
@@ -96,11 +117,23 @@ def author_toml(kind: str, payload: dict = Body(...)):
         )
 
     # exclude_none drops unfilled optionals (TOML has no null); by_alias matches
-    # the on-disk key names. mode="json" so dates etc. serialize to TOML-safe
-    # scalars.
-    data = obj.model_dump(by_alias=True, exclude_none=True, mode="json")
-    _pop_path(data, _ID_PATHS[kind])
-    data = _drop_empty(data)
+    # the on-disk key names.
+    dumped = obj.model_dump(by_alias=True, exclude_none=True)
+    # Composite forms strip directory-derived identity + ingest-derived fields
+    # per section before serialization; _toml_safe then prunes any section left
+    # empty by that strip.
+    meta = _META.get(kind)
+    if meta and meta.composite:
+        for section, fieldname in _COMPOSITE_DROP.get(kind, []):
+            sub = dumped.get(section)
+            if isinstance(sub, dict):
+                sub.pop(fieldname, None)
+    # _toml_safe coerces enums to their value, keeps dates native (TOML date
+    # literals), and drops empty tables/arrays.
+    data = _toml_safe(dumped)
+    id_key = _ID_KEYS.get(kind)
+    if id_key and isinstance(data, dict):
+        data.pop(id_key, None)
 
     # extra="allow" lets arbitrary client keys through; a nested null (or other
     # non-TOML scalar) only surfaces here, where exclude_none can't reach it.
@@ -156,11 +189,173 @@ def md_run_ids(sample_id: str, session: Session = Depends(get_session)):
 
 
 def _authored(form: str, section: str) -> list[str]:
+    """Authored columns of a section, from the registry — keeps the load
+    endpoint in step with what the form renders."""
     return [
         ff.field
         for ff in FORM_FIELDS
         if ff.form == form and ff.section == section and ff.authored
     ]
+
+
+def _authored_cols(section: str) -> list[str]:
+    """Authored (non-derived, non-id) columns of a sample section, from the
+    registry — keeps the load endpoint in step with what the form renders."""
+    return [
+        ff.field
+        for ff in FORM_FIELDS
+        if ff.form == "sample" and ff.section == section and not ff.derived and not ff.is_id
+    ]
+
+
+def _row_fields(row, names: list[str]) -> dict:
+    """Authored, non-None columns of an ORM row, keyed by field name (enums
+    coerced to their value)."""
+    out = {}
+    for name in names:
+        v = getattr(row, name, None)
+        if v is not None:
+            out[name] = _enum_val(v)
+    return out
+
+
+def _load_md_run(record_id: str, session: Session) -> dict:
+    row = (
+        session.execute(
+            select(orm.MdRunORM).where(orm.MdRunORM.md_run_id == record_id)
+        )
+        .scalars()
+        .first()
+    )
+    if row is None:
+        raise HTTPException(404, f"no md_run with id {record_id!r}")
+    return {
+        name: getattr(row, name)
+        for name in MdRunOut.model_fields
+        if getattr(row, name, None) is not None
+    }
+
+
+def _load_acquisition(record_id: str, sample_id: str | None, session: Session) -> dict:
+    """Reconstruct an acquisition's authored fields, shaped per-section like a
+    parsed acquisition.toml, for the deep-link editor (ADR-0004). Composite
+    identity is (sample_id, acquisition_id), so the edit link / route carries
+    both (mirrors the acquisition detail route)."""
+    if not sample_id:
+        raise HTTPException(422, "sample_id query param required for acquisition")
+    acq = session.get(orm.AcquisitionORM, (sample_id, record_id))
+    if acq is None:
+        raise HTTPException(404, f"no acquisition {record_id!r} in sample {sample_id!r}")
+    fields: dict = {"acquisition": _row_fields(acq, _authored("acquisition", "acquisition"))}
+    md = session.get(orm.MdSourceORM, (sample_id, record_id))
+    if md is not None:
+        md_fields = _row_fields(md, _authored("acquisition", "md_source"))
+        if md_fields:
+            fields["md_source"] = md_fields
+    ts_rows = (
+        session.execute(
+            select(orm.TiltSeriesORM)
+            .where(
+                orm.TiltSeriesORM.sample_id == sample_id,
+                orm.TiltSeriesORM.acquisition_id == record_id,
+            )
+            .order_by(orm.TiltSeriesORM.tilt_series_id)
+        )
+        .scalars()
+        .all()
+    )
+    ts_authored = _authored("acquisition", "tilt_series")
+    tilt_series = [_row_fields(ts, ts_authored) for ts in ts_rows]
+    if tilt_series:
+        fields["tilt_series"] = tilt_series
+
+    # Processing log (ADR-0004): loaded entries seed read-only form blocks.
+    raw = (
+        session.execute(
+            select(orm.RawTomogramORM).where(
+                orm.RawTomogramORM.sample_id == sample_id,
+                orm.RawTomogramORM.acquisition_id == record_id,
+            )
+        )
+        .scalars()
+        .first()
+    )
+    if raw is not None:
+        raw_fields = _row_fields(raw, _authored("acquisition", "raw_tomogram"))
+        if raw_fields:
+            fields["raw_tomogram"] = raw_fields
+    pp_rows = (
+        session.execute(
+            select(orm.PostProcessedTomogramORM)
+            .where(
+                orm.PostProcessedTomogramORM.sample_id == sample_id,
+                orm.PostProcessedTomogramORM.acquisition_id == record_id,
+            )
+            .order_by(orm.PostProcessedTomogramORM.tomogram_id)
+        )
+        .scalars()
+        .all()
+    )
+    pp_authored = _authored("acquisition", "post_processed_tomogram")
+    post_processed = [_row_fields(pp, pp_authored) for pp in pp_rows]
+    if post_processed:
+        fields["post_processed_tomogram"] = post_processed
+    an_rows = (
+        session.execute(
+            select(orm.AnnotationORM)
+            .where(
+                orm.AnnotationORM.sample_id == sample_id,
+                orm.AnnotationORM.acquisition_id == record_id,
+            )
+            .order_by(orm.AnnotationORM.annotation_id)
+        )
+        .scalars()
+        .all()
+    )
+    an_authored = _authored("acquisition", "annotation")
+    annotations = [_row_fields(an, an_authored) for an in an_rows]
+    if annotations:
+        fields["annotation"] = annotations
+    return fields
+
+
+def _load_sample(record_id: str, session: Session) -> dict:
+    """Reconstruct a sample's authored fields, shaped per-section like a parsed
+    sample.toml, for the deep-link editor (ADR-0004). data_source is returned so
+    the form locks the arm from the record; the directory-derived sample_id
+    pre-fills the placement hint."""
+    sample = session.get(orm.SampleORM, record_id)
+    if sample is None:
+        raise HTTPException(404, f"no sample with id {record_id!r}")
+
+    sample_fields = _row_fields(sample, _authored_cols("sample"))
+    sample_fields["sample_id"] = record_id
+    sample_fields["data_source"] = _enum_val(sample.data_source)
+    fields: dict = {"sample": sample_fields}
+
+    for section, sub_orm in _SAMPLE_SECTION_ORM.items():
+        row = session.get(sub_orm, record_id)
+        if row is not None:
+            sub = _row_fields(row, _authored_cols(section))
+            if sub:
+                fields[section] = sub
+
+    label_cols = _authored_cols("label")
+    labels = [
+        _row_fields(r, label_cols)
+        for r in session.execute(
+            select(orm.LabelORM)
+            .where(orm.LabelORM.sample_id == record_id)
+            .order_by(orm.LabelORM.ordinal)
+        )
+        .scalars()
+        .all()
+    ]
+    labels = [lbl for lbl in labels if lbl]
+    if labels:
+        fields["label"] = labels
+
+    return fields
 
 
 @router.get("/{kind}/load/{record_id}")
@@ -174,109 +369,9 @@ def load_toml(
     fields by id from the catalog DB. The data may lag the on-disk file — the
     renderer surfaces a staleness warning for this mode."""
     if kind == "md_run":
-        row = (
-            session.execute(
-                select(orm.MdRunORM).where(orm.MdRunORM.md_run_id == record_id)
-            )
-            .scalars()
-            .first()
-        )
-        if row is None:
-            raise HTTPException(404, f"no {kind} with id {record_id!r}")
-        fields = {
-            name: getattr(row, name)
-            for name in MdRunOut.model_fields
-            if getattr(row, name, None) is not None
-        }
-        return {"fields": fields}
-
+        return {"fields": _load_md_run(record_id, session)}
     if kind == "acquisition":
-        # Composite identity: (sample_id, acquisition_id). The edit link / route
-        # carries both (mirrors the acquisition detail route).
-        if not sample_id:
-            raise HTTPException(422, "sample_id query param required for acquisition")
-        acq = session.get(orm.AcquisitionORM, (sample_id, record_id))
-        if acq is None:
-            raise HTTPException(404, f"no acquisition {record_id!r} in sample {sample_id!r}")
-        fields = {"acquisition": _row_fields(acq, _authored("acquisition", "acquisition"))}
-        md = session.get(orm.MdSourceORM, (sample_id, record_id))
-        if md is not None:
-            md_fields = _row_fields(md, _authored("acquisition", "md_source"))
-            if md_fields:
-                fields["md_source"] = md_fields
-        ts_rows = (
-            session.execute(
-                select(orm.TiltSeriesORM)
-                .where(
-                    orm.TiltSeriesORM.sample_id == sample_id,
-                    orm.TiltSeriesORM.acquisition_id == record_id,
-                )
-                .order_by(orm.TiltSeriesORM.tilt_series_id)
-            )
-            .scalars()
-            .all()
-        )
-        ts_authored = _authored("acquisition", "tilt_series")
-        tilt_series = [_row_fields(ts, ts_authored) for ts in ts_rows]
-        if tilt_series:
-            fields["tilt_series"] = tilt_series
-
-        # Processing log (ADR-0004): loaded entries seed read-only form blocks.
-        raw = (
-            session.execute(
-                select(orm.RawTomogramORM).where(
-                    orm.RawTomogramORM.sample_id == sample_id,
-                    orm.RawTomogramORM.acquisition_id == record_id,
-                )
-            )
-            .scalars()
-            .first()
-        )
-        if raw is not None:
-            raw_fields = _row_fields(raw, _authored("acquisition", "raw_tomogram"))
-            if raw_fields:
-                fields["raw_tomogram"] = raw_fields
-        pp_rows = (
-            session.execute(
-                select(orm.PostProcessedTomogramORM)
-                .where(
-                    orm.PostProcessedTomogramORM.sample_id == sample_id,
-                    orm.PostProcessedTomogramORM.acquisition_id == record_id,
-                )
-                .order_by(orm.PostProcessedTomogramORM.tomogram_id)
-            )
-            .scalars()
-            .all()
-        )
-        pp_authored = _authored("acquisition", "post_processed_tomogram")
-        post_processed = [_row_fields(pp, pp_authored) for pp in pp_rows]
-        if post_processed:
-            fields["post_processed_tomogram"] = post_processed
-        an_rows = (
-            session.execute(
-                select(orm.AnnotationORM)
-                .where(
-                    orm.AnnotationORM.sample_id == sample_id,
-                    orm.AnnotationORM.acquisition_id == record_id,
-                )
-                .order_by(orm.AnnotationORM.annotation_id)
-            )
-            .scalars()
-            .all()
-        )
-        an_authored = _authored("acquisition", "annotation")
-        annotations = [_row_fields(an, an_authored) for an in an_rows]
-        if annotations:
-            fields["annotation"] = annotations
-        return {"fields": fields}
-
+        return {"fields": _load_acquisition(record_id, sample_id, session)}
+    if kind == "sample":
+        return {"fields": _load_sample(record_id, session)}
     raise HTTPException(404, f"load not supported for toml kind {kind!r}")
-
-
-def _row_fields(row, names: list[str]) -> dict:
-    """Authored, non-None columns of an ORM row, keyed by field name."""
-    return {
-        name: getattr(row, name)
-        for name in names
-        if getattr(row, name, None) is not None
-    }

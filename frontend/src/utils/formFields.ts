@@ -2,7 +2,7 @@
 // Regenerate: `pixi run form-fields`. Parity guarded by
 // tests/test_form_fields_drift.py.
 
-export type FormKind = 'acquisition' | 'md_run';
+export type FormKind = 'acquisition' | 'md_run' | 'sample';
 export type FieldInput =
   | 'text'
   | 'integer'
@@ -10,7 +10,9 @@ export type FieldInput =
   | 'select'
   | 'multiselect'
   | 'boolean'
-  | 'date';
+  | 'date'
+  | 'list';
+export type DataSource = 'experimental' | 'simulation';
 
 export interface FormField {
   form: FormKind;
@@ -20,20 +22,22 @@ export interface FormField {
   input: FieldInput;
   required: boolean;
   isId: boolean; // intended-id field: drives the placement hint, not written
-  crossRef: string | null; // dropdown of in-form ids from this section
+  derived: boolean; // ingest-populated; collected for round-trip, not rendered
+  crossRef: string | null; // dropdown of in-form ids from this namespace
   apiSuggest: string | null; // API-suggested free-text (e.g. 'md_run')
-  options: string[]; // fixed select options (e.g. quality 1–5)
+  options: string[]; // fixed select options (e.g. quality 1–5, enum choices)
   alias: string | null; // TOML key when it differs from the field name
   help: string;
 }
 
 export interface FormSection {
   form: FormKind;
-  section: string; // toml table name
+  section: string; // nested key on the form model; the TOML table name
   title: string; // display heading ('' for a root single-section form)
   repeatable: boolean; // [[table]] — add/remove entries
   root: boolean; // fields at file top level (no [section] table)
-  requiresDataSource: string | null; // gated section (md_source ⇒ simulation)
+  requiresDataSource: string | null; // arm-gated (md_source ⇒ simulation)
+  requiresProject: string | null; // chromatin: hide for synapse, disable else
   crossRefLiterals: string[]; // literal cross-ref options (e.g. 'Frames')
   idNamespace: string | null; // id namespace this section's id field feeds
   immutableOnLoad: boolean; // loaded entries read-only; append-only (ADR-0004)
@@ -44,6 +48,7 @@ export interface FormMeta {
   title: string;
   placement: string; // hint template; {id} filled from the intended-id field
   filename: string;
+  composite: boolean; // nested per-section form vs flat single-model form
 }
 
 // Shared id check (mirrors schema.py _ID_PATTERN). Thin structural guard only —
@@ -51,58 +56,109 @@ export interface FormMeta {
 export const ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 
 export const FORM_META: Record<FormKind, FormMeta> = {
-  acquisition: { form: 'acquisition', title: 'Acquisition', placement: '{sample_id}/{id}/acquisition.toml', filename: 'acquisition.toml' },
-  md_run: { form: 'md_run', title: 'MD run', placement: 'MdRuns/{id}/md_run.toml', filename: 'md_run.toml' },
+  acquisition: { form: 'acquisition', title: 'Acquisition', placement: '{sample_id}/{id}/acquisition.toml', filename: 'acquisition.toml', composite: true },
+  md_run: { form: 'md_run', title: 'MD run', placement: 'MdRuns/{id}/md_run.toml', filename: 'md_run.toml', composite: false },
+  sample: { form: 'sample', title: 'Sample', placement: '{id}/sample.toml', filename: 'sample.toml', composite: true },
 };
 
 export const FORM_SECTIONS: FormSection[] = [
-  { form: 'md_run', section: 'md_run', title: '', repeatable: false, root: true, requiresDataSource: null, crossRefLiterals: [], idNamespace: null, immutableOnLoad: false },
-  { form: 'acquisition', section: 'acquisition', title: 'Acquisition', repeatable: false, root: false, requiresDataSource: null, crossRefLiterals: [], idNamespace: null, immutableOnLoad: false },
-  { form: 'acquisition', section: 'md_source', title: 'MD source (simulation)', repeatable: false, root: false, requiresDataSource: 'simulation', crossRefLiterals: [], idNamespace: null, immutableOnLoad: false },
-  { form: 'acquisition', section: 'tilt_series', title: 'Tilt series', repeatable: true, root: false, requiresDataSource: null, crossRefLiterals: ['Frames'], idNamespace: 'tilt_series', immutableOnLoad: true },
-  { form: 'acquisition', section: 'raw_tomogram', title: 'Raw tomogram', repeatable: false, root: false, requiresDataSource: null, crossRefLiterals: [], idNamespace: 'tomogram', immutableOnLoad: true },
-  { form: 'acquisition', section: 'post_processed_tomogram', title: 'Post-processed tomograms', repeatable: true, root: false, requiresDataSource: null, crossRefLiterals: [], idNamespace: 'tomogram', immutableOnLoad: true },
-  { form: 'acquisition', section: 'annotation', title: 'Annotations', repeatable: true, root: false, requiresDataSource: null, crossRefLiterals: [], idNamespace: null, immutableOnLoad: true },
+  { form: 'md_run', section: 'md_run', title: '', repeatable: false, root: true, requiresDataSource: null, requiresProject: null, crossRefLiterals: [], idNamespace: null, immutableOnLoad: false },
+  { form: 'acquisition', section: 'acquisition', title: 'Acquisition', repeatable: false, root: false, requiresDataSource: null, requiresProject: null, crossRefLiterals: [], idNamespace: null, immutableOnLoad: false },
+  { form: 'acquisition', section: 'md_source', title: 'MD source (simulation)', repeatable: false, root: false, requiresDataSource: 'simulation', requiresProject: null, crossRefLiterals: [], idNamespace: null, immutableOnLoad: false },
+  { form: 'acquisition', section: 'tilt_series', title: 'Tilt series', repeatable: true, root: false, requiresDataSource: null, requiresProject: null, crossRefLiterals: ['Frames'], idNamespace: 'tilt_series', immutableOnLoad: true },
+  { form: 'acquisition', section: 'raw_tomogram', title: 'Raw tomogram', repeatable: false, root: false, requiresDataSource: null, requiresProject: null, crossRefLiterals: [], idNamespace: 'tomogram', immutableOnLoad: true },
+  { form: 'acquisition', section: 'post_processed_tomogram', title: 'Post-processed tomograms', repeatable: true, root: false, requiresDataSource: null, requiresProject: null, crossRefLiterals: [], idNamespace: 'tomogram', immutableOnLoad: true },
+  { form: 'acquisition', section: 'annotation', title: 'Annotations', repeatable: true, root: false, requiresDataSource: null, requiresProject: null, crossRefLiterals: [], idNamespace: null, immutableOnLoad: true },
+  { form: 'sample', section: 'sample', title: 'Sample', repeatable: false, root: false, requiresDataSource: null, requiresProject: null, crossRefLiterals: [], idNamespace: null, immutableOnLoad: false },
+  { form: 'sample', section: 'chromatin', title: 'Chromatin', repeatable: false, root: false, requiresDataSource: null, requiresProject: 'chromatin', crossRefLiterals: [], idNamespace: null, immutableOnLoad: false },
+  { form: 'sample', section: 'label', title: 'Gold-nanoparticle labels', repeatable: true, root: false, requiresDataSource: 'experimental', requiresProject: null, crossRefLiterals: [], idNamespace: null, immutableOnLoad: false },
+  { form: 'sample', section: 'fiducial', title: 'Fiducial AuNP', repeatable: false, root: false, requiresDataSource: 'experimental', requiresProject: null, crossRefLiterals: [], idNamespace: null, immutableOnLoad: false },
+  { form: 'sample', section: 'freezing', title: 'Freezing / grid prep', repeatable: false, root: false, requiresDataSource: 'experimental', requiresProject: null, crossRefLiterals: [], idNamespace: null, immutableOnLoad: false },
+  { form: 'sample', section: 'milling', title: 'Milling', repeatable: false, root: false, requiresDataSource: 'experimental', requiresProject: null, crossRefLiterals: [], idNamespace: null, immutableOnLoad: false },
 ];
 
 export const FORM_FIELDS: FormField[] = [
-  { form: 'md_run', section: 'md_run', field: 'md_run_id', label: 'Run id', input: 'text', required: true, isId: true, crossRef: null, apiSuggest: null, options: [], alias: null, help: 'Folder name under MdRuns/. Sets identity; not written into the file.' },
-  { form: 'md_run', section: 'md_run', field: 'seed', label: 'Seed', input: 'integer', required: false, isId: false, crossRef: null, apiSuggest: null, options: [], alias: null, help: 'Random seed for the simulation run.' },
-  { form: 'md_run', section: 'md_run', field: 'sample_time', label: 'Sample time', input: 'number', required: false, isId: false, crossRef: null, apiSuggest: null, options: [], alias: null, help: 'Total simulated time.' },
-  { form: 'md_run', section: 'md_run', field: 'timestep', label: 'Timestep', input: 'number', required: false, isId: false, crossRef: null, apiSuggest: null, options: [], alias: null, help: 'Integration timestep.' },
-  { form: 'md_run', section: 'md_run', field: 'computer', label: 'Computer', input: 'text', required: false, isId: false, crossRef: null, apiSuggest: null, options: [], alias: null, help: 'Machine the run executed on.' },
-  { form: 'md_run', section: 'md_run', field: 'reference_contact', label: 'Reference / contact', input: 'text', required: false, isId: false, crossRef: null, apiSuggest: null, options: [], alias: null, help: '' },
-  { form: 'md_run', section: 'md_run', field: 'force_field_version', label: 'Force field version', input: 'text', required: false, isId: false, crossRef: null, apiSuggest: null, options: [], alias: null, help: '' },
-  { form: 'acquisition', section: 'acquisition', field: 'acquisition_id', label: 'Acquisition id', input: 'text', required: true, isId: true, crossRef: null, apiSuggest: null, options: [], alias: null, help: 'Acquisition folder name. Sets identity; not written into the file.' },
-  { form: 'acquisition', section: 'acquisition', field: 'resolution', label: 'Resolution (Å)', input: 'number', required: false, isId: false, crossRef: null, apiSuggest: null, options: [], alias: null, help: 'Nominal resolution.' },
-  { form: 'acquisition', section: 'acquisition', field: 'tilt_spacing', label: 'Tilt spacing (°)', input: 'number', required: false, isId: false, crossRef: null, apiSuggest: null, options: [], alias: null, help: 'Nominal tilt spacing.' },
-  { form: 'acquisition', section: 'acquisition', field: 'defocus_range', label: 'Defocus range (µm)', input: 'text', required: false, isId: false, crossRef: null, apiSuggest: null, options: [], alias: null, help: 'Target defocus range, free text.' },
-  { form: 'acquisition', section: 'acquisition', field: 'energy_filter', label: 'Energy filter', input: 'text', required: false, isId: false, crossRef: null, apiSuggest: null, options: [], alias: null, help: '' },
-  { form: 'acquisition', section: 'acquisition', field: 'phase_plate', label: 'Phase plate', input: 'boolean', required: false, isId: false, crossRef: null, apiSuggest: null, options: [], alias: null, help: '' },
-  { form: 'acquisition', section: 'acquisition', field: 'microscope', label: 'Microscope', input: 'text', required: false, isId: false, crossRef: null, apiSuggest: null, options: [], alias: null, help: '' },
-  { form: 'acquisition', section: 'acquisition', field: 'facility', label: 'Facility', input: 'text', required: false, isId: false, crossRef: null, apiSuggest: null, options: [], alias: null, help: 'Imaging facility, e.g. Janelia.' },
-  { form: 'acquisition', section: 'acquisition', field: 'acquisition_quality', label: 'Quality (1–5)', input: 'select', required: false, isId: false, crossRef: null, apiSuggest: null, options: ['1', '2', '3', '4', '5'], alias: null, help: '5 Excellent … 1 Low (alignability + projection-image survival).' },
-  { form: 'acquisition', section: 'md_source', field: 'md_run_id', label: 'MD run id', input: 'text', required: false, isId: false, crossRef: null, apiSuggest: 'md_run', options: [], alias: null, help: 'The simulation run this acquisition came from. Suggested from the sample\'s runs; free text also accepted.' },
-  { form: 'acquisition', section: 'md_source', field: 'frame', label: 'Frame', input: 'integer', required: false, isId: false, crossRef: null, apiSuggest: null, options: [], alias: null, help: 'Frame / snapshot index within the run.' },
-  { form: 'acquisition', section: 'tilt_series', field: 'tilt_series_id', label: 'Tilt series id', input: 'text', required: true, isId: false, crossRef: null, apiSuggest: null, options: [], alias: 'id', help: 'Folder name under TiltSeries/.' },
-  { form: 'acquisition', section: 'tilt_series', field: 'derived_from', label: 'Derived from', input: 'select', required: false, isId: false, crossRef: 'tilt_series', apiSuggest: null, options: [], alias: null, help: '"Frames" (raw) or another tilt series in this acquisition.' },
-  { form: 'acquisition', section: 'tilt_series', field: 'is_aligned', label: 'Is aligned', input: 'boolean', required: false, isId: false, crossRef: null, apiSuggest: null, options: [], alias: null, help: '' },
-  { form: 'acquisition', section: 'tilt_series', field: 'alignment_software', label: 'Alignment software', input: 'text', required: false, isId: false, crossRef: null, apiSuggest: null, options: [], alias: null, help: '' },
-  { form: 'acquisition', section: 'tilt_series', field: 'alignment_method', label: 'Alignment method', input: 'text', required: false, isId: false, crossRef: null, apiSuggest: null, options: [], alias: null, help: '' },
-  { form: 'acquisition', section: 'raw_tomogram', field: 'tomogram_id', label: 'Tomogram id', input: 'text', required: true, isId: false, crossRef: null, apiSuggest: null, options: [], alias: 'id', help: 'Folder name under Tomograms/.' },
-  { form: 'acquisition', section: 'raw_tomogram', field: 'tilt_series_id', label: 'Tilt series', input: 'select', required: false, isId: false, crossRef: 'tilt_series', apiSuggest: null, options: [], alias: null, help: 'The tilt series this tomogram was reconstructed from.' },
-  { form: 'acquisition', section: 'raw_tomogram', field: 'pipeline', label: 'Pipeline', input: 'text', required: false, isId: false, crossRef: null, apiSuggest: null, options: [], alias: null, help: '' },
-  { form: 'acquisition', section: 'raw_tomogram', field: 'software', label: 'Software', input: 'text', required: false, isId: false, crossRef: null, apiSuggest: null, options: [], alias: null, help: '' },
-  { form: 'acquisition', section: 'raw_tomogram', field: 'derived_from', label: 'Derived from', input: 'multiselect', required: false, isId: false, crossRef: 'tomogram', apiSuggest: null, options: [], alias: null, help: 'Other tomograms in this acquisition this one was derived from.' },
-  { form: 'acquisition', section: 'post_processed_tomogram', field: 'tomogram_id', label: 'Tomogram id', input: 'text', required: true, isId: false, crossRef: null, apiSuggest: null, options: [], alias: 'id', help: 'Folder name under Tomograms/.' },
-  { form: 'acquisition', section: 'post_processed_tomogram', field: 'tilt_series_id', label: 'Tilt series', input: 'select', required: false, isId: false, crossRef: 'tilt_series', apiSuggest: null, options: [], alias: null, help: 'The tilt series this tomogram was reconstructed from.' },
-  { form: 'acquisition', section: 'post_processed_tomogram', field: 'denoising_software', label: 'Denoising software', input: 'text', required: false, isId: false, crossRef: null, apiSuggest: null, options: [], alias: null, help: '' },
-  { form: 'acquisition', section: 'post_processed_tomogram', field: 'ctf_software', label: 'CTF software', input: 'text', required: false, isId: false, crossRef: null, apiSuggest: null, options: [], alias: null, help: '' },
-  { form: 'acquisition', section: 'post_processed_tomogram', field: 'missing_wedge_software', label: 'Missing-wedge software', input: 'text', required: false, isId: false, crossRef: null, apiSuggest: null, options: [], alias: null, help: '' },
-  { form: 'acquisition', section: 'post_processed_tomogram', field: 'derived_from', label: 'Derived from', input: 'multiselect', required: false, isId: false, crossRef: 'tomogram', apiSuggest: null, options: [], alias: null, help: 'Other tomograms in this acquisition this one was derived from.' },
-  { form: 'acquisition', section: 'annotation', field: 'annotation_id', label: 'Annotation id', input: 'text', required: true, isId: false, crossRef: null, apiSuggest: null, options: [], alias: 'id', help: 'Folder name under Annotations/.' },
-  { form: 'acquisition', section: 'annotation', field: 'type', label: 'Type', input: 'text', required: false, isId: false, crossRef: null, apiSuggest: null, options: [], alias: null, help: '' },
-  { form: 'acquisition', section: 'annotation', field: 'target_tomogram', label: 'Target tomogram', input: 'select', required: false, isId: false, crossRef: 'tomogram', apiSuggest: null, options: [], alias: null, help: 'The tomogram in this acquisition this annotation segments.' },
+  { form: 'md_run', section: 'md_run', field: 'md_run_id', label: 'Run id', input: 'text', required: true, isId: true, derived: false, crossRef: null, apiSuggest: null, options: [], alias: null, help: 'Folder name under MdRuns/. Sets identity; not written into the file.' },
+  { form: 'md_run', section: 'md_run', field: 'seed', label: 'Seed', input: 'integer', required: false, isId: false, derived: false, crossRef: null, apiSuggest: null, options: [], alias: null, help: 'Random seed for the simulation run.' },
+  { form: 'md_run', section: 'md_run', field: 'sample_time', label: 'Sample time', input: 'number', required: false, isId: false, derived: false, crossRef: null, apiSuggest: null, options: [], alias: null, help: 'Total simulated time.' },
+  { form: 'md_run', section: 'md_run', field: 'timestep', label: 'Timestep', input: 'number', required: false, isId: false, derived: false, crossRef: null, apiSuggest: null, options: [], alias: null, help: 'Integration timestep.' },
+  { form: 'md_run', section: 'md_run', field: 'computer', label: 'Computer', input: 'text', required: false, isId: false, derived: false, crossRef: null, apiSuggest: null, options: [], alias: null, help: 'Machine the run executed on.' },
+  { form: 'md_run', section: 'md_run', field: 'reference_contact', label: 'Reference / contact', input: 'text', required: false, isId: false, derived: false, crossRef: null, apiSuggest: null, options: [], alias: null, help: '' },
+  { form: 'md_run', section: 'md_run', field: 'force_field_version', label: 'Force field version', input: 'text', required: false, isId: false, derived: false, crossRef: null, apiSuggest: null, options: [], alias: null, help: '' },
+  { form: 'acquisition', section: 'acquisition', field: 'acquisition_id', label: 'Acquisition id', input: 'text', required: true, isId: true, derived: false, crossRef: null, apiSuggest: null, options: [], alias: null, help: 'Acquisition folder name. Sets identity; not written into the file.' },
+  { form: 'acquisition', section: 'acquisition', field: 'resolution', label: 'Resolution (Å)', input: 'number', required: false, isId: false, derived: false, crossRef: null, apiSuggest: null, options: [], alias: null, help: 'Nominal resolution.' },
+  { form: 'acquisition', section: 'acquisition', field: 'tilt_spacing', label: 'Tilt spacing (°)', input: 'number', required: false, isId: false, derived: false, crossRef: null, apiSuggest: null, options: [], alias: null, help: 'Nominal tilt spacing.' },
+  { form: 'acquisition', section: 'acquisition', field: 'defocus_range', label: 'Defocus range (µm)', input: 'text', required: false, isId: false, derived: false, crossRef: null, apiSuggest: null, options: [], alias: null, help: 'Target defocus range, free text.' },
+  { form: 'acquisition', section: 'acquisition', field: 'energy_filter', label: 'Energy filter', input: 'text', required: false, isId: false, derived: false, crossRef: null, apiSuggest: null, options: [], alias: null, help: '' },
+  { form: 'acquisition', section: 'acquisition', field: 'phase_plate', label: 'Phase plate', input: 'boolean', required: false, isId: false, derived: false, crossRef: null, apiSuggest: null, options: [], alias: null, help: '' },
+  { form: 'acquisition', section: 'acquisition', field: 'microscope', label: 'Microscope', input: 'text', required: false, isId: false, derived: false, crossRef: null, apiSuggest: null, options: [], alias: null, help: '' },
+  { form: 'acquisition', section: 'acquisition', field: 'facility', label: 'Facility', input: 'text', required: false, isId: false, derived: false, crossRef: null, apiSuggest: null, options: [], alias: null, help: 'Imaging facility, e.g. Janelia.' },
+  { form: 'acquisition', section: 'acquisition', field: 'acquisition_quality', label: 'Quality (1–5)', input: 'select', required: false, isId: false, derived: false, crossRef: null, apiSuggest: null, options: ['1', '2', '3', '4', '5'], alias: null, help: '5 Excellent … 1 Low (alignability + projection-image survival).' },
+  { form: 'acquisition', section: 'md_source', field: 'md_run_id', label: 'MD run id', input: 'text', required: false, isId: false, derived: false, crossRef: null, apiSuggest: 'md_run', options: [], alias: null, help: 'The simulation run this acquisition came from. Suggested from the sample\'s runs; free text also accepted.' },
+  { form: 'acquisition', section: 'md_source', field: 'frame', label: 'Frame', input: 'integer', required: false, isId: false, derived: false, crossRef: null, apiSuggest: null, options: [], alias: null, help: 'Frame / snapshot index within the run.' },
+  { form: 'acquisition', section: 'tilt_series', field: 'tilt_series_id', label: 'Tilt series id', input: 'text', required: true, isId: false, derived: false, crossRef: null, apiSuggest: null, options: [], alias: 'id', help: 'Folder name under TiltSeries/.' },
+  { form: 'acquisition', section: 'tilt_series', field: 'derived_from', label: 'Derived from', input: 'select', required: false, isId: false, derived: false, crossRef: 'tilt_series', apiSuggest: null, options: [], alias: null, help: '"Frames" (raw) or another tilt series in this acquisition.' },
+  { form: 'acquisition', section: 'tilt_series', field: 'is_aligned', label: 'Is aligned', input: 'boolean', required: false, isId: false, derived: false, crossRef: null, apiSuggest: null, options: [], alias: null, help: '' },
+  { form: 'acquisition', section: 'tilt_series', field: 'alignment_software', label: 'Alignment software', input: 'text', required: false, isId: false, derived: false, crossRef: null, apiSuggest: null, options: [], alias: null, help: '' },
+  { form: 'acquisition', section: 'tilt_series', field: 'alignment_method', label: 'Alignment method', input: 'text', required: false, isId: false, derived: false, crossRef: null, apiSuggest: null, options: [], alias: null, help: '' },
+  { form: 'acquisition', section: 'raw_tomogram', field: 'tomogram_id', label: 'Tomogram id', input: 'text', required: true, isId: false, derived: false, crossRef: null, apiSuggest: null, options: [], alias: 'id', help: 'Folder name under Tomograms/.' },
+  { form: 'acquisition', section: 'raw_tomogram', field: 'tilt_series_id', label: 'Tilt series', input: 'select', required: false, isId: false, derived: false, crossRef: 'tilt_series', apiSuggest: null, options: [], alias: null, help: 'The tilt series this tomogram was reconstructed from.' },
+  { form: 'acquisition', section: 'raw_tomogram', field: 'pipeline', label: 'Pipeline', input: 'text', required: false, isId: false, derived: false, crossRef: null, apiSuggest: null, options: [], alias: null, help: '' },
+  { form: 'acquisition', section: 'raw_tomogram', field: 'software', label: 'Software', input: 'text', required: false, isId: false, derived: false, crossRef: null, apiSuggest: null, options: [], alias: null, help: '' },
+  { form: 'acquisition', section: 'raw_tomogram', field: 'derived_from', label: 'Derived from', input: 'multiselect', required: false, isId: false, derived: false, crossRef: 'tomogram', apiSuggest: null, options: [], alias: null, help: 'Other tomograms in this acquisition this one was derived from.' },
+  { form: 'acquisition', section: 'post_processed_tomogram', field: 'tomogram_id', label: 'Tomogram id', input: 'text', required: true, isId: false, derived: false, crossRef: null, apiSuggest: null, options: [], alias: 'id', help: 'Folder name under Tomograms/.' },
+  { form: 'acquisition', section: 'post_processed_tomogram', field: 'tilt_series_id', label: 'Tilt series', input: 'select', required: false, isId: false, derived: false, crossRef: 'tilt_series', apiSuggest: null, options: [], alias: null, help: 'The tilt series this tomogram was reconstructed from.' },
+  { form: 'acquisition', section: 'post_processed_tomogram', field: 'denoising_software', label: 'Denoising software', input: 'text', required: false, isId: false, derived: false, crossRef: null, apiSuggest: null, options: [], alias: null, help: '' },
+  { form: 'acquisition', section: 'post_processed_tomogram', field: 'ctf_software', label: 'CTF software', input: 'text', required: false, isId: false, derived: false, crossRef: null, apiSuggest: null, options: [], alias: null, help: '' },
+  { form: 'acquisition', section: 'post_processed_tomogram', field: 'missing_wedge_software', label: 'Missing-wedge software', input: 'text', required: false, isId: false, derived: false, crossRef: null, apiSuggest: null, options: [], alias: null, help: '' },
+  { form: 'acquisition', section: 'post_processed_tomogram', field: 'derived_from', label: 'Derived from', input: 'multiselect', required: false, isId: false, derived: false, crossRef: 'tomogram', apiSuggest: null, options: [], alias: null, help: 'Other tomograms in this acquisition this one was derived from.' },
+  { form: 'acquisition', section: 'annotation', field: 'annotation_id', label: 'Annotation id', input: 'text', required: true, isId: false, derived: false, crossRef: null, apiSuggest: null, options: [], alias: 'id', help: 'Folder name under Annotations/.' },
+  { form: 'acquisition', section: 'annotation', field: 'type', label: 'Type', input: 'text', required: false, isId: false, derived: false, crossRef: null, apiSuggest: null, options: [], alias: null, help: '' },
+  { form: 'acquisition', section: 'annotation', field: 'target_tomogram', label: 'Target tomogram', input: 'select', required: false, isId: false, derived: false, crossRef: 'tomogram', apiSuggest: null, options: [], alias: null, help: 'The tomogram in this acquisition this annotation segments.' },
+  { form: 'sample', section: 'sample', field: 'sample_id', label: 'Sample id', input: 'text', required: false, isId: true, derived: false, crossRef: null, apiSuggest: null, options: [], alias: null, help: 'Sample directory name. Sets identity; not written into the file.' },
+  { form: 'sample', section: 'sample', field: 'data_source', label: 'Data source', input: 'select', required: false, isId: false, derived: true, crossRef: null, apiSuggest: null, options: [], alias: null, help: '' },
+  { form: 'sample', section: 'sample', field: 'project', label: 'Project', input: 'select', required: true, isId: false, derived: false, crossRef: null, apiSuggest: null, options: ['chromatin', 'synapse', 'nanogold'], alias: null, help: '' },
+  { form: 'sample', section: 'sample', field: 'lab_name', label: 'Lab', input: 'select', required: false, isId: false, derived: false, crossRef: null, apiSuggest: null, options: ['collepardo', 'gouaux', 'rosen', 'villa'], alias: null, help: '' },
+  { form: 'sample', section: 'sample', field: 'type', label: 'Type', input: 'text', required: false, isId: false, derived: false, crossRef: null, apiSuggest: null, options: [], alias: null, help: 'e.g. tissue | cellular | reconstituted' },
+  { form: 'sample', section: 'sample', field: 'cell_type', label: 'Cell type', input: 'text', required: false, isId: false, derived: false, crossRef: null, apiSuggest: null, options: [], alias: null, help: '' },
+  { form: 'sample', section: 'sample', field: 'description', label: 'Description', input: 'text', required: false, isId: false, derived: false, crossRef: null, apiSuggest: null, options: [], alias: null, help: '' },
+  { form: 'sample', section: 'sample', field: 'path', label: 'Path', input: 'text', required: false, isId: false, derived: true, crossRef: null, apiSuggest: null, options: [], alias: null, help: '' },
+  { form: 'sample', section: 'chromatin', field: 'substrate', label: 'Substrate', input: 'text', required: false, isId: false, derived: false, crossRef: null, apiSuggest: null, options: [], alias: null, help: 'e.g. synthetic | native | n/a' },
+  { form: 'sample', section: 'chromatin', field: 'linker_length_bp', label: 'Linker length (bp)', input: 'number', required: false, isId: false, derived: false, crossRef: null, apiSuggest: null, options: [], alias: null, help: '' },
+  { form: 'sample', section: 'chromatin', field: 'linker_pattern', label: 'Linker pattern', input: 'list', required: false, isId: false, derived: false, crossRef: null, apiSuggest: null, options: [], alias: null, help: 'List of ints, e.g. 20, 50, 20, 50' },
+  { form: 'sample', section: 'chromatin', field: 'linker_distribution', label: 'Linker distribution', input: 'text', required: false, isId: false, derived: false, crossRef: null, apiSuggest: null, options: [], alias: null, help: '' },
+  { form: 'sample', section: 'chromatin', field: 'buffer', label: 'Buffer', input: 'text', required: false, isId: false, derived: false, crossRef: null, apiSuggest: null, options: [], alias: null, help: '' },
+  { form: 'sample', section: 'chromatin', field: 'ptm', label: 'PTM', input: 'text', required: false, isId: false, derived: false, crossRef: null, apiSuggest: null, options: [], alias: null, help: '' },
+  { form: 'sample', section: 'chromatin', field: 'histone_variants', label: 'Histone variants', input: 'text', required: false, isId: false, derived: false, crossRef: null, apiSuggest: null, options: [], alias: null, help: '' },
+  { form: 'sample', section: 'chromatin', field: 'transcription_factors', label: 'Transcription factors', input: 'text', required: false, isId: false, derived: false, crossRef: null, apiSuggest: null, options: [], alias: null, help: '' },
+  { form: 'sample', section: 'chromatin', field: 'nucleosome_count', label: 'Nucleosome count', input: 'integer', required: false, isId: false, derived: false, crossRef: null, apiSuggest: null, options: [], alias: null, help: '' },
+  { form: 'sample', section: 'chromatin', field: 'dna_length_bp', label: 'DNA length (bp)', input: 'integer', required: false, isId: false, derived: false, crossRef: null, apiSuggest: null, options: [], alias: null, help: '' },
+  { form: 'sample', section: 'chromatin', field: 'nucleosome_uM', label: 'Nucleosome (uM)', input: 'number', required: false, isId: false, derived: false, crossRef: null, apiSuggest: null, options: [], alias: null, help: '' },
+  { form: 'sample', section: 'chromatin', field: 'sequence_identity', label: 'Sequence identity', input: 'text', required: false, isId: false, derived: false, crossRef: null, apiSuggest: null, options: [], alias: null, help: '' },
+  { form: 'sample', section: 'chromatin', field: 'nucleosome_footprint', label: 'Nucleosome footprint', input: 'list', required: false, isId: false, derived: false, crossRef: null, apiSuggest: null, options: [], alias: null, help: 'List of ints' },
+  { form: 'sample', section: 'chromatin', field: 'linker_length_fraction', label: 'Linker length fraction', input: 'number', required: false, isId: false, derived: true, crossRef: null, apiSuggest: null, options: [], alias: null, help: '' },
+  { form: 'sample', section: 'label', field: 'label_target', label: 'Label target', input: 'text', required: false, isId: false, derived: false, crossRef: null, apiSuggest: null, options: [], alias: null, help: 'protein name, e.g. AMPAR, NMDAR' },
+  { form: 'sample', section: 'label', field: 'aunp_type', label: 'AuNP type', input: 'text', required: false, isId: false, derived: false, crossRef: null, apiSuggest: null, options: [], alias: null, help: 'monomer, dimer, trimer, …' },
+  { form: 'sample', section: 'label', field: 'aunp_size_nm', label: 'AuNP size (nm)', input: 'list', required: false, isId: false, derived: false, crossRef: null, apiSuggest: null, options: [], alias: null, help: 'float or list, e.g. 1.4 or 1.4, 2.2' },
+  { form: 'sample', section: 'label', field: 'conjugation', label: 'Conjugation', input: 'text', required: false, isId: false, derived: false, crossRef: null, apiSuggest: null, options: [], alias: null, help: '' },
+  { form: 'sample', section: 'label', field: 'conjugation_target', label: 'Conjugation target', input: 'text', required: false, isId: false, derived: false, crossRef: null, apiSuggest: null, options: [], alias: null, help: '' },
+  { form: 'sample', section: 'label', field: 'fluorophore', label: 'Fluorophore', input: 'text', required: false, isId: false, derived: false, crossRef: null, apiSuggest: null, options: [], alias: null, help: '' },
+  { form: 'sample', section: 'label', field: 'notes', label: 'Notes', input: 'text', required: false, isId: false, derived: false, crossRef: null, apiSuggest: null, options: [], alias: null, help: '' },
+  { form: 'sample', section: 'fiducial', field: 'aunp_size_nm', label: 'AuNP size (nm)', input: 'number', required: false, isId: false, derived: false, crossRef: null, apiSuggest: null, options: [], alias: null, help: '' },
+  { form: 'sample', section: 'fiducial', field: 'vendor', label: 'Vendor', input: 'text', required: false, isId: false, derived: false, crossRef: null, apiSuggest: null, options: [], alias: null, help: '' },
+  { form: 'sample', section: 'fiducial', field: 'catalog_number', label: 'Catalog number', input: 'text', required: false, isId: false, derived: false, crossRef: null, apiSuggest: null, options: [], alias: null, help: '' },
+  { form: 'sample', section: 'fiducial', field: 'product_name', label: 'Product name', input: 'text', required: false, isId: false, derived: false, crossRef: null, apiSuggest: null, options: [], alias: null, help: '' },
+  { form: 'sample', section: 'fiducial', field: 'concentration_value', label: 'Concentration value', input: 'number', required: false, isId: false, derived: false, crossRef: null, apiSuggest: null, options: [], alias: null, help: '' },
+  { form: 'sample', section: 'fiducial', field: 'concentration_unit', label: 'Concentration unit', input: 'text', required: false, isId: false, derived: false, crossRef: null, apiSuggest: null, options: [], alias: null, help: '' },
+  { form: 'sample', section: 'freezing', field: 'grid_type', label: 'Grid type', input: 'text', required: false, isId: false, derived: false, crossRef: null, apiSuggest: null, options: [], alias: null, help: '' },
+  { form: 'sample', section: 'freezing', field: 'solution_type', label: 'Solution type', input: 'text', required: false, isId: false, derived: false, crossRef: null, apiSuggest: null, options: [], alias: null, help: '' },
+  { form: 'sample', section: 'freezing', field: 'cryoprotectant', label: 'Cryoprotectant', input: 'text', required: false, isId: false, derived: false, crossRef: null, apiSuggest: null, options: [], alias: null, help: '' },
+  { form: 'sample', section: 'freezing', field: 'method', label: 'Method', input: 'text', required: false, isId: false, derived: false, crossRef: null, apiSuggest: null, options: [], alias: null, help: 'plunge_frozen | HPF' },
+  { form: 'sample', section: 'freezing', field: 'planchette_size', label: 'Planchette size', input: 'text', required: false, isId: false, derived: false, crossRef: null, apiSuggest: null, options: [], alias: null, help: '' },
+  { form: 'sample', section: 'freezing', field: 'spacer_thickness', label: 'Spacer thickness', input: 'text', required: false, isId: false, derived: false, crossRef: null, apiSuggest: null, options: [], alias: null, help: '' },
+  { form: 'sample', section: 'milling', field: 'scheme', label: 'Scheme', input: 'text', required: false, isId: false, derived: false, crossRef: null, apiSuggest: null, options: [], alias: null, help: 'e.g. cryo-FIB' },
+  { form: 'sample', section: 'milling', field: 'date', label: 'Milling date', input: 'date', required: false, isId: false, derived: false, crossRef: null, apiSuggest: null, options: [], alias: null, help: '' },
+  { form: 'sample', section: 'milling', field: 'quality', label: 'Quality', input: 'text', required: false, isId: false, derived: false, crossRef: null, apiSuggest: null, options: [], alias: null, help: '' },
 ];
 
 export function fieldsFor(form: FormKind): FormField[] {
