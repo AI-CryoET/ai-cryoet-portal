@@ -151,5 +151,7 @@ describe('AuthoringForm (sample) submit + seed', () => {
     expect(sim).toBeDisabled()
     // Placement hint reflects the loaded id.
     expect(screen.getByText('samp1/sample.toml')).toBeInTheDocument()
+    // The id itself is pre-filled read-only (ADR-0004 identity guidance).
+    expect(screen.getByLabelText(/Sample id/)).toBeDisabled()
   })
 })

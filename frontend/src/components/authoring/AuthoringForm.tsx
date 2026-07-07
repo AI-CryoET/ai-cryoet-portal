@@ -197,7 +197,7 @@ function SectionedAuthoringForm({ form, initialId, initialSampleId }: Props) {
     try {
       seed(await parseToml(form, await file.text()), false)
     } catch (err) {
-      setSeedError(err instanceof Error ? err.message : String(err))
+      setSeedError(toErrorMessage(err))
     }
   }
 
@@ -208,7 +208,7 @@ function SectionedAuthoringForm({ form, initialId, initialSampleId }: Props) {
     try {
       seed(await loadToml(form, id, sampleId.trim() || undefined), true)
     } catch (err) {
-      setSeedError(err instanceof Error ? err.message : String(err))
+      setSeedError(toErrorMessage(err))
     }
   }
 
@@ -306,34 +306,23 @@ function SectionedAuthoringForm({ form, initialId, initialSampleId }: Props) {
   return (
     <Box component="form" onSubmit={handleSubmit} noValidate>
       <Stack spacing={2}>
-        <Stack direction="row" spacing={2} alignItems="center" flexWrap="wrap">
-          <Button variant="outlined" component="label" size="small">
-            Upload {meta.filename}
-            <input
-              type="file"
-              accept=".toml,text/plain"
-              hidden
-              onChange={handleUpload}
-            />
-          </Button>
-          {needsSampleId && (
-            <TextField
-              label="Sample id"
-              value={sampleId}
-              onChange={(e) => setSampleId(e.target.value)}
-              size="small"
-            />
-          )}
-          <TextField
-            label="Load from portal by id"
-            value={loadId}
-            onChange={(e) => setLoadId(e.target.value)}
-            size="small"
-          />
-          <Button variant="outlined" size="small" onClick={handleLoad}>
-            Load
-          </Button>
-        </Stack>
+        <UploadLoadToolbar
+          filename={meta.filename}
+          onUpload={handleUpload}
+          loadId={loadId}
+          onLoadIdChange={setLoadId}
+          onLoad={handleLoad}
+          extra={
+            needsSampleId && (
+              <TextField
+                label="Sample id"
+                value={sampleId}
+                onChange={(e) => setSampleId(e.target.value)}
+                size="small"
+              />
+            )
+          }
+        />
 
         {seedError && <Alert severity="error">{seedError}</Alert>}
         {stale && (
@@ -382,6 +371,7 @@ function SectionedAuthoringForm({ form, initialId, initialSampleId }: Props) {
               errors={errors}
               mdRunIds={mdRunIds}
               namespaces={namespaces}
+              apiLoaded={stale}
               onChange={(field, v) => setValue(s.section, field, v)}
               onCustomChange={(c) => setCustom(s.section, c)}
             />
@@ -421,6 +411,7 @@ function ScalarSection({
   errors,
   mdRunIds,
   namespaces,
+  apiLoaded,
   onChange,
   onCustomChange,
 }: {
@@ -430,6 +421,7 @@ function ScalarSection({
   errors: Record<string, string>
   mdRunIds: string[]
   namespaces: Record<string, string[]>
+  apiLoaded: boolean
   onChange: (field: string, v: string) => void
   onCustomChange: (next: CustomField[]) => void
 }) {
@@ -452,7 +444,9 @@ function ScalarSection({
             value={state.values[f.field] ?? ''}
             error={errors[pathFor(section, f.field)]}
             mdRunIds={mdRunIds}
-            disabled={locked}
+            // The intended-id field is pre-filled read-only once pulled from
+            // the API (ADR-0004): its value drives identity, not editable content.
+            disabled={locked || (f.isId && apiLoaded)}
             crossRefOptions={
               f.crossRef
                 ? crossRefOptionsFor(f, section, namespaces, ownId)
@@ -754,6 +748,53 @@ function CustomFields({
   )
 }
 
+function toErrorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err)
+}
+
+// Shared upload/load-by-id chrome for both renderers (ADR-0004 seed modes:
+// upload + pull-from-API). `extra` slots in a form-specific control between
+// the upload button and the load-by-id field (e.g. sample id for acquisition).
+function UploadLoadToolbar({
+  filename,
+  onUpload,
+  loadId,
+  onLoadIdChange,
+  onLoad,
+  extra,
+}: {
+  filename: string
+  onUpload: (e: React.ChangeEvent<HTMLInputElement>) => void
+  loadId: string
+  onLoadIdChange: (v: string) => void
+  onLoad: () => void
+  extra?: React.ReactNode
+}) {
+  return (
+    <Stack direction="row" spacing={2} alignItems="center" flexWrap="wrap">
+      <Button variant="outlined" component="label" size="small">
+        Upload {filename}
+        <input
+          type="file"
+          accept=".toml,text/plain"
+          hidden
+          onChange={onUpload}
+        />
+      </Button>
+      {extra}
+      <TextField
+        label="Load from portal by id"
+        value={loadId}
+        onChange={(e) => onLoadIdChange(e.target.value)}
+        size="small"
+      />
+      <Button variant="outlined" size="small" onClick={onLoad}>
+        Load
+      </Button>
+    </Stack>
+  )
+}
+
 function triggerDownload(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
@@ -851,7 +892,7 @@ function CompositeAuthoringForm({
     try {
       seed(await parseToml(form, await file.text()), false)
     } catch (err) {
-      setSeedError(err instanceof Error ? err.message : String(err))
+      setSeedError(toErrorMessage(err))
     }
   }
 
@@ -861,7 +902,7 @@ function CompositeAuthoringForm({
     try {
       seed(await loadToml(form, trimmed), true)
     } catch (err) {
-      setSeedError(err instanceof Error ? err.message : String(err))
+      setSeedError(toErrorMessage(err))
     }
   }
 
@@ -963,33 +1004,22 @@ function CompositeAuthoringForm({
           value={entry.values[f.field] ?? ''}
           error={errors[fieldKey(section, f.field, idx)]}
           onChange={(v) => setEntryValue(section, f.field, v, idx)}
-          disabled={disabled}
+          // The intended-id field is pre-filled read-only once pulled from
+          // the API (ADR-0004): its value drives identity, not editable content.
+          disabled={disabled || (f.isId && stale)}
         />
       ))
 
   return (
     <Box component="form" onSubmit={handleSubmit} noValidate>
       <Stack spacing={2}>
-        <Stack direction="row" spacing={2} alignItems="center" flexWrap="wrap">
-          <Button variant="outlined" component="label" size="small">
-            Upload {meta.filename}
-            <input
-              type="file"
-              accept=".toml,text/plain"
-              hidden
-              onChange={handleUpload}
-            />
-          </Button>
-          <TextField
-            label="Load from portal by id"
-            value={loadId}
-            onChange={(e) => setLoadId(e.target.value)}
-            size="small"
-          />
-          <Button variant="outlined" size="small" onClick={() => handleLoad(loadId)}>
-            Load
-          </Button>
-        </Stack>
+        <UploadLoadToolbar
+          filename={meta.filename}
+          onUpload={handleUpload}
+          loadId={loadId}
+          onLoadIdChange={setLoadId}
+          onLoad={() => handleLoad(loadId)}
+        />
 
         {seedError && <Alert severity="error">{seedError}</Alert>}
         {conflict && (

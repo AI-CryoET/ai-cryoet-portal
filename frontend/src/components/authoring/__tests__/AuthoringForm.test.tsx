@@ -200,8 +200,10 @@ describe('AuthoringForm (acquisition)', () => {
     expect(
       screen.queryByRole('button', { name: /Remove Tilt series entry/ }),
     ).not.toBeInTheDocument()
-    // [acquisition] stays editable.
-    expect(screen.getByLabelText(/Acquisition id/)).not.toBeDisabled()
+    // [acquisition] stays editable, except its id field: pre-filled
+    // read-only once pulled from the API (ADR-0004 identity guidance).
+    expect(screen.getByLabelText(/Acquisition id/)).toBeDisabled()
+    expect(screen.getByLabelText(/Resolution/)).not.toBeDisabled()
   })
 
   it('auto-loads the acquisition from the edit-link search params', async () => {

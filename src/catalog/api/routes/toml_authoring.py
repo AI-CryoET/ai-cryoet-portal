@@ -188,23 +188,28 @@ def md_run_ids(sample_id: str, session: Session = Depends(get_session)):
     return {"ids": list(rows)}
 
 
-def _authored(form: str, section: str) -> list[str]:
-    """Authored columns of a section, from the registry — keeps the load
-    endpoint in step with what the form renders."""
+def _authored_fields(
+    form: str,
+    section: str,
+    *,
+    exclude_id: bool = False,
+    exclude_derived: bool = False,
+) -> list[str]:
+    """Authored columns of a form section, from the registry — keeps the load
+    endpoint in step with what the form renders.
+
+    Acquisition/md_run sections load their is_id field too (it seeds the
+    placement hint and, per ADR-0004, locks read-only once loaded); the sample
+    loader excludes it (and derived fields) since it sets those explicitly.
+    """
     return [
         ff.field
         for ff in FORM_FIELDS
-        if ff.form == form and ff.section == section and ff.authored
-    ]
-
-
-def _authored_cols(section: str) -> list[str]:
-    """Authored (non-derived, non-id) columns of a sample section, from the
-    registry — keeps the load endpoint in step with what the form renders."""
-    return [
-        ff.field
-        for ff in FORM_FIELDS
-        if ff.form == "sample" and ff.section == section and not ff.derived and not ff.is_id
+        if ff.form == form
+        and ff.section == section
+        and ff.authored
+        and not (exclude_id and ff.is_id)
+        and not (exclude_derived and ff.derived)
     ]
 
 
@@ -246,10 +251,11 @@ def _load_acquisition(record_id: str, sample_id: str | None, session: Session) -
     acq = session.get(orm.AcquisitionORM, (sample_id, record_id))
     if acq is None:
         raise HTTPException(404, f"no acquisition {record_id!r} in sample {sample_id!r}")
-    fields: dict = {"acquisition": _row_fields(acq, _authored("acquisition", "acquisition"))}
+    acq_authored = _authored_fields("acquisition", "acquisition")
+    fields: dict = {"acquisition": _row_fields(acq, acq_authored)}
     md = session.get(orm.MdSourceORM, (sample_id, record_id))
     if md is not None:
-        md_fields = _row_fields(md, _authored("acquisition", "md_source"))
+        md_fields = _row_fields(md, _authored_fields("acquisition", "md_source"))
         if md_fields:
             fields["md_source"] = md_fields
     ts_rows = (
@@ -264,7 +270,7 @@ def _load_acquisition(record_id: str, sample_id: str | None, session: Session) -
         .scalars()
         .all()
     )
-    ts_authored = _authored("acquisition", "tilt_series")
+    ts_authored = _authored_fields("acquisition", "tilt_series")
     tilt_series = [_row_fields(ts, ts_authored) for ts in ts_rows]
     if tilt_series:
         fields["tilt_series"] = tilt_series
@@ -281,7 +287,7 @@ def _load_acquisition(record_id: str, sample_id: str | None, session: Session) -
         .first()
     )
     if raw is not None:
-        raw_fields = _row_fields(raw, _authored("acquisition", "raw_tomogram"))
+        raw_fields = _row_fields(raw, _authored_fields("acquisition", "raw_tomogram"))
         if raw_fields:
             fields["raw_tomogram"] = raw_fields
     pp_rows = (
@@ -296,7 +302,7 @@ def _load_acquisition(record_id: str, sample_id: str | None, session: Session) -
         .scalars()
         .all()
     )
-    pp_authored = _authored("acquisition", "post_processed_tomogram")
+    pp_authored = _authored_fields("acquisition", "post_processed_tomogram")
     post_processed = [_row_fields(pp, pp_authored) for pp in pp_rows]
     if post_processed:
         fields["post_processed_tomogram"] = post_processed
@@ -312,7 +318,7 @@ def _load_acquisition(record_id: str, sample_id: str | None, session: Session) -
         .scalars()
         .all()
     )
-    an_authored = _authored("acquisition", "annotation")
+    an_authored = _authored_fields("acquisition", "annotation")
     annotations = [_row_fields(an, an_authored) for an in an_rows]
     if annotations:
         fields["annotation"] = annotations
@@ -328,7 +334,10 @@ def _load_sample(record_id: str, session: Session) -> dict:
     if sample is None:
         raise HTTPException(404, f"no sample with id {record_id!r}")
 
-    sample_fields = _row_fields(sample, _authored_cols("sample"))
+    sample_authored = _authored_fields(
+        "sample", "sample", exclude_id=True, exclude_derived=True
+    )
+    sample_fields = _row_fields(sample, sample_authored)
     sample_fields["sample_id"] = record_id
     sample_fields["data_source"] = _enum_val(sample.data_source)
     fields: dict = {"sample": sample_fields}
@@ -336,11 +345,14 @@ def _load_sample(record_id: str, session: Session) -> dict:
     for section, sub_orm in _SAMPLE_SECTION_ORM.items():
         row = session.get(sub_orm, record_id)
         if row is not None:
-            sub = _row_fields(row, _authored_cols(section))
+            section_authored = _authored_fields(
+                "sample", section, exclude_id=True, exclude_derived=True
+            )
+            sub = _row_fields(row, section_authored)
             if sub:
                 fields[section] = sub
 
-    label_cols = _authored_cols("label")
+    label_cols = _authored_fields("sample", "label", exclude_id=True, exclude_derived=True)
     labels = [
         _row_fields(r, label_cols)
         for r in session.execute(
