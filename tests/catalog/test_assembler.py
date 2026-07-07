@@ -537,6 +537,8 @@ def test_deprecated_md_run_block_warning(tmp_path):
         w for w in result.warnings if w.category == "deprecated_md_run_block"
     ]
     assert len(deprecated) == 1
+    # The whole array is stale, not one run — no single id to link.
+    assert deprecated[0].md_run_id is None
     # The stale block is ignored: no md_run rows from sample.toml.
     assert result.record is not None
     assert result.record.md_run == []
@@ -576,9 +578,46 @@ def test_dangling_md_source_ref_warning(tmp_path):
     ]
     assert len(dangling) == 1
     assert "ghost_run" in dangling[0].message
+    # The referenced (if dangling) run id is captured for the manage-page link.
+    assert dangling[0].md_run_id == "ghost_run"
     # Acquisition still validates and is kept.
     assert result.record is not None
     assert "acq1" in result.record.acquisitions
+
+
+def test_md_run_placeholder_warning_captures_run_id(tmp_path):
+    """An unfilled placeholder inside a run's own MdRuns/{id}/md_run.toml is
+    located as ``md_run[{id}]…`` so the manage page can link straight to that
+    run's authoring form, not just the owning sample."""
+    sample_dir = tmp_path / "sample_sim"
+    _write(
+        sample_dir / "sample.toml",
+        """
+        [sample]
+        data_source = "simulation"
+        project = "chromatin"
+        """,
+    )
+    _write(
+        sample_dir / "MdRuns" / "run_b" / "md_run.toml",
+        """
+        computer = "<FILL IN>"
+        """,
+    )
+    loc = _sample_loc(
+        sample_dir,
+        data_source=DataSource.simulation,
+        dataset_type=DatasetType.bulk,
+    )
+    result = assemble_sample(loc)
+
+    placeholder = [
+        w for w in result.warnings if w.category == "unfilled_placeholder"
+    ]
+    assert len(placeholder) == 1
+    assert placeholder[0].location == "md_run[run_b].computer"
+    assert placeholder[0].file_kind == "md_run_toml"
+    assert placeholder[0].md_run_id == "run_b"
 
 
 # ── _resolve_file (file-resolver) ──────────────────────────────────────────
@@ -586,37 +625,51 @@ def test_dangling_md_source_ref_warning(tmp_path):
 
 def test_resolve_file_prefixes(tmp_path):
     """Each ``location`` prefix maps to the expected (file_kind, file_path,
-    acquisition_id) via ``_resolve_file`` (plan §4.2)."""
+    acquisition_id, md_run_id) via ``_resolve_file`` (plan §4.2)."""
     from catalog.assembler import _resolve_file
 
     sample_dir = tmp_path / "sample_x"
     loc = _sample_loc(sample_dir)
 
     # <root> / bare sample path → sample.toml, no acquisition.
-    kind, path, acq = _resolve_file("<root>", loc)
+    kind, path, acq, run_id = _resolve_file("<root>", loc)
     assert kind == "sample_toml"
     assert path == str(sample_dir / "sample.toml")
     assert acq is None
+    assert run_id is None
 
     # acquisitions.{id}… → that acq's acquisition.toml + acquisition_id.
-    kind, path, acq = _resolve_file("acquisitions.Pos1.tilt_series[ts1]", loc)
+    kind, path, acq, run_id = _resolve_file("acquisitions.Pos1.tilt_series[ts1]", loc)
     assert kind == "acquisition_toml"
     assert path == str(sample_dir / "Pos1" / "acquisition.toml")
     assert acq == "Pos1"
+    assert run_id is None
 
-    # md_source.{id} / md_run… → md_run.toml, no acquisition.
-    kind, path, acq = _resolve_file("md_source.run_a", loc)
+    # md_source.{id} → md_run.toml, no acquisition, the dangling ref's run id.
+    kind, path, acq, run_id = _resolve_file("md_source.run_a", loc)
     assert kind == "md_run_toml"
     assert path == str(sample_dir / "md_run.toml")
     assert acq is None
-    kind, path, acq = _resolve_file("md_run", loc)
+    assert run_id == "run_a"
+
+    # md_run[{id}].{field} → md_run.toml, the run's own id.
+    kind, path, acq, run_id = _resolve_file("md_run[run_b].seed", loc)
     assert kind == "md_run_toml"
     assert acq is None
+    assert run_id == "run_b"
+
+    # Bare "md_run" (the deprecated-block warning, <root>-located in practice)
+    # names no single run.
+    kind, path, acq, run_id = _resolve_file("md_run", loc)
+    assert kind == "md_run_toml"
+    assert acq is None
+    assert run_id is None
 
     # Unknown / model-name path falls through to sample.toml.
-    kind, path, acq = _resolve_file("<unknown>", loc)
+    kind, path, acq, run_id = _resolve_file("<unknown>", loc)
     assert kind == "sample_toml"
     assert acq is None
+    assert run_id is None
 
 
 def test_assembly_failed_emits_error_issue(tmp_path):

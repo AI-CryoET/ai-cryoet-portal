@@ -607,6 +607,9 @@ class IssueORM(Base):
         String(_ID_MAX_LEN), nullable=True, index=True
     )
     acquisition_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    md_run_id: Mapped[str | None] = mapped_column(
+        String(_ID_MAX_LEN), nullable=True, index=True
+    )
     file_kind: Mapped[str] = mapped_column(
         SAEnum(
             "sample_toml",

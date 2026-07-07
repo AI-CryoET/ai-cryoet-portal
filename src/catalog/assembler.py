@@ -77,6 +77,7 @@ class ScanIssue:
     message: str
     sample_id: str | None = None
     acquisition_id: str | None = None
+    md_run_id: str | None = None
     file_kind: str = "other"
     file_path: str | None = None
 
@@ -102,6 +103,10 @@ _TYPO_LOC_RE = re.compile(r"on (\w+) closely matches")
 _EXTRA_AT_RE = re.compile(r"extra field '[^']+' at '([^']+)' \(not in schema\)")
 # location prefix "acquisitions.<acq_id>..." → capture the acquisition id.
 _ACQ_LOC_RE = re.compile(r"^acquisitions\.([^.\[]+)")
+# "md_run[<run_id>]..." (a warning from inside that run's own md_run.toml) or
+# "md_source.<run_id>" (a dangling md_source ref naming that run) → the id.
+_MD_RUN_LOC_RE = re.compile(r"^md_run\[([^\]]+)\]")
+_MD_SOURCE_LOC_RE = re.compile(r"^md_source\.(.+)$")
 # parser categories that already carry a concrete file path in file_path.
 _PARSER_FILE_KINDS = {
     "unparseable_mdoc": "mdoc",
@@ -113,15 +118,19 @@ _PARSER_FILE_KINDS = {
 
 def _resolve_file(
     location: str, sample_loc: SampleLocation
-) -> tuple[str, str | None, str | None]:
-    """Resolve (file_kind, file_path, acquisition_id) for an issue ``location``.
+) -> tuple[str, str | None, str | None, str | None]:
+    """Resolve (file_kind, file_path, acquisition_id, md_run_id) for an issue
+    ``location``.
 
     Uses the known location-prefix conventions:
 
     - ``"<root>"`` / ``"<unknown>"`` → the sample's ``sample.toml``.
     - ``"acquisitions.{acq}…"`` → that acquisition's ``acquisition.toml`` and
       the acquisition id.
-    - ``"md_source.{id}"`` / ``"md_run…"`` → the sample's ``md_run.toml``.
+    - ``"md_source.{id}"`` / ``"md_run…"`` → the sample's ``md_run.toml``; the
+      run id is recovered when the location names one (``md_run[{id}]…`` from
+      inside that run's own file, or ``md_source.{id}`` from a dangling ref) —
+      the legacy-block warning (``<root>``) names no single run, so it's None.
 
     The concrete offending file for parser categories (mdoc/mrc/zarr/frames) is
     not derivable from ``location`` alone, so callers that know it should pass
@@ -136,11 +145,14 @@ def _resolve_file(
             "acquisition_toml",
             str(sample_dir / acq_id / "acquisition.toml"),
             acq_id,
+            None,
         )
     if location.startswith("md_source.") or location.startswith("md_run"):
-        return ("md_run_toml", str(sample_dir / "md_run.toml"), None)
+        run_match = _MD_RUN_LOC_RE.match(location) or _MD_SOURCE_LOC_RE.match(location)
+        md_run_id = run_match.group(1) if run_match else None
+        return ("md_run_toml", str(sample_dir / "md_run.toml"), None, md_run_id)
     # <root>, <unknown>, model-name, or any bare dotted sample-level path.
-    return ("sample_toml", str(sample_dir / "sample.toml"), None)
+    return ("sample_toml", str(sample_dir / "sample.toml"), None, None)
 
 
 def _categorize_loader_warning(
@@ -213,7 +225,7 @@ def _make_issue(
     categories that know their concrete offending file); otherwise they are
     derived from the location via :func:`_resolve_file`.
     """
-    res_kind, res_path, acq_id = _resolve_file(location, sample_loc)
+    res_kind, res_path, acq_id, md_run_id = _resolve_file(location, sample_loc)
     scope = "acquisition" if acq_id is not None else "sample"
     return ScanIssue(
         severity=severity,
@@ -223,6 +235,7 @@ def _make_issue(
         message=message,
         sample_id=sample_loc.sample_id,
         acquisition_id=acq_id,
+        md_run_id=md_run_id,
         file_kind=file_kind if file_kind is not None else res_kind,
         file_path=file_path if file_path is not None else res_path,
     )

@@ -103,6 +103,15 @@ def client(tmp_path):
                acquisition_id="acq1", file_kind="acquisition_toml",
                location="acquisitions.acq1", category="undeclared_tomogram_folder",
                message="stray tomo")
+        #  - two md_run-scoped issues on the same sample, different runs: must
+        #    group separately (md_run_id is part of the group key) so a
+        #    manage-page link can target the right run's authoring form.
+        _issue(s, sample_id="sample-1", file_kind="md_run_toml",
+               md_run_id="run_a", location="md_run[run_a].seed",
+               category="unfilled_placeholder", message="run_a placeholder")
+        _issue(s, sample_id="sample-1", file_kind="md_run_toml",
+               md_run_id="run_b", location="md_run[run_b].seed",
+               category="unfilled_placeholder", message="run_b placeholder")
 
         # Resolved issues: one within 24h (appears), one older (hidden).
         _issue(s, sample_id="sample-3", severity="warning",
@@ -193,7 +202,7 @@ def test_summary_latest_scan_and_counts(client):
     assert body["cadence_tz"]
     # Outstanding counts by severity (resolved excluded).
     assert body["outstanding"]["errors"] == 1
-    assert body["outstanding"]["warnings"] == 3
+    assert body["outstanding"]["warnings"] == 5
     # Deletion count scoped to the latest *completed* run (3 events logged
     # against run-completed; the run-failed event is excluded).
     assert body["deletions_latest_run"] == 3
@@ -253,6 +262,16 @@ def test_outstanding_filter_by_file_kind(client):
     assert len(body) == 1
     assert body[0]["scope"] == "acquisition"
     assert body[0]["acquisition_id"] == "acq1"
+
+
+def test_outstanding_groups_by_md_run_id(client):
+    """Two md_run_toml issues on the same sample but different runs surface as
+    two groups, each exposing its own md_run_id."""
+    body = client.get(
+        "/manage/issues", params={"file_kind": "md_run_toml"}
+    ).json()
+    assert {g["md_run_id"] for g in body} == {"run_a", "run_b"}
+    assert all(g["sample_id"] == "sample-1" for g in body)
 
 
 def test_outstanding_text_query(client):

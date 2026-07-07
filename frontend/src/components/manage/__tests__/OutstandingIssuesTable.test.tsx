@@ -33,6 +33,7 @@ function group(overrides: Partial<IssueGroup>): IssueGroup {
     scope: 'sample',
     sample_id: 'villa_synapse_004',
     acquisition_id: null,
+    md_run_id: null,
     file_kind: 'sample_toml',
     file_path: '/data/villa_synapse_004/sample.toml',
     severity: 'error',

@@ -25,11 +25,14 @@ export function SeverityPill({ severity }: { severity: IssueGroup['severity'] })
   )
 }
 
-// Edit link for an authorable file: a sample.toml / acquisition.toml warning
-// row jumps straight into the matching authoring form, auto-loaded by id
-// (issue 07). Acquisition identity is composite, so the link carries both ids
-// (mirrors the acquisition detail-page "Edit acquisition.toml" link). Other
-// file kinds (mdoc, mrc, run-scope, …) have no form — returns null.
+// Edit link for an authorable file: a sample.toml / acquisition.toml /
+// md_run.toml warning row jumps straight into the matching authoring form,
+// auto-loaded by id (issue 07). Acquisition identity is composite, so the
+// link carries both ids (mirrors the acquisition detail-page "Edit
+// acquisition.toml" link). An md_run_toml row without a resolvable md_run_id
+// (e.g. a deprecated legacy [[md_run]] block, which names no single run) has
+// no link either. Other file kinds (mdoc, mrc, run-scope, …) have no form —
+// returns null.
 export function authorLinkFor(
   group: IssueGroup,
 ): { to: string; search: Record<string, string> } | null {
@@ -45,6 +48,9 @@ export function authorLinkFor(
       to: '/author/acquisition',
       search: { id: group.acquisition_id, sampleId: group.sample_id },
     }
+  }
+  if (group.file_kind === 'md_run_toml' && group.md_run_id) {
+    return { to: '/author/md_run', search: { id: group.md_run_id } }
   }
   return null
 }

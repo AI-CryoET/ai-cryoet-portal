@@ -83,7 +83,7 @@ def _group_issues(
     latest_scan_at: float | None,
     resolved: bool,
 ) -> list[IssueGroup]:
-    """Group issue rows by (scope, sample_id, acquisition_id, file_kind).
+    """Group issue rows by (scope, sample_id, acquisition_id, md_run_id, file_kind).
 
     Mirrors the old ``scans._scan_warnings`` Python-grouping style. ``severity``
     is the max within the group (error wins). When ``resolved`` is True, the
@@ -95,6 +95,7 @@ def _group_issues(
             _enum_val(r.scope),
             r.sample_id,
             r.acquisition_id,
+            r.md_run_id,
             _enum_val(r.file_kind),
         )
         g = groups.get(key)
@@ -103,6 +104,7 @@ def _group_issues(
                 "scope": _enum_val(r.scope),
                 "sample_id": r.sample_id,
                 "acquisition_id": r.acquisition_id,
+                "md_run_id": r.md_run_id,
                 "file_kind": _enum_val(r.file_kind),
                 "file_path": r.file_path,
                 "has_error": False,
@@ -138,6 +140,7 @@ def _group_issues(
             scope=g["scope"],
             sample_id=g["sample_id"],
             acquisition_id=g["acquisition_id"],
+            md_run_id=g["md_run_id"],
             file_kind=g["file_kind"],
             file_path=g["file_path"],
             severity="error" if g["has_error"] else "warning",

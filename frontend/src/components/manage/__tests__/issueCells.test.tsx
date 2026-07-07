@@ -39,6 +39,7 @@ function group(overrides: Partial<IssueGroup>): IssueGroup {
     scope: 'sample',
     sample_id: 'samp1',
     acquisition_id: null,
+    md_run_id: null,
     file_kind: 'sample_toml',
     file_path: '/data/samp1/sample.toml',
     severity: 'error',
@@ -75,6 +76,15 @@ describe('authorLinkFor', () => {
     })
   })
 
+  it('links an md_run.toml row to /author/md_run?id=', () => {
+    expect(
+      authorLinkFor(group({ file_kind: 'md_run_toml', md_run_id: 'run_a' })),
+    ).toEqual({
+      to: '/author/md_run',
+      search: { id: 'run_a' },
+    })
+  })
+
   it('returns null for non-authorable kinds (mdoc, run-scope, missing ids)', () => {
     expect(authorLinkFor(group({ file_kind: 'mdoc' }))).toBeNull()
     expect(
@@ -83,6 +93,11 @@ describe('authorLinkFor', () => {
     // acquisition_toml without an acquisition id can't resolve the file.
     expect(
       authorLinkFor(group({ file_kind: 'acquisition_toml', acquisition_id: null })),
+    ).toBeNull()
+    // md_run_toml without a resolvable run id (e.g. the deprecated legacy
+    // block, which names no single run) can't resolve either.
+    expect(
+      authorLinkFor(group({ file_kind: 'md_run_toml', md_run_id: null })),
     ).toBeNull()
   })
 })

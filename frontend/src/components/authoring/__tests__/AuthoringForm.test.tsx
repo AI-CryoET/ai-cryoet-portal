@@ -53,6 +53,20 @@ describe('AuthoringForm (md_run)', () => {
     expect(fetchSpy).not.toHaveBeenCalled()
   })
 
+  it('auto-loads the run from the edit-link search param (deep link)', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      jsonResponse({ fields: { md_run_id: 'run01', seed: 42 } }),
+    )
+    render(<AuthoringForm form="md_run" initialId="run01" />)
+    await waitFor(() =>
+      expect(screen.getByLabelText(/Run id/)).toHaveValue('run01'),
+    )
+    expect(screen.getByLabelText(/Seed/)).toHaveValue(42)
+    expect(screen.getByText(/may lag the on-disk file/)).toBeInTheDocument()
+    // The id itself is pre-filled read-only (ADR-0004 identity guidance).
+    expect(screen.getByLabelText(/Run id/)).toBeDisabled()
+  })
+
   it('loading by id populates the form and shows the staleness warning', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       jsonResponse({ fields: { md_run_id: 'run01', seed: 42 } }),

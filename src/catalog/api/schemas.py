@@ -334,11 +334,12 @@ class IssueItem(BaseModel):
 
 class IssueGroup(BaseModel):
     """Outstanding (or recently-resolved) issues grouped by
-    (scope, sample_id, acquisition_id, file_kind)."""
+    (scope, sample_id, acquisition_id, md_run_id, file_kind)."""
 
     scope: str
     sample_id: str | None = None
     acquisition_id: str | None = None
+    md_run_id: str | None = None
     file_kind: str
     file_path: str | None = None
     severity: str
