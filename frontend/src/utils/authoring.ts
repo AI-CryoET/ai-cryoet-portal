@@ -45,30 +45,18 @@ export function buildPayload(
   for (const f of fields) {
     const raw = (values[f.field] ?? '').trim()
     if (raw === '') continue
-    if (f.input === 'integer' || f.input === 'number') {
-      const n = Number(raw)
-      if (Number.isNaN(n)) continue
-      out[f.field] = n
-    } else if (f.input === 'multiselect') {
+    if (f.input === 'multiselect') {
       // Cross-ref list (tomogram derived_from): stored comma-joined in form
       // state — ids are IdStr (no commas), so split round-trips losslessly.
       const arr = raw.split(',').map((s) => s.trim()).filter(Boolean)
       if (arr.length) out[f.field] = arr
     } else if (f.input === 'boolean') {
       out[f.field] = raw.toLowerCase() === 'true'
-    } else if (f.input === 'list') {
-      // Comma-separated; numeric tokens become numbers (linker_pattern etc.).
-      const arr = raw
-        .split(',')
-        .map((s) => s.trim())
-        .filter((s) => s !== '')
-        .map((tok) => {
-          const n = Number(tok)
-          return Number.isNaN(n) ? tok : n
-        })
-      if (arr.length) out[f.field] = arr
     } else {
-      out[f.field] = raw
+      const v = coerceValue(f.input, raw)
+      if (v === undefined) continue
+      if (Array.isArray(v) && v.length === 0) continue
+      out[f.field] = v
     }
   }
   applyCustomFields(out, customFields)
@@ -98,6 +86,16 @@ export function applyCustomFields(
   }
 }
 
+// Classify an unregistered seeded value as an editable custom field (scalar)
+// or `undefined` (list/table — not custom-field-editable). Shared by `hydrate`
+// and `splitEntry`, which differ only in what they do with the `undefined` case.
+function classifyExtra(k: string, v: unknown): CustomField | undefined {
+  if (typeof v === 'boolean') return { key: k, value: String(v), type: 'boolean' }
+  if (typeof v === 'number') return { key: k, value: String(v), type: 'number' }
+  if (typeof v === 'string') return { key: k, value: v, type: 'string' }
+  return undefined
+}
+
 // Split seeded fields (from upload/API-load) into form state: registry fields
 // populate scalar inputs; scalar extras become editable custom-field rows;
 // non-scalar extras (lists/tables) go to opaque passthrough for round-trip
@@ -121,15 +119,11 @@ export function hydrate(
       // stringified.
       values[k] =
         f.input === 'list' && Array.isArray(v) ? v.join(', ') : String(v)
-    } else if (typeof v === 'boolean') {
-      customFields.push({ key: k, value: String(v), type: 'boolean' })
-    } else if (typeof v === 'number') {
-      customFields.push({ key: k, value: String(v), type: 'number' })
-    } else if (typeof v === 'string') {
-      customFields.push({ key: k, value: v, type: 'string' })
-    } else {
-      passthrough[k] = v // list/table — preserved, hand-edited elsewhere
+      continue
     }
+    const extra = classifyExtra(k, v)
+    if (extra) customFields.push(extra)
+    else passthrough[k] = v // list/table — preserved, hand-edited elsewhere
   }
   return { values, customFields, passthrough }
 }
@@ -439,13 +433,10 @@ function splitEntry(fields: FormField[], obj: Record<string, unknown>): SectionE
       // excluded from the posted payload by buildSectionObject.
       entry.values[k] =
         f.input === 'list' && Array.isArray(v) ? v.join(', ') : String(v)
-    } else if (typeof v === 'boolean') {
-      entry.custom.push({ key: k, value: String(v), type: 'boolean' })
-    } else if (typeof v === 'number') {
-      entry.custom.push({ key: k, value: String(v), type: 'number' })
-    } else if (typeof v === 'string') {
-      entry.custom.push({ key: k, value: v, type: 'string' })
+      continue
     }
+    const extra = classifyExtra(k, v)
+    if (extra) entry.custom.push(extra)
     // ponytail: a non-scalar section-level extra (list/table) is dropped — no
     // per-section UI for it; add passthrough-by-section only if real data needs it.
   }
