@@ -675,6 +675,7 @@ def process(
     dest_root: Path,
     runner: Runner,
     tilt_series_id: str = "raw",
+    force: bool = False,
 ) -> None:
     template_acq = template_dir / "acquisition_id"
     template_sample_toml = template_dir / "sample.toml"
@@ -689,6 +690,20 @@ def process(
     acqs = discover(src, style)
 
     sample_dir = dest_root / sample_id
+    # Guard against silently merging into an existing sample. Populating a
+    # sample_id that already exists (a prior run, or a name collision between
+    # two source folders) is possible but must be explicit — it merges new
+    # acquisitions in and overwrites sample.toml. Require --force to allow it.
+    if sample_dir.exists() and not force:
+        raise SystemExit(
+            f"Refusing to write into existing sample directory:\n"
+            f"    {sample_dir}\n"
+            f"sample_id {sample_id!r} is already populated (a prior run, or a "
+            f"name clash with another source folder).\n"
+            f"Merging new acquisitions into it is possible but must be explicit: "
+            f"re-run with --force to allow the merge, or pass a different "
+            f"--sample-id."
+        )
     print(
         f"\nStyle      : {style}\n"
         f"Lab        : {lab_name}\n"
@@ -766,6 +781,18 @@ def process(
         runner.place_gain(gain, dest_acq / "Gains" / gain.name)
 
 
+def apply_lab_prefix(sample_id: str, lab_name: str) -> str:
+    """Return ``sample_id`` namespaced by lab as ``<lab>lab_<id>``.
+
+    Portal sample ids are conventionally prefixed with the lab (e.g. a rosen
+    sample becomes ``rosenlab_<id>``). This is applied to both the default
+    (folder-derived) id and an explicit --sample-id, and is a no-op when the id
+    already starts with the prefix (so it is never doubled).
+    """
+    prefix = f"{lab_name}lab_"
+    return sample_id if sample_id.startswith(prefix) else prefix + sample_id
+
+
 def main(argv: list[str] | None = None) -> None:
     ap = argparse.ArgumentParser(
         description="Reorganize Janelia cryoET facility output for portal ingestion.",
@@ -775,7 +802,15 @@ def main(argv: list[str] | None = None) -> None:
     ap.add_argument(
         "--sample-id",
         help="sample_id_experimental for the output. "
-        "Defaults to the source folder name.",
+        "Defaults to the source folder name. Pass --lab-prefix to namespace "
+        "it with the '<lab>lab_' convention prefix.",
+    )
+    ap.add_argument(
+        "--lab-prefix",
+        action="store_true",
+        help="Prepend the '<lab>lab_' convention prefix to the sample_id "
+        "(e.g. 'rosenlab_<id>'). Off by default; a no-op when the id already "
+        "starts with the prefix.",
     )
     ap.add_argument(
         "--style",
@@ -852,6 +887,14 @@ def main(argv: list[str] | None = None) -> None:
         action="store_true",
         help="Print planned actions without touching the filesystem.",
     )
+    ap.add_argument(
+        "--force",
+        action="store_true",
+        help="Allow writing into an existing {dest}/{sample_id} directory, "
+        "merging new acquisitions into it (and overwriting sample.toml). "
+        "Without this the script refuses to touch a sample_id that already "
+        "exists, to prevent accidental merges.",
+    )
     args = ap.parse_args(argv)
 
     src = args.source.resolve()
@@ -863,6 +906,8 @@ def main(argv: list[str] | None = None) -> None:
         print(f"Auto-detected acquisition style: {style}")
     sample_id = args.sample_id or src.name
     lab_name = confirm_lab(style, args.lab_name)
+    if args.lab_prefix:
+        sample_id = apply_lab_prefix(sample_id, lab_name)
 
     runner = Runner(dry_run=args.dry_run, mode=args.mode)
     process(
@@ -874,6 +919,7 @@ def main(argv: list[str] | None = None) -> None:
         dest_root=args.dest,
         runner=runner,
         tilt_series_id=args.tilt_series_id,
+        force=args.force,
     )
 
     print(
