@@ -32,11 +32,16 @@ function formatTs(seconds: number): string {
   return new Date(seconds * 1000).toLocaleString(undefined, { timeZoneName: 'short' })
 }
 
-// Entity link: sample-scoped rows link to the sample; acquisition-scoped
-// (and below) rows link to the acquisition. Renamed/deleted entities below
-// acquisition level (tomogram, annotation, tilt series) have no detail page
-// of their own, so they still link to their owning acquisition.
+// Deletions: plain text — the entity is gone, so a detail page link would
+// 404. Renames: `sample_id`/`acquisition_id` name the surviving (post-rename)
+// entity, so it still links to a real detail page.
 function EntityCell({ event }: { event: DeletionEvent }) {
+  const label = event.acquisition_id
+    ? `${event.sample_id} · ${event.acquisition_id}`
+    : event.sample_id
+
+  if (event.kind !== 'rename') return <>{label}</>
+
   if (event.acquisition_id) {
     return (
       <CustomLink
@@ -44,13 +49,13 @@ function EntityCell({ event }: { event: DeletionEvent }) {
         params={{ acquisitionId: event.acquisition_id }}
         search={{ sampleId: event.sample_id }}
       >
-        {`${event.sample_id} · ${event.acquisition_id}`}
+        {label}
       </CustomLink>
     )
   }
   return (
     <CustomLink to="/samples/$sampleId" params={{ sampleId: event.sample_id }}>
-      {event.sample_id}
+      {label}
     </CustomLink>
   )
 }
@@ -120,12 +125,6 @@ function useColumns(): MRT_ColumnDef<DeletionEvent>[] {
         accessorKey: 'entity_type',
         header: 'Type',
         size: 160,
-      },
-      {
-        accessorKey: 'entity_id',
-        header: 'Id',
-        size: 160,
-        Cell: ({ cell }) => cell.getValue<string | null>() ?? '—',
       },
       {
         id: 'detail',
