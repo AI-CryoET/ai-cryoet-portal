@@ -33,6 +33,7 @@ One row per sample. Primary key: `sample_id` (the sample directory name).
 | `cell_type` | text | `sample.toml` (`[sample]`) | researcher authored | Required when `type = cellular`. |
 | `description` | text | `sample.toml` (`[sample]`) | researcher authored | Free text. |
 | `path` | text | `directory` | derived | Absolute sample-directory path; surfaced for the UI's copy-path / open-in-file-browser buttons. Works even for samples with no acquisitions. |
+| `renamed_from` | text | `sample.toml` (`[sample]`) | researcher authored | **Not stored in the DB.** Scan-time-only directive (§08c): names the prior `sample_id` this directory was renamed from, so the scanner records a rename event instead of a false deletion + fresh-add. Excluded from the ORM mirror; never served in any API response. |
 
 ### 1a. Chromatin sub-entity (one row per sample when `project = chromatin`)
 
@@ -147,6 +148,7 @@ One row per imaging position. Primary key: `(sample_id, acquisition_id)`.
 | `camera` | text | `.eer` / `.tiff` | derived | Derived from frame extension (`.eer` → Falcon; `.tiff` → K3). |
 | `frame_count` | integer | `MDOC` | derived | Number of tilts. |
 | `path` | text | `directory` | derived | Absolute acquisition-directory path; surfaced for the UI's copy-path / open-in-file-browser buttons. Synthesized acquisitions record the directory the scanner walked. |
+| `renamed_from` | text | `acquisition.toml` (`[acquisition]`) | researcher authored | **Not stored in the DB.** Scan-time-only directive (§08c) — see `Sample.renamed_from`. |
 
 ### 2a. Tilt series sub-entity (0..N per acquisition)
 
@@ -185,6 +187,7 @@ polar plot is rendered at the acquisition level rather than per tilt series.
 | `zarr_path` | text | `directory` | derived | Path to the OME-Zarr rendering under `{tilt_series_id}/stack/`, when present. |
 | `alignment_files` | list[text] | `directory` | derived | Alignment artifacts discovered under `{tilt_series_id}/alignment/`. |
 | `mtime` | float | `directory` | derived | Modification time, used to gate re-parsing. |
+| `renamed_from` | text | `acquisition.toml` (`[[tilt_series]]`) | researcher authored | **Not stored in the DB.** Scan-time-only directive (§08c) — see `Sample.renamed_from`. |
 
 ### 2b. MD source sub-entity (one per acquisition; simulation data only)
 
@@ -224,6 +227,7 @@ tomogram in the same `acquisition.toml`.
 | `zarr_path` | text | `directory` | derived | Derived from prescribed layout. |
 | `zarr_axes` | text | `OME-Zarr .zattrs` | derived | Axis order. |
 | `zarr_scale` | list[float] | `OME-Zarr .zattrs` | derived | Multiscale scale factors. |
+| `renamed_from` | text | `acquisition.toml` (`[raw_tomogram]`) | researcher authored | **Not stored in the DB.** Scan-time-only directive (§08c) — see `Sample.renamed_from`. |
 
 ### 3b. Post-processed tomogram (0..N per acquisition)
 
@@ -247,6 +251,7 @@ tomogram in the same `acquisition.toml`.
 | `zarr_axes` | text | `OME-Zarr .zattrs` | derived | Axis order. |
 | `zarr_scale` | list[float] | `OME-Zarr .zattrs` | derived | Multiscale scale factors. |
 | `size_bytes` | integer | `filesystem` | derived | On-disk size recorded by the scanner via `os.stat` at parse time; powers the home-page size stats and per-card size badges. |
+| `renamed_from` | text | `acquisition.toml` (`[[post_processed_tomogram]]`) | researcher authored | **Not stored in the DB.** Scan-time-only directive (§08c) — see `Sample.renamed_from`. |
 
 ---
 
@@ -262,3 +267,4 @@ One row per annotation output. Primary key: `(sample_id, acquisition_id, annotat
 | `type` | text | `acquisition.toml` (`[[annotation]]`) | researcher authored | e.g. `membrane_segmentation`, `nucleosome_placement`, `nucleosome_orientation`, `sta_result`. |
 | `target_tomogram` | text (FK) | `acquisition.toml` (`[[annotation]]`) | researcher authored | Tomogram this was generated from. |
 | `files` | list[text] | `directory` | derived | `.star`, `.mrc`, `.ome.zarr`, `.png` artifacts discovered in the folder. |
+| `renamed_from` | text | `acquisition.toml` (`[[annotation]]`) | researcher authored | **Not stored in the DB.** Scan-time-only directive (§08c) — see `Sample.renamed_from`. |

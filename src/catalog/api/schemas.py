@@ -323,6 +323,8 @@ class ManageSummary(BaseModel):
     cadence_cron: str
     cadence_tz: str
     outstanding: OutstandingCounts
+    # Deletion events recorded in the latest completed run (§08a badge).
+    deletions_latest_run: int = 0
 
 
 class IssueItem(BaseModel):
@@ -378,6 +380,21 @@ class ScanSampleOutcomeOut(BaseModel):
     sample_id: str
     outcome: str
     detail: str | None = None
+
+
+class DeletionEvent(BaseModel):
+    """One row of the append-only deletion audit feed (§08a/§08c)."""
+
+    id: int
+    scan_run_id: str
+    detected_at: float
+    entity_type: str
+    kind: str = "deletion"
+    sample_id: str
+    acquisition_id: str | None = None
+    entity_id: str | None = None
+    last_known_path: str | None = None
+    last_known_json: str | None = None
 
 
 class ExtrasSummaryRow(BaseModel):
