@@ -133,9 +133,11 @@ docker compose up
 
 Open `http://localhost` (or `http://localhost:<NGINX_PORT>` if you changed the port). The API and frontend ports (8000 and 3000) are internal to the Docker network and not accessible from the host.
 
-### Resetting after schema changes
+### Schema changes
 
-The SQLite database persists in the `catalog-db` named volume across restarts. If the ORM schema has changed since the DB was created (new columns, renamed enums), the API will return 500 errors. Fix by wiping the volume and rescanning:
+The SQLite database persists in the `catalog-db` named volume across restarts. Schema changes are managed by Alembic (see `src/catalog/migrations/README.md`): both the API and the scanner call `init_schema`, which runs `alembic upgrade head` on startup, so pulling a new revision and restarting the stack applies it automatically — no wipe required.
+
+If you do want a clean slate (e.g. testing against fresh sample data), wipe the volume and rescan:
 
 ```
 docker compose down -v
