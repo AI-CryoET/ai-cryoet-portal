@@ -140,6 +140,37 @@ def client(tmp_path):
             detail="assemble failed",
         ))
 
+        # Deletion events (§08a): two on the latest completed run, one on an
+        # older/failed run, and one far outside any within_hours window.
+        s.add(orm.DeletionEventORM(
+            scan_run_id="run-completed", detected_at=_NOW - 260,
+            entity_type="acquisition", sample_id="sample-1",
+            acquisition_id="acq1", entity_id=None,
+            last_known_path="/data/sample-1/acq1",
+            last_known_json='{"acquisition_id": "acq1"}',
+        ))
+        s.add(orm.DeletionEventORM(
+            scan_run_id="run-completed", detected_at=_NOW - 255,
+            entity_type="raw_tomogram", sample_id="sample-1",
+            acquisition_id="acq1", entity_id="t1",
+            last_known_path="/data/sample-1/acq1/raw/t1.mrc",
+            last_known_json='{"tomogram_id": "t1"}',
+        ))
+        s.add(orm.DeletionEventORM(
+            scan_run_id="run-failed", detected_at=_NOW - 190,
+            entity_type="sample", sample_id="sample-9",
+            acquisition_id=None, entity_id=None,
+            last_known_path="/data/sample-9",
+            last_known_json='{"sample_id": "sample-9"}',
+        ))
+        s.add(orm.DeletionEventORM(
+            scan_run_id="run-completed", detected_at=_NOW - 100_000,
+            entity_type="sample", sample_id="sample-old",
+            acquisition_id=None, entity_id=None,
+            last_known_path=None,
+            last_known_json='{"sample_id": "sample-old"}',
+        ))
+
         s.commit()
     finally:
         s.close()
@@ -163,6 +194,9 @@ def test_summary_latest_scan_and_counts(client):
     # Outstanding counts by severity (resolved excluded).
     assert body["outstanding"]["errors"] == 1
     assert body["outstanding"]["warnings"] == 3
+    # Deletion count scoped to the latest *completed* run (3 events logged
+    # against run-completed; the run-failed event is excluded).
+    assert body["deletions_latest_run"] == 3
 
 
 # ── GET /manage/issues (outstanding) ───────────────────────────────────────
@@ -362,3 +396,61 @@ def test_scan_samples_rejects_unknown_outcome(client):
 
 def test_scan_samples_404_for_unknown_run(client):
     assert client.get("/manage/scans/nope/samples").status_code == 404
+
+
+# ── GET /manage/deletions (§08a) ────────────────────────────────────────────
+
+
+def test_deletions_newest_first(client):
+    body = client.get("/manage/deletions").json()
+    detected = [r["detected_at"] for r in body]
+    assert detected == sorted(detected, reverse=True)
+    assert len(body) == 4
+
+
+def test_deletions_filter_by_entity_type(client):
+    body = client.get(
+        "/manage/deletions", params={"entity_type": "raw_tomogram"}
+    ).json()
+    assert len(body) == 1
+    assert body[0]["sample_id"] == "sample-1"
+    assert body[0]["entity_id"] == "t1"
+    assert body[0]["last_known_path"] == "/data/sample-1/acq1/raw/t1.mrc"
+    # §08c: ordinary deletion events (no `kind` set at insert) default to
+    # "deletion" — the fixture rows above never pass `kind` explicitly.
+    assert body[0]["kind"] == "deletion"
+
+
+def test_deletions_filter_by_sample_id(client):
+    body = client.get(
+        "/manage/deletions", params={"sample_id": "sample-9"}
+    ).json()
+    assert len(body) == 1
+    assert body[0]["entity_type"] == "sample"
+    assert body[0]["scan_run_id"] == "run-failed"
+
+
+def test_deletions_filter_by_within_hours(client):
+    # 300s window excludes the sample-old event (100_000s ago).
+    body = client.get(
+        "/manage/deletions", params={"within_hours": 300 / 3600}
+    ).json()
+    sample_ids = {r["sample_id"] for r in body}
+    assert "sample-old" not in sample_ids
+    assert sample_ids == {"sample-1", "sample-9"}
+
+
+def test_deletions_pagination(client):
+    page1 = client.get("/manage/deletions", params={"limit": 2}).json()
+    page2 = client.get(
+        "/manage/deletions", params={"limit": 2, "offset": 2}
+    ).json()
+    assert len(page1) == 2
+    assert len(page2) == 2
+    assert {r["id"] for r in page1}.isdisjoint({r["id"] for r in page2})
+
+
+def test_deletions_no_dismiss_endpoint(client):
+    """The feed is append-only — no PATCH/DELETE surface (§08a non-goal)."""
+    assert client.patch("/manage/deletions/1").status_code in (404, 405)
+    assert client.delete("/manage/deletions/1").status_code in (404, 405)

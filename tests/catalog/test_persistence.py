@@ -23,6 +23,7 @@ from schema import (
     Sample,
     SampleRecord,
     Simulation,
+    TiltSeries,
 )
 from schema.loader import ExtrasEntry
 from schema.schema import DataSource, DatasetType, Project
@@ -794,6 +795,100 @@ def test_reconcile_resolved_then_recurring_reopens(session):
     assert row.last_seen_run_id == "run-3"
 
 
+def test_reconcile_sample_rename_carries_first_seen_at(session):
+    """§08c: a fresh issue under the renamed-to sample_id seeds first_seen_at
+    from the matching pre-rename issue under the old sample_id (same
+    category/file_kind/location), instead of reading as newly introduced."""
+    reconcile_sample_issues(
+        session, "run-1", "s_old", [_issue(sample_id="s_old", location="<root>")], _NOW
+    )
+    session.commit()
+
+    later = _NOW + 3600.0
+    n_new, n_resolved = reconcile_sample_issues(
+        session,
+        "run-2",
+        "s_new",
+        [_issue(sample_id="s_new", location="<root>")],
+        later,
+        renamed_from_sample="s_old",
+    )
+    session.commit()
+    assert n_new == 1  # genuinely fresh row for s_new (different fingerprint)
+    row = (
+        session.execute(
+            select(orm.IssueORM).where(orm.IssueORM.sample_id == "s_new")
+        )
+        .scalars()
+        .one()
+    )
+    assert row.first_seen_at == _NOW
+    assert row.first_seen_run_id == "run-1"
+    assert row.last_seen_at == later
+    assert row.last_seen_run_id == "run-2"
+
+    # The old sample's issue is untouched — reconcile_sample_issues only ever
+    # diffs the sample_id it's called for.
+    old_row = (
+        session.execute(
+            select(orm.IssueORM).where(orm.IssueORM.sample_id == "s_old")
+        )
+        .scalars()
+        .one()
+    )
+    assert old_row.resolved_at is None
+
+
+def test_reconcile_acquisition_rename_carries_first_seen_at(session):
+    """Same continuity, one level down: an acquisition-scope issue survives a
+    `renamed_from` on the acquisition (sample unchanged)."""
+    reconcile_sample_issues(
+        session,
+        "run-1",
+        "s1",
+        [
+            _issue(
+                sample_id="s1",
+                acquisition_id="acq_old",
+                scope="acquisition",
+                file_kind="acquisition_toml",
+                location="<root>",
+            )
+        ],
+        _NOW,
+    )
+    session.commit()
+
+    later = _NOW + 3600.0
+    n_new, n_resolved = reconcile_sample_issues(
+        session,
+        "run-2",
+        "s1",
+        [
+            _issue(
+                sample_id="s1",
+                acquisition_id="acq_new",
+                scope="acquisition",
+                file_kind="acquisition_toml",
+                location="<root>",
+            )
+        ],
+        later,
+        renamed_acquisitions={"acq_new": "acq_old"},
+    )
+    session.commit()
+    assert n_new == 1
+    row = (
+        session.execute(
+            select(orm.IssueORM).where(orm.IssueORM.acquisition_id == "acq_new")
+        )
+        .scalars()
+        .one()
+    )
+    assert row.first_seen_at == _NOW
+    assert row.first_seen_run_id == "run-1"
+
+
 def test_reconcile_skipped_sample_leaves_issues_unchanged(session):
     """Skipped sample: the scanner does NOT call reconcile, so issues persist
     with their old last_seen (the skip rule). We simulate by not re-reconciling.
@@ -986,6 +1081,291 @@ def test_orphan_acquisition_status_and_issues_pruned_on_next_upsert(session):
     upsert_sample_record(session, r2, extras=[], run_id="run-2", now=_NOW + 1)
     session.commit()
     assert session.get(orm.AcquisitionScanStatusORM, ("s1", "acq2")) is None
+    assert _outstanding(session) == []
+
+
+def _deletion_events(session, sample_id="s1"):
+    return (
+        session.execute(
+            select(orm.DeletionEventORM)
+            .where(orm.DeletionEventORM.sample_id == sample_id)
+            .order_by(orm.DeletionEventORM.id)
+        )
+        .scalars()
+        .all()
+    )
+
+
+def test_deletion_event_on_stale_acquisition(session):
+    acq = AcquisitionFile(
+        acquisition=Acquisition(acquisition_id="acq1", path="/data/s1/acq1")
+    )
+    r = SampleRecord(
+        sample=Sample(
+            sample_id="s1",
+            data_source=DataSource.experimental,
+            project=Project.chromatin,
+        ),
+        acquisitions={"acq1": acq},
+    )
+    upsert_sample_record(session, r, extras=[], run_id="run-1", now=_NOW)
+    session.commit()
+    assert _deletion_events(session) == []
+
+    r2 = SampleRecord(sample=r.sample, acquisitions={})
+    upsert_sample_record(session, r2, extras=[], run_id="run-2", now=_NOW + 1)
+    session.commit()
+
+    events = _deletion_events(session)
+    assert len(events) == 1
+    ev = events[0]
+    assert ev.scan_run_id == "run-2"
+    assert ev.detected_at == _NOW + 1
+    assert ev.entity_type == "acquisition"
+    assert ev.sample_id == "s1"
+    assert ev.acquisition_id == "acq1"
+    assert ev.entity_id is None
+    assert ev.last_known_path == "/data/s1/acq1"
+    snapshot = json.loads(ev.last_known_json)
+    assert snapshot["acquisition_id"] == "acq1"
+
+
+def test_deletion_event_on_stale_raw_tomogram(session):
+    raw = RawTomogram(id="t_raw", mrc_path="/data/s1/acq1/raw/t_raw.mrc")
+    acq_file = AcquisitionFile(
+        acquisition=Acquisition(acquisition_id="acq1"), raw_tomogram=raw
+    )
+    r = SampleRecord(
+        sample=Sample(
+            sample_id="s1",
+            data_source=DataSource.experimental,
+            project=Project.chromatin,
+        ),
+        acquisitions={"acq1": acq_file},
+    )
+    upsert_sample_record(session, r, extras=[], run_id="run-1", now=_NOW)
+    session.commit()
+
+    acq_file2 = AcquisitionFile(acquisition=Acquisition(acquisition_id="acq1"))
+    r2 = SampleRecord(sample=r.sample, acquisitions={"acq1": acq_file2})
+    upsert_sample_record(session, r2, extras=[], run_id="run-2", now=_NOW + 1)
+    session.commit()
+
+    events = _deletion_events(session)
+    assert len(events) == 1
+    ev = events[0]
+    assert ev.entity_type == "raw_tomogram"
+    assert ev.acquisition_id == "acq1"
+    assert ev.entity_id == "t_raw"
+    assert ev.last_known_path == "/data/s1/acq1/raw/t_raw.mrc"
+
+
+def test_deletion_event_on_stale_post_processed_tomogram(session):
+    tomo = PostProcessedTomogram(id="t1", zarr_path="/data/s1/acq1/post/t1.zarr")
+    acq_file = AcquisitionFile(
+        acquisition=Acquisition(acquisition_id="acq1"),
+        post_processed_tomogram=[tomo],
+    )
+    r = SampleRecord(
+        sample=Sample(
+            sample_id="s1",
+            data_source=DataSource.experimental,
+            project=Project.chromatin,
+        ),
+        acquisitions={"acq1": acq_file},
+    )
+    upsert_sample_record(session, r, extras=[], run_id="run-1", now=_NOW)
+    session.commit()
+
+    acq_file2 = AcquisitionFile(acquisition=Acquisition(acquisition_id="acq1"))
+    r2 = SampleRecord(sample=r.sample, acquisitions={"acq1": acq_file2})
+    upsert_sample_record(session, r2, extras=[], run_id="run-2", now=_NOW + 1)
+    session.commit()
+
+    events = _deletion_events(session)
+    assert len(events) == 1
+    ev = events[0]
+    assert ev.entity_type == "post_processed_tomogram"
+    assert ev.entity_id == "t1"
+    assert ev.last_known_path == "/data/s1/acq1/post/t1.zarr"
+
+
+def test_deletion_event_on_stale_annotation(session):
+    ann = Annotation(id="a1", files=["x.mrc"])
+    acq_file = AcquisitionFile(
+        acquisition=Acquisition(acquisition_id="acq1"), annotation=[ann]
+    )
+    r = SampleRecord(
+        sample=Sample(
+            sample_id="s1",
+            data_source=DataSource.experimental,
+            project=Project.chromatin,
+        ),
+        acquisitions={"acq1": acq_file},
+    )
+    upsert_sample_record(session, r, extras=[], run_id="run-1", now=_NOW)
+    session.commit()
+
+    acq_file2 = AcquisitionFile(acquisition=Acquisition(acquisition_id="acq1"))
+    r2 = SampleRecord(sample=r.sample, acquisitions={"acq1": acq_file2})
+    upsert_sample_record(session, r2, extras=[], run_id="run-2", now=_NOW + 1)
+    session.commit()
+
+    events = _deletion_events(session)
+    assert len(events) == 1
+    ev = events[0]
+    assert ev.entity_type == "annotation"
+    assert ev.entity_id == "a1"
+    # Annotation has no path/mrc_path/zarr_path column — no recovery path.
+    assert ev.last_known_path is None
+    assert json.loads(ev.last_known_json)["files"] == ["x.mrc"]
+
+
+def test_deletion_event_on_stale_tilt_series(session):
+    ts = TiltSeries(
+        tilt_series_id="ts_a", zarr_path="/data/s1/acq1/ts/ts_a.zarr"
+    )
+    acq_file = AcquisitionFile(
+        acquisition=Acquisition(acquisition_id="acq1"), tilt_series=[ts]
+    )
+    r = SampleRecord(
+        sample=Sample(
+            sample_id="s1",
+            data_source=DataSource.experimental,
+            project=Project.chromatin,
+        ),
+        acquisitions={"acq1": acq_file},
+    )
+    upsert_sample_record(session, r, extras=[], run_id="run-1", now=_NOW)
+    session.commit()
+
+    acq_file2 = AcquisitionFile(acquisition=Acquisition(acquisition_id="acq1"))
+    r2 = SampleRecord(sample=r.sample, acquisitions={"acq1": acq_file2})
+    upsert_sample_record(session, r2, extras=[], run_id="run-2", now=_NOW + 1)
+    session.commit()
+
+    events = _deletion_events(session)
+    assert len(events) == 1
+    ev = events[0]
+    assert ev.entity_type == "tilt_series"
+    assert ev.entity_id == "ts_a"
+    assert ev.last_known_path == "/data/s1/acq1/ts/ts_a.zarr"
+
+
+def test_deletion_event_on_stale_md_source(session):
+    sample = Sample(
+        sample_id="sim1", data_source=DataSource.simulation, project=Project.chromatin
+    )
+    acq_file = AcquisitionFile(
+        acquisition=Acquisition(acquisition_id="acq1"),
+        md_source=MdSource(md_run_id="run_a", now=_NOW, frame=1),
+    )
+    r = SampleRecord(
+        sample=sample,
+        simulation=Simulation(dataset_type=DatasetType.bulk),
+        acquisitions={"acq1": acq_file},
+    )
+    upsert_sample_record(session, r, extras=[], run_id="run-1", now=_NOW)
+    session.commit()
+
+    acq_file2 = AcquisitionFile(acquisition=Acquisition(acquisition_id="acq1"))
+    r2 = SampleRecord(sample=sample, simulation=r.simulation, acquisitions={"acq1": acq_file2})
+    upsert_sample_record(session, r2, extras=[], run_id="run-2", now=_NOW + 1)
+    session.commit()
+
+    events = _deletion_events(session, sample_id="sim1")
+    assert len(events) == 1
+    ev = events[0]
+    assert ev.entity_type == "md_source"
+    assert ev.acquisition_id == "acq1"
+    assert ev.entity_id is None
+    # md_source has no path-like column.
+    assert ev.last_known_path is None
+
+
+def test_no_deletion_event_for_stale_md_run(session):
+    """md_run has no §08a entity_type — its cleanup is not logged."""
+    sample = Sample(
+        sample_id="sim1", data_source=DataSource.simulation, project=Project.chromatin
+    )
+    r = SampleRecord(
+        sample=sample,
+        simulation=Simulation(dataset_type=DatasetType.bulk),
+        md_run=[MdRun(id="run_a")],
+    )
+    upsert_sample_record(session, r, extras=[], run_id="run-1", now=_NOW)
+    session.commit()
+
+    r2 = SampleRecord(sample=sample, simulation=r.simulation, md_run=[])
+    upsert_sample_record(session, r2, extras=[], run_id="run-2", now=_NOW + 1)
+    session.commit()
+
+    assert session.get(orm.MdRunORM, ("sim1", "run_a")) is None
+    assert _deletion_events(session, sample_id="sim1") == []
+
+
+def test_acquisition_and_children_vanish_together_logs_per_child_no_orphan_double_count(
+    session,
+):
+    """Deleting an acquisition + its children in one scan logs one event per
+    dropped row (acquisition + each child) but the orphan acquisition-status/
+    issue prune (a consequence of the acquisition's own event) is NOT logged
+    separately — no double-counting (§08a acceptance criteria)."""
+    raw = RawTomogram(id="t_raw")
+    tomo = PostProcessedTomogram(id="t1")
+    ann = Annotation(id="a1")
+    acq_file = AcquisitionFile(
+        acquisition=Acquisition(acquisition_id="acq1"),
+        raw_tomogram=raw,
+        post_processed_tomogram=[tomo],
+        annotation=[ann],
+    )
+    r = SampleRecord(
+        sample=Sample(
+            sample_id="s1",
+            data_source=DataSource.experimental,
+            project=Project.chromatin,
+        ),
+        acquisitions={"acq1": acq_file},
+    )
+    upsert_sample_record(session, r, extras=[], run_id="run-1", now=_NOW)
+    upsert_acquisition_scan_status(
+        session, "s1", "acq1", now=_NOW, outcome="upserted", run_id="run-1",
+        changed=True,
+    )
+    reconcile_sample_issues(
+        session,
+        "run-1",
+        "s1",
+        [
+            _issue(
+                scope="acquisition",
+                acquisition_id="acq1",
+                file_kind="acquisition_toml",
+                location="acquisitions.acq1",
+            )
+        ],
+        _NOW,
+    )
+    session.commit()
+
+    # Whole acquisition (and its children) vanish in one scan.
+    r2 = SampleRecord(sample=r.sample, acquisitions={})
+    upsert_sample_record(session, r2, extras=[], run_id="run-2", now=_NOW + 1)
+    session.commit()
+
+    events = _deletion_events(session)
+    by_type = {ev.entity_type: ev for ev in events}
+    # One event for the acquisition + one per child — exactly 4, nothing extra
+    # from the orphan status/issue prune.
+    assert len(events) == 4
+    assert set(by_type) == {
+        "acquisition", "raw_tomogram", "post_processed_tomogram", "annotation",
+    }
+    assert all(ev.scan_run_id == "run-2" for ev in events)
+    # The orphan-prune side effects (status row + acquisition-scope issue)
+    # still happened, just without their own deletion event.
+    assert session.get(orm.AcquisitionScanStatusORM, ("s1", "acq1")) is None
     assert _outstanding(session) == []
 
 
