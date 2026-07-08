@@ -16,6 +16,7 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as ManageIndexRouteImport } from './routes/manage.index'
 import { Route as SamplesSampleIdRouteImport } from './routes/samples.$sampleId'
 import { Route as ManageScansRouteImport } from './routes/manage.scans'
+import { Route as ManageDeletionsRouteImport } from './routes/manage.deletions'
 import { Route as AcquisitionsAcquisitionIdRouteImport } from './routes/acquisitions.$acquisitionId'
 import { Route as ManageScansScanIdRouteImport } from './routes/manage.scans_.$scanId'
 
@@ -54,6 +55,11 @@ const ManageScansRoute = ManageScansRouteImport.update({
   path: '/manage/scans',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ManageDeletionsRoute = ManageDeletionsRouteImport.update({
+  id: '/manage/deletions',
+  path: '/manage/deletions',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AcquisitionsAcquisitionIdRoute =
   AcquisitionsAcquisitionIdRouteImport.update({
     id: '/acquisitions/$acquisitionId',
@@ -72,6 +78,7 @@ export interface FileRoutesByFullPath {
   '/experimental': typeof ExperimentalRoute
   '/md-simulation': typeof MdSimulationRoute
   '/acquisitions/$acquisitionId': typeof AcquisitionsAcquisitionIdRoute
+  '/manage/deletions': typeof ManageDeletionsRoute
   '/manage/scans': typeof ManageScansRoute
   '/samples/$sampleId': typeof SamplesSampleIdRoute
   '/manage/': typeof ManageIndexRoute
@@ -83,6 +90,7 @@ export interface FileRoutesByTo {
   '/experimental': typeof ExperimentalRoute
   '/md-simulation': typeof MdSimulationRoute
   '/acquisitions/$acquisitionId': typeof AcquisitionsAcquisitionIdRoute
+  '/manage/deletions': typeof ManageDeletionsRoute
   '/manage/scans': typeof ManageScansRoute
   '/samples/$sampleId': typeof SamplesSampleIdRoute
   '/manage': typeof ManageIndexRoute
@@ -95,6 +103,7 @@ export interface FileRoutesById {
   '/experimental': typeof ExperimentalRoute
   '/md-simulation': typeof MdSimulationRoute
   '/acquisitions/$acquisitionId': typeof AcquisitionsAcquisitionIdRoute
+  '/manage/deletions': typeof ManageDeletionsRoute
   '/manage/scans': typeof ManageScansRoute
   '/samples/$sampleId': typeof SamplesSampleIdRoute
   '/manage/': typeof ManageIndexRoute
@@ -108,6 +117,7 @@ export interface FileRouteTypes {
     | '/experimental'
     | '/md-simulation'
     | '/acquisitions/$acquisitionId'
+    | '/manage/deletions'
     | '/manage/scans'
     | '/samples/$sampleId'
     | '/manage/'
@@ -119,6 +129,7 @@ export interface FileRouteTypes {
     | '/experimental'
     | '/md-simulation'
     | '/acquisitions/$acquisitionId'
+    | '/manage/deletions'
     | '/manage/scans'
     | '/samples/$sampleId'
     | '/manage'
@@ -130,6 +141,7 @@ export interface FileRouteTypes {
     | '/experimental'
     | '/md-simulation'
     | '/acquisitions/$acquisitionId'
+    | '/manage/deletions'
     | '/manage/scans'
     | '/samples/$sampleId'
     | '/manage/'
@@ -142,6 +154,7 @@ export interface RootRouteChildren {
   ExperimentalRoute: typeof ExperimentalRoute
   MdSimulationRoute: typeof MdSimulationRoute
   AcquisitionsAcquisitionIdRoute: typeof AcquisitionsAcquisitionIdRoute
+  ManageDeletionsRoute: typeof ManageDeletionsRoute
   ManageScansRoute: typeof ManageScansRoute
   SamplesSampleIdRoute: typeof SamplesSampleIdRoute
   ManageIndexRoute: typeof ManageIndexRoute
@@ -199,6 +212,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ManageScansRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/manage/deletions': {
+      id: '/manage/deletions'
+      path: '/manage/deletions'
+      fullPath: '/manage/deletions'
+      preLoaderRoute: typeof ManageDeletionsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/acquisitions/$acquisitionId': {
       id: '/acquisitions/$acquisitionId'
       path: '/acquisitions/$acquisitionId'
@@ -222,6 +242,7 @@ const rootRouteChildren: RootRouteChildren = {
   ExperimentalRoute: ExperimentalRoute,
   MdSimulationRoute: MdSimulationRoute,
   AcquisitionsAcquisitionIdRoute: AcquisitionsAcquisitionIdRoute,
+  ManageDeletionsRoute: ManageDeletionsRoute,
   ManageScansRoute: ManageScansRoute,
   SamplesSampleIdRoute: SamplesSampleIdRoute,
   ManageIndexRoute: ManageIndexRoute,

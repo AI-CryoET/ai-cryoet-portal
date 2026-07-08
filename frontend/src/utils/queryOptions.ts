@@ -10,6 +10,8 @@ import {
   type SamplesSearchParams,
 } from '~/utils/samplesSearch'
 import type {
+  DeletionEntityType,
+  DeletionEvent,
   FiltersOptionsOut,
   IssueGroup,
   ManageSummary,
@@ -161,6 +163,39 @@ export const recentlyResolvedQueryOptions = (withinHours = 24) =>
 
 export function useRecentlyResolvedQuery(withinHours = 24) {
   return useSuspenseQuery(recentlyResolvedQueryOptions(withinHours))
+}
+
+// ── /manage/deletions (deletion/rename audit feed) ──────────────────────────
+
+export type DeletionFilters = {
+  entity_type?: DeletionEntityType
+  sample_id?: string
+  within_hours?: number
+}
+
+function buildDeletionQueryString(filters: DeletionFilters): string {
+  const params = new URLSearchParams()
+  if (filters.entity_type) params.set('entity_type', filters.entity_type)
+  if (filters.sample_id) params.set('sample_id', filters.sample_id)
+  if (filters.within_hours) params.set('within_hours', String(filters.within_hours))
+  const qs = params.toString()
+  return qs ? `?${qs}` : ''
+}
+
+export const deletionsQueryOptions = (filters: DeletionFilters = {}) =>
+  queryOptions({
+    queryKey: ['manage', 'deletions', filters],
+    queryFn: () =>
+      apiFetch<DeletionEvent[]>(`/manage/deletions${buildDeletionQueryString(filters)}`),
+  })
+
+// `useQuery` + `keepPreviousData` so toolbar filter edits don't unmount the
+// table while the next fetch is in flight.
+export function useDeletionsQuery(filters: DeletionFilters = {}) {
+  return useQuery({
+    ...deletionsQueryOptions(filters),
+    placeholderData: keepPreviousData,
+  })
 }
 
 // ── /manage/scans (run history) ─────────────────────────────────────────────
