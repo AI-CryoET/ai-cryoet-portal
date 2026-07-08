@@ -206,7 +206,19 @@ not scale the `api` Deployment above 1.
 
 ## Updating the Application
 
-Pin specific image tags in the overlay's `kustomization.yaml`. Note: the build
+Push a `v*.*.*` git tag from `main` to build and publish new images (see the
+[build workflow](../.github/workflows/build-images.yml)):
+
+```bash
+git checkout main && git pull
+git tag v1.0.0
+git push origin v1.0.0
+```
+
+This builds and pushes all three images (`ai-cryoet-api`, `ai-cryoet-frontend`,
+`ai-cryoet-scanner`) to `ghcr.io/janeliascicomp/`.
+
+Then pin the new tag in the overlay's `kustomization.yaml`. Note: the build
 workflow's `metadata-action` strips the leading `v`, so a `v1.0.0` git tag
 publishes image tag `1.0.0` (without the `v`) — use that here:
 
