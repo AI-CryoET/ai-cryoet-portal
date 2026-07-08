@@ -1,8 +1,7 @@
 """End-to-end tests for ``catalog.db.init_schema``.
 
-Pre-production, ``init_schema`` runs ``Base.metadata.create_all`` directly
-(see ``catalog/migrations/README.md`` for the rationale and the path
-back to Alembic when production lands). These tests pin that contract.
+``init_schema`` runs ``alembic upgrade head`` (see
+``catalog/migrations/README.md``). These tests pin that contract.
 """
 
 from __future__ import annotations
@@ -10,6 +9,7 @@ from __future__ import annotations
 import pytest
 
 pytest.importorskip("sqlalchemy")
+pytest.importorskip("alembic")
 
 from pathlib import Path  # noqa: E402
 
@@ -32,8 +32,8 @@ def test_init_schema_creates_all_orm_tables(tmp_path):
     expected = set(Base.metadata.tables.keys())
     assert expected <= tables, f"missing tables: {expected - tables}"
 
-    # No Alembic version table is written — migrations are deferred.
-    assert "alembic_version" not in tables
+    # Alembic's version table is written and pinned at head.
+    assert "alembic_version" in tables
 
 
 def test_init_schema_is_idempotent(tmp_path):

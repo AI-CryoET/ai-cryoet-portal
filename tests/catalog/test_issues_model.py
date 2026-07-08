@@ -1,8 +1,8 @@
-"""ORM round-trip + init_schema smoke for the new scan data model (plan §8).
+"""ORM round-trip smoke for the scan data model (plan §8).
 
-Pins that the idempotent ``init_schema`` step drops the four legacy scan tables
-and materializes the six new ones (safe to run twice), and that each new ORM
-class round-trips through the DB.
+Pins that ``init_schema`` materializes the scan-run-history + current-state
+tables (safe to run twice), and that each ORM class round-trips through the
+DB.
 """
 from __future__ import annotations
 
@@ -10,40 +10,15 @@ import pytest
 
 pytest.importorskip("sqlalchemy")
 
-from sqlalchemy import inspect, text  # noqa: E402
+from sqlalchemy import inspect  # noqa: E402
 from sqlalchemy.orm import sessionmaker  # noqa: E402
 
 from catalog import db, orm  # noqa: E402
 from schema.schema import DataSource, Project  # noqa: E402
 
-_LEGACY = {"scans", "scan_warnings", "scan_run_warnings", "scan_samples"}
-_NEW = {
-    "scan_runs",
-    "scan_log_lines",
-    "scan_sample_outcomes",
-    "issues",
-    "sample_scan_status",
-    "acquisition_scan_status",
-}
-
 
 def _engine(tmp_path, name="cat.db"):
     return db.make_engine(f"sqlite:///{tmp_path / name}")
-
-
-def test_init_schema_drops_legacy_creates_new(tmp_path):
-    engine = _engine(tmp_path)
-    # Pre-create the legacy tables so the drop step has something to remove.
-    with engine.begin() as conn:
-        for t in _LEGACY:
-            conn.execute(text(f"CREATE TABLE {t} (id INTEGER PRIMARY KEY)"))
-
-    db.init_schema(engine)
-    tables = set(inspect(engine).get_table_names())
-    assert _LEGACY.isdisjoint(tables), f"legacy tables not dropped: {_LEGACY & tables}"
-    assert _NEW <= tables, f"missing new tables: {_NEW - tables}"
-    # scan_state is deliberately kept by the migration step.
-    assert "scan_state" in tables
 
 
 def test_init_schema_idempotent_twice(tmp_path):
