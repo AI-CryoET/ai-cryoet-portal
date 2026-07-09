@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as MdSimulationRouteImport } from './routes/md-simulation'
 import { Route as ExperimentalRouteImport } from './routes/experimental'
+import { Route as DataOrganizationRouteImport } from './routes/data-organization'
 import { Route as DataRouteImport } from './routes/data'
 import { Route as AuthorRouteImport } from './routes/author'
 import { Route as IndexRouteImport } from './routes/index'
@@ -29,6 +30,11 @@ const MdSimulationRoute = MdSimulationRouteImport.update({
 const ExperimentalRoute = ExperimentalRouteImport.update({
   id: '/experimental',
   path: '/experimental',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DataOrganizationRoute = DataOrganizationRouteImport.update({
+  id: '/data-organization',
+  path: '/data-organization',
   getParentRoute: () => rootRouteImport,
 } as any)
 const DataRoute = DataRouteImport.update({
@@ -82,6 +88,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/author': typeof AuthorRoute
   '/data': typeof DataRoute
+  '/data-organization': typeof DataOrganizationRoute
   '/experimental': typeof ExperimentalRoute
   '/md-simulation': typeof MdSimulationRoute
   '/acquisitions/$acquisitionId': typeof AcquisitionsAcquisitionIdRoute
@@ -95,6 +102,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/author': typeof AuthorRoute
   '/data': typeof DataRoute
+  '/data-organization': typeof DataOrganizationRoute
   '/experimental': typeof ExperimentalRoute
   '/md-simulation': typeof MdSimulationRoute
   '/acquisitions/$acquisitionId': typeof AcquisitionsAcquisitionIdRoute
@@ -109,6 +117,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/author': typeof AuthorRoute
   '/data': typeof DataRoute
+  '/data-organization': typeof DataOrganizationRoute
   '/experimental': typeof ExperimentalRoute
   '/md-simulation': typeof MdSimulationRoute
   '/acquisitions/$acquisitionId': typeof AcquisitionsAcquisitionIdRoute
@@ -124,6 +133,7 @@ export interface FileRouteTypes {
     | '/'
     | '/author'
     | '/data'
+    | '/data-organization'
     | '/experimental'
     | '/md-simulation'
     | '/acquisitions/$acquisitionId'
@@ -137,6 +147,7 @@ export interface FileRouteTypes {
     | '/'
     | '/author'
     | '/data'
+    | '/data-organization'
     | '/experimental'
     | '/md-simulation'
     | '/acquisitions/$acquisitionId'
@@ -150,6 +161,7 @@ export interface FileRouteTypes {
     | '/'
     | '/author'
     | '/data'
+    | '/data-organization'
     | '/experimental'
     | '/md-simulation'
     | '/acquisitions/$acquisitionId'
@@ -164,6 +176,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AuthorRoute: typeof AuthorRoute
   DataRoute: typeof DataRoute
+  DataOrganizationRoute: typeof DataOrganizationRoute
   ExperimentalRoute: typeof ExperimentalRoute
   MdSimulationRoute: typeof MdSimulationRoute
   AcquisitionsAcquisitionIdRoute: typeof AcquisitionsAcquisitionIdRoute
@@ -188,6 +201,13 @@ declare module '@tanstack/react-router' {
       path: '/experimental'
       fullPath: '/experimental'
       preLoaderRoute: typeof ExperimentalRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/data-organization': {
+      id: '/data-organization'
+      path: '/data-organization'
+      fullPath: '/data-organization'
+      preLoaderRoute: typeof DataOrganizationRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/data': {
@@ -260,6 +280,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AuthorRoute: AuthorRoute,
   DataRoute: DataRoute,
+  DataOrganizationRoute: DataOrganizationRoute,
   ExperimentalRoute: ExperimentalRoute,
   MdSimulationRoute: MdSimulationRoute,
   AcquisitionsAcquisitionIdRoute: AcquisitionsAcquisitionIdRoute,
