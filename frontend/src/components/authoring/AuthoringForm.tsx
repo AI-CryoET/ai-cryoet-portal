@@ -7,9 +7,9 @@ import {
   Divider,
   FormControl,
   FormControlLabel,
-  FormHelperText,
   FormLabel,
   IconButton,
+  Link,
   MenuItem,
   Radio,
   RadioGroup,
@@ -265,26 +265,18 @@ function SectionedAuthoringForm({ form, initialId, initialSampleId }: Props) {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     setDone(false)
-    // Thin structural check on the id (the full IdStr rules run on the backend).
-    if (idField && idSection) {
-      const key = pathFor(idSection, idField.field)
-      if (!idValue) {
-        setErrors({ [key]: 'Required' })
-        setRecordErrors([])
-        return
-      }
-      if (!ID_PATTERN.test(idValue)) {
-        setErrors({ [key]: 'Invalid id: letters, digits, . _ - only' })
-        setRecordErrors([])
-        return
-      }
-    }
     const payload = buildSectionedPayload(
       sections,
       sectionFields,
       state,
       dataSource,
     )
+    // The directory-identity id is no longer a form field (it IS the folder
+    // name), but a flat form's model still requires it (md_run). Inject a
+    // placeholder the endpoint strips from the output so validation passes.
+    if (idField && idSection?.root && payload[idField.field] === undefined) {
+      payload[idField.field] = 'placeholder'
+    }
     const result = await postToml(form, payload, meta.filename)
     if (result.status === 'invalid') {
       setErrors(errorsByField(result.errors))
@@ -299,9 +291,15 @@ function SectionedAuthoringForm({ form, initialId, initialSampleId }: Props) {
     setDone(true)
   }
 
-  const placement = meta.placement
-    .replace('{id}', idValue || '<id>')
-    .replace('{sample_id}', sampleId.trim() || '<sample_id>')
+  // Loaded from the portal → concrete path with the known id; new file →
+  // template showing the id the user must assign as the folder name.
+  const placement = stale
+    ? meta.placement
+        .replace('{id}', idValue || '<id>')
+        .replace('{sample_id}', sampleId.trim() || '<sample_id>')
+    : meta.placement
+        .replace('{id}', idField ? `{${idField.field}}` : '<id>')
+        .replace('{sample_id}', sampleId.trim() || '{sample_id}')
 
   return (
     <Box component="form" onSubmit={handleSubmit} noValidate>
@@ -312,6 +310,8 @@ function SectionedAuthoringForm({ form, initialId, initialSampleId }: Props) {
           loadId={loadId}
           onLoadIdChange={setLoadId}
           onLoad={handleLoad}
+          // md_run has no portal load-by-id path yet.
+          showLoadById={form !== 'md_run'}
           extra={
             needsSampleId && (
               <TextField
@@ -324,27 +324,16 @@ function SectionedAuthoringForm({ form, initialId, initialSampleId }: Props) {
           }
         />
 
+        {gated && (
+          <DataSourceRadio value={dataSource} onChange={setDataSource} />
+        )}
+
         {seedError && <Alert severity="error">{seedError}</Alert>}
         {stale && (
           <Alert severity="warning">
             Loaded from the portal — this may lag the on-disk file. Re-check
             before saving over newer changes.
           </Alert>
-        )}
-
-        {gated && (
-          <TextField
-            select
-            label="Data source"
-            value={dataSource}
-            onChange={(e) => setDataSource(e.target.value as DataSource)}
-            size="small"
-            sx={{ minWidth: 220 }}
-            helperText="Simulation acquisitions record an MD source."
-          >
-            <MenuItem value="experimental">Experimental</MenuItem>
-            <MenuItem value="simulation">Simulation</MenuItem>
-          </TextField>
         )}
 
         {sections.map((s) => {
@@ -366,6 +355,7 @@ function SectionedAuthoringForm({ form, initialId, initialSampleId }: Props) {
             <ScalarSection
               key={s.section}
               section={s}
+              sectionName={s.title || meta.title}
               fields={sectionFields(s.section)}
               state={(state[s.section] as SectionState) ?? emptySection()}
               errors={errors}
@@ -386,10 +376,18 @@ function SectionedAuthoringForm({ form, initialId, initialSampleId }: Props) {
           </Alert>
         )}
 
+        {/* A form with no titled sections (md_run) renders no section divider,
+            so close the fields off with one before the saving hint. */}
+        {!sections.some((s) => s.title) && (
+          <Divider sx={{ borderBottomWidth: 2, borderColor: 'primary.main' }} />
+        )}
+
         {idField && (
-          <Typography variant="body2" color="text.secondary">
-            Save as <code>{placement}</code>
-          </Typography>
+          <PlacementHint
+            loaded={stale}
+            noun={meta.title.toLowerCase()}
+            placement={placement}
+          />
         )}
 
         <Box>
@@ -406,6 +404,7 @@ function SectionedAuthoringForm({ form, initialId, initialSampleId }: Props) {
 
 function ScalarSection({
   section,
+  sectionName,
   fields,
   state,
   errors,
@@ -416,6 +415,7 @@ function ScalarSection({
   onCustomChange,
 }: {
   section: FormSection
+  sectionName: string
   fields: FormField[]
   state: SectionState
   errors: Record<string, string>
@@ -431,13 +431,18 @@ function ScalarSection({
   return (
     <Box>
       {section.title && (
-        <Typography variant="subtitle1" sx={{ fontWeight: 600, mb: 1 }}>
-          {section.title}
-          {locked && ' (read-only)'}
-        </Typography>
+        <>
+          <Divider sx={{ mb: 1.5, borderBottomWidth: 2, borderColor: 'primary.main' }} />
+          <Typography variant="h6" gutterBottom sx={{ fontWeight: 700 }}>
+            {section.title}
+            {locked && ' (read-only)'}
+          </Typography>
+        </>
       )}
       <Stack spacing={2}>
-        {fields.map((f) => (
+        {/* The directory-identity id is not authored here (it IS the folder
+            name); the placement hint covers it instead. */}
+        {fields.filter((f) => !f.isId).map((f) => (
           <Field
             key={f.field}
             field={f}
@@ -461,9 +466,7 @@ function ScalarSection({
           <CustomFields
             fields={state.customFields}
             onChange={onCustomChange}
-            label={
-              section.title ? `${section.title} — custom fields` : undefined
-            }
+            sectionName={sectionName}
           />
         )}
       </Stack>
@@ -497,7 +500,8 @@ function RepeatableSection({
   const idFieldName = fields.find((f) => f.required)?.field
   return (
     <Box>
-      <Typography variant="subtitle1" sx={{ fontWeight: 600, mb: 1 }}>
+      <Divider sx={{ mb: 1.5, borderBottomWidth: 2, borderColor: 'primary.main' }} />
+      <Typography variant="h6" gutterBottom sx={{ fontWeight: 700 }}>
         {section.title}
       </Typography>
       <Stack spacing={2}>
@@ -507,7 +511,7 @@ function RepeatableSection({
           return (
             <Box
               key={i}
-              sx={{ border: 1, borderColor: 'divider', borderRadius: 1, p: 2 }}
+              sx={{ border: 2, borderColor: 'divider', borderRadius: 1, p: 2 }}
             >
               <Stack direction="row" justifyContent="flex-end" alignItems="center">
                 {locked && (
@@ -680,14 +684,17 @@ function Field({
 
 // Per-section custom fields (ADR-0004): key/value rows with a string/number/
 // boolean type selector. List/date are hand-edited, so no UI for them.
+// No top border (custom fields join the section above); a bottom border closes
+// the section off.
 function CustomFields({
   fields,
   onChange,
-  label = 'Custom fields',
+  sectionName,
 }: {
   fields: CustomField[]
   onChange: (next: CustomField[]) => void
-  label?: string
+  // Human-readable section name, used only in the guidance text below.
+  sectionName: string
 }) {
   const update = (i: number, patch: Partial<CustomField>) =>
     onChange(fields.map((c, j) => (j === i ? { ...c, ...patch } : c)))
@@ -696,10 +703,26 @@ function CustomFields({
     onChange([...fields, { key: '', value: '', type: 'string' }])
 
   return (
-    <Box>
-      <Divider sx={{ mb: 2 }} />
-      <Typography variant="subtitle2" gutterBottom>
-        {label}
+    <Box sx={{ borderTop: 1, borderColor: 'grey.400', pt: 2 }}>
+      <Typography variant="subtitle2">Custom fields</Typography>
+      <Typography
+        variant="caption"
+        color="text.secondary"
+        display="block"
+        sx={{ mb: 1.5 }}
+      >
+        Optional: add custom fields to the {sectionName} metadata. Before adding
+        fields, ensure you look at the full list of metadata fields, especially
+        those that are automatically populated during the data scanning process
+        (
+        <Link
+          href="https://github.com/JaneliaSciComp/ai-cryoet/blob/main/docs/schema.md"
+          target="_blank"
+          rel="noopener"
+        >
+          schema.md
+        </Link>
+        ).
       </Typography>
       <Stack spacing={1}>
         {fields.map((c, i) => (
@@ -741,7 +764,7 @@ function CustomFields({
           </Stack>
         ))}
       </Stack>
-      <Button onClick={add} size="small" sx={{ mt: 1 }}>
+      <Button onClick={add} size="small" >
         Add custom field
       </Button>
     </Box>
@@ -750,6 +773,69 @@ function CustomFields({
 
 function toErrorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err)
+}
+
+// Save-location hint. The directory-identity id is not a form field (it IS the
+// folder name), so a new file guides the user to name that folder (dark green,
+// more visible). A file loaded from the portal already knows its id → show the
+// concrete path.
+function PlacementHint({
+  loaded,
+  noun,
+  placement,
+}: {
+  loaded: boolean
+  noun: string
+  placement: string
+}) {
+  if (loaded) {
+    return (
+      <Typography variant="body2" color="text.secondary">
+        Save as <code>{placement}</code>
+      </Typography>
+    )
+  }
+  return (
+    <Typography variant="body2" sx={{ color: 'primary.main', fontWeight: 500 }}>
+      Save the downloaded file inside a {noun} folder named with the {noun} id. For example: <code>{placement}</code>.
+    </Typography>
+  )
+}
+
+// Experimental/simulation selector shared by both renderers. Sits under the
+// upload toolbar and drives which metadata sections show (not written to file).
+function DataSourceRadio({
+  value,
+  onChange,
+  disabled = false,
+}: {
+  value: DataSource
+  onChange: (v: DataSource) => void
+  disabled?: boolean
+}) {
+  return (
+    <FormControl disabled={disabled}>
+      <FormLabel>
+        Select which metadata sections to show in the below form:
+      </FormLabel>
+      <RadioGroup
+        row
+        value={value}
+        onChange={(e) => onChange(e.target.value as DataSource)}
+      >
+        <FormControlLabel
+          value="experimental"
+          control={<Radio />}
+          label="Experimental"
+        />
+        <FormControlLabel
+          value="simulation"
+          control={<Radio />}
+          label="Simulation"
+        />
+      </RadioGroup>
+    </FormControl>
+  )
 }
 
 // Shared upload/load-by-id chrome for both renderers (ADR-0004 seed modes:
@@ -762,6 +848,7 @@ function UploadLoadToolbar({
   onLoadIdChange,
   onLoad,
   extra,
+  showLoadById = true,
 }: {
   filename: string
   onUpload: (e: React.ChangeEvent<HTMLInputElement>) => void
@@ -769,6 +856,8 @@ function UploadLoadToolbar({
   onLoadIdChange: (v: string) => void
   onLoad: () => void
   extra?: React.ReactNode
+  // md_run has no portal load-by-id path yet — hide the field there.
+  showLoadById?: boolean
 }) {
   return (
     <Stack direction="row" spacing={2} alignItems="center" flexWrap="wrap">
@@ -782,15 +871,19 @@ function UploadLoadToolbar({
         />
       </Button>
       {extra}
-      <TextField
-        label="Load from portal by id"
-        value={loadId}
-        onChange={(e) => onLoadIdChange(e.target.value)}
-        size="small"
-      />
-      <Button variant="outlined" size="small" onClick={onLoad}>
-        Load
-      </Button>
+      {showLoadById && (
+        <>
+          <TextField
+            label="Load from portal by id"
+            value={loadId}
+            onChange={(e) => onLoadIdChange(e.target.value)}
+            size="small"
+          />
+          <Button variant="outlined" size="small" onClick={onLoad}>
+            Load
+          </Button>
+        </>
+      )}
     </Stack>
   )
 }
@@ -996,7 +1089,9 @@ function CompositeAuthoringForm({
     disabled: boolean,
   ) =>
     fieldsForSection(form, section)
-      .filter((f) => !f.derived)
+      // The directory-identity id is not authored (it IS the folder name); the
+      // placement hint covers it. Derived fields are ingest-populated.
+      .filter((f) => !f.derived && !f.isId)
       .map((f) => (
         <Field
           key={f.field}
@@ -1004,9 +1099,7 @@ function CompositeAuthoringForm({
           value={entry.values[f.field] ?? ''}
           error={errors[fieldKey(section, f.field, idx)]}
           onChange={(v) => setEntryValue(section, f.field, v, idx)}
-          // The intended-id field is pre-filled read-only once pulled from
-          // the API (ADR-0004): its value drives identity, not editable content.
-          disabled={disabled || (f.isId && stale)}
+          disabled={disabled}
         />
       ))
 
@@ -1019,6 +1112,15 @@ function CompositeAuthoringForm({
           loadId={loadId}
           onLoadIdChange={setLoadId}
           onLoad={() => handleLoad(loadId)}
+        />
+
+        <DataSourceRadio
+          value={effectiveArm}
+          onChange={(v) => {
+            setArm(v)
+            setDone(false)
+          }}
+          disabled={armDisabled}
         />
 
         {seedError && <Alert severity="error">{seedError}</Alert>}
@@ -1041,42 +1143,10 @@ function CompositeAuthoringForm({
           const disabled = sectionDisabled(s)
           return (
             <Box key={s.section}>
-              <Divider sx={{ mb: 1.5 }} />
-              <Typography variant="subtitle1" gutterBottom>
+              <Divider sx={{ mb: 1.5, borderBottomWidth: 2, borderColor: 'primary.main' }} />
+              <Typography variant="h6" gutterBottom sx={{ fontWeight: 700 }}>
                 {s.title}
               </Typography>
-
-              {s.section === 'sample' && (
-                <FormControl disabled={armDisabled} sx={{ mb: 1.5 }}>
-                  <FormLabel>Data source</FormLabel>
-                  <RadioGroup
-                    row
-                    value={effectiveArm}
-                    onChange={(e) => {
-                      setArm(e.target.value as DataSource)
-                      setDone(false)
-                    }}
-                  >
-                    <FormControlLabel
-                      value="experimental"
-                      control={<Radio />}
-                      label="Experimental"
-                    />
-                    <FormControlLabel
-                      value="simulation"
-                      control={<Radio />}
-                      label="Simulation"
-                    />
-                  </RadioGroup>
-                  <FormHelperText>
-                    {requiredArm
-                      ? 'Forced to experimental — synapse data is never simulation-derived.'
-                      : armLocked
-                        ? 'Inferred from the loaded file.'
-                        : 'Drives which sections apply. Not written into the file.'}
-                  </FormHelperText>
-                </FormControl>
-              )}
 
               {s.repeatable ? (
                 <Stack spacing={2}>
@@ -1090,6 +1160,7 @@ function CompositeAuthoringForm({
                         <CustomFields
                           fields={entry.custom}
                           onChange={(c) => setEntryCustom(s.section, c, idx)}
+                          sectionName={s.title}
                         />
                       </Stack>
                       <Button
@@ -1121,6 +1192,7 @@ function CompositeAuthoringForm({
                     <CustomFields
                       fields={(state[s.section] as SectionEntry).custom}
                       onChange={(c) => setEntryCustom(s.section, c)}
+                      sectionName={s.title}
                     />
                   )}
                 </Stack>
@@ -1128,11 +1200,17 @@ function CompositeAuthoringForm({
             </Box>
           )
         })}
+        <Divider sx={{ mb: 1.5, borderBottomWidth: 2, borderColor: 'primary.main' }} />
 
-        <Typography variant="body2" color="text.secondary">
-          Save as{' '}
-          <code>{meta.placement.replace('{id}', idValue || '<id>')}</code>
-        </Typography>
+        <PlacementHint
+          loaded={stale}
+          noun={meta.title.toLowerCase()}
+          placement={
+            stale
+              ? meta.placement.replace('{id}', idValue || '<id>')
+              : meta.placement.replace('{id}', '{sample_id}')
+          }
+        />
 
         <Box>
           <Button type="submit" variant="contained">

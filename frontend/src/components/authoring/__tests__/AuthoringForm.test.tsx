@@ -1,7 +1,8 @@
 /**
  * Renderer test for AuthoringForm (md_run). Asserts: the authored md_run
- * fields render from the registry; the placement hint reflects the entered id;
- * a 422 from the endpoint surfaces inline on the right field.
+ * fields render from the registry; the directory-identity id is NOT a field
+ * (the save-location hint covers it); a 422 from the endpoint surfaces inline
+ * on the right field.
  */
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -15,16 +16,21 @@ afterEach(() => {
 describe('AuthoringForm (md_run)', () => {
   it('renders the authored md_run fields from the registry', () => {
     render(<AuthoringForm form="md_run" />)
-    expect(screen.getByLabelText(/Run id/)).toBeInTheDocument()
+    // The directory-identity id is not a form field.
+    expect(screen.queryByLabelText(/Run id/)).not.toBeInTheDocument()
     expect(screen.getByLabelText(/Seed/)).toBeInTheDocument()
     expect(screen.getByLabelText(/Timestep/)).toBeInTheDocument()
     expect(screen.getByLabelText(/Force field version/)).toBeInTheDocument()
   })
 
-  it('placement hint reflects the entered id', async () => {
+  it('shows the save-location hint with the id placeholder for a new file', () => {
     render(<AuthoringForm form="md_run" />)
-    await userEvent.type(screen.getByLabelText(/Run id/), 'run01')
-    expect(screen.getByText('MdRuns/run01/md_run.toml')).toBeInTheDocument()
+    expect(
+      screen.getByText('MdRuns/{md_run_id}/md_run.toml'),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByText(/Save the downloaded file inside/),
+    ).toBeInTheDocument()
   })
 
   it('shows a backend 422 error inline on the field', async () => {
@@ -37,20 +43,10 @@ describe('AuthoringForm (md_run)', () => {
       ),
     )
     render(<AuthoringForm form="md_run" />)
-    // Valid id so the structural check passes and we reach the backend.
-    await userEvent.type(screen.getByLabelText(/Run id/), 'run01')
     await userEvent.click(screen.getByRole('button', { name: /Download/ }))
     await waitFor(() =>
       expect(screen.getByText('must be an integer')).toBeInTheDocument(),
     )
-  })
-
-  it('blocks submit with a structural error when the id is empty', async () => {
-    const fetchSpy = vi.spyOn(globalThis, 'fetch')
-    render(<AuthoringForm form="md_run" />)
-    await userEvent.click(screen.getByRole('button', { name: /Download/ }))
-    expect(screen.getByText('Required')).toBeInTheDocument()
-    expect(fetchSpy).not.toHaveBeenCalled()
   })
 
   it('auto-loads the run from the edit-link search param (deep link)', async () => {
@@ -59,26 +55,18 @@ describe('AuthoringForm (md_run)', () => {
     )
     render(<AuthoringForm form="md_run" initialId="run01" />)
     await waitFor(() =>
-      expect(screen.getByLabelText(/Run id/)).toHaveValue('run01'),
+      expect(screen.getByLabelText(/Seed/)).toHaveValue(42),
     )
-    expect(screen.getByLabelText(/Seed/)).toHaveValue(42)
     expect(screen.getByText(/may lag the on-disk file/)).toBeInTheDocument()
-    // The id itself is pre-filled read-only (ADR-0004 identity guidance).
-    expect(screen.getByLabelText(/Run id/)).toBeDisabled()
+    // Loaded → the concrete save path with the known id.
+    expect(screen.getByText('MdRuns/run01/md_run.toml')).toBeInTheDocument()
   })
 
-  it('loading by id populates the form and shows the staleness warning', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
-      jsonResponse({ fields: { md_run_id: 'run01', seed: 42 } }),
-    )
+  it('has no load-from-portal-by-id field (removed for md_run)', () => {
     render(<AuthoringForm form="md_run" />)
-    await userEvent.type(screen.getByLabelText(/Load from portal by id/), 'run01')
-    await userEvent.click(screen.getByRole('button', { name: /^Load$/ }))
-    await waitFor(() =>
-      expect(screen.getByLabelText(/Run id/)).toHaveValue('run01'),
-    )
-    expect(screen.getByLabelText(/Seed/)).toHaveValue(42)
-    expect(screen.getByText(/may lag the on-disk file/)).toBeInTheDocument()
+    expect(
+      screen.queryByLabelText(/Load from portal by id/),
+    ).not.toBeInTheDocument()
   })
 
   it('renders an uploaded scalar extra as an editable custom-field row', async () => {
@@ -112,21 +100,20 @@ describe('AuthoringForm (md_run)', () => {
 describe('AuthoringForm (acquisition)', () => {
   it('renders [acquisition] fields and a constrained 1–5 quality dropdown', () => {
     render(<AuthoringForm form="acquisition" />)
-    expect(screen.getByLabelText(/Acquisition id/)).toBeInTheDocument()
+    // The directory-identity id is not a form field.
+    expect(screen.queryByLabelText(/Acquisition id/)).not.toBeInTheDocument()
     expect(screen.getByLabelText(/Resolution/)).toBeInTheDocument()
     // Quality is a select limited to 1–5 (can't enter an out-of-range value).
     const quality = screen.getByLabelText(/Quality/)
     expect(quality).toBeInTheDocument()
   })
 
-  it('gates [md_source] on the simulation data source', async () => {
+  it('gates [md_source] on the simulation data-source radio', async () => {
     render(<AuthoringForm form="acquisition" />)
     // Experimental (default): no MD source field.
     expect(screen.queryByLabelText(/MD run id/)).not.toBeInTheDocument()
-    // Switch to simulation → md_source appears.
-    const select = screen.getByLabelText(/Data source/)
-    await userEvent.click(select)
-    await userEvent.click(screen.getByRole('option', { name: /Simulation/ }))
+    // Pick Simulation → md_source appears.
+    await userEvent.click(screen.getByRole('radio', { name: 'Simulation' }))
     expect(screen.getByLabelText(/MD run id/)).toBeInTheDocument()
   })
 
@@ -172,7 +159,6 @@ describe('AuthoringForm (acquisition)', () => {
       ),
     )
     render(<AuthoringForm form="acquisition" />)
-    await userEvent.type(screen.getByLabelText(/Acquisition id/), 'Pos1')
     await userEvent.click(screen.getByRole('button', { name: /Download/ }))
     await waitFor(() =>
       expect(
@@ -214,9 +200,8 @@ describe('AuthoringForm (acquisition)', () => {
     expect(
       screen.queryByRole('button', { name: /Remove Tilt series entry/ }),
     ).not.toBeInTheDocument()
-    // [acquisition] stays editable, except its id field: pre-filled
-    // read-only once pulled from the API (ADR-0004 identity guidance).
-    expect(screen.getByLabelText(/Acquisition id/)).toBeDisabled()
+    // [acquisition] stays editable; the directory-identity id is not a field.
+    expect(screen.queryByLabelText(/Acquisition id/)).not.toBeInTheDocument()
     expect(screen.getByLabelText(/Resolution/)).not.toBeDisabled()
   })
 
@@ -233,9 +218,10 @@ describe('AuthoringForm (acquisition)', () => {
       <AuthoringForm form="acquisition" initialId="Pos1" initialSampleId="samp1" />,
     )
     await waitFor(() =>
-      expect(screen.getByLabelText(/Acquisition id/)).toHaveValue('Pos1'),
+      expect(screen.getByLabelText(/Resolution/)).toHaveValue(3.4),
     )
-    expect(screen.getByLabelText(/Resolution/)).toHaveValue(3.4)
+    // Loaded → the concrete save path with the known composite id.
+    expect(screen.getByText('samp1/Pos1/acquisition.toml')).toBeInTheDocument()
     // md_source present in the file → simulation inferred → field shown.
     expect(screen.getByLabelText(/MD run id/)).toBeInTheDocument()
     expect(screen.getByText(/may lag the on-disk file/)).toBeInTheDocument()

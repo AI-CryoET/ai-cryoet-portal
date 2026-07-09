@@ -149,9 +149,9 @@ describe('AuthoringForm (sample) submit + seed', () => {
     const sim = screen.getByRole('radio', { name: 'Simulation' })
     expect(sim).toBeChecked()
     expect(sim).toBeDisabled()
-    // Placement hint reflects the loaded id.
+    // Loaded → concrete save path with the known id.
     expect(screen.getByText('samp1/sample.toml')).toBeInTheDocument()
-    // The id itself is pre-filled read-only (ADR-0004 identity guidance).
-    expect(screen.getByLabelText(/Sample id/)).toBeDisabled()
+    // The directory-identity id is not a form field.
+    expect(screen.queryByLabelText(/Sample id/)).not.toBeInTheDocument()
   })
 })
