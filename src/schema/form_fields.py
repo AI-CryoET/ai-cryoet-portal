@@ -236,15 +236,17 @@ FORM_FIELDS: list[FormField] = [
         help="Folder name under MdRuns/. Sets identity; not written into the file.",
     ),
     FormField("md_run", "md_run", "seed", "Seed", "integer",
-              help="Random seed for the simulation run."),
+              help="Random seed for the run."),
     FormField("md_run", "md_run", "sample_time", "Sample time", "number",
               help="Total simulated time."),
     FormField("md_run", "md_run", "timestep", "Timestep", "number",
               help="Integration timestep."),
     FormField("md_run", "md_run", "computer", "Computer", "text",
-              help="Machine the run executed on."),
-    FormField("md_run", "md_run", "reference_contact", "Reference / contact", "text"),
-    FormField("md_run", "md_run", "force_field_version", "Force field version", "text"),
+              help="Name of the computer used."),
+    FormField("md_run", "md_run", "reference_contact", "Reference / contact", "text",
+              help="Reference or contact for this run."),
+    FormField("md_run", "md_run", "force_field_version", "Force field version", "text",
+              help="Force field name/version."),
 
     # ---- acquisition [acquisition] — researcher-authored imaging params ----
     FormField(
@@ -258,16 +260,21 @@ FORM_FIELDS: list[FormField] = [
              "scanner records a rename instead of a deletion + new acquisition.",
     ),
     FormField("acquisition", "acquisition", "resolution", "Resolution (Å)", "number",
-              help="Nominal resolution."),
+              help="Nominal resolution in Å, e.g. 3.5"),
     FormField("acquisition", "acquisition", "tilt_spacing", "Tilt spacing (°)", "number",
-              help="Nominal tilt spacing."),
+              help="Target tilt step in degrees, e.g. 3.0 (intent; actual angles "
+                   "come from the MDOC)."),
     FormField("acquisition", "acquisition", "defocus_range", "Defocus range (µm)", "text",
-              help="Target defocus range, free text."),
-    FormField("acquisition", "acquisition", "energy_filter", "Energy filter", "text"),
-    FormField("acquisition", "acquisition", "phase_plate", "Phase plate", "boolean"),
-    FormField("acquisition", "acquisition", "microscope", "Microscope", "text"),
+              help='Target defocus range in µm, e.g. "-1.5 to -3.0" (intent; '
+                   "per-image actuals come from the MDOC)."),
+    FormField("acquisition", "acquisition", "energy_filter", "Energy filter", "text",
+              help='Model name, e.g. "Selectris", "GIF Quantum", "none".'),
+    FormField("acquisition", "acquisition", "phase_plate", "Phase plate", "boolean",
+              help="true | false"),
+    FormField("acquisition", "acquisition", "microscope", "Microscope", "text",
+              help='Model name, e.g. "Titan Krios", "Glacios".'),
     FormField("acquisition", "acquisition", "facility", "Facility", "text",
-              help="Imaging facility, e.g. Janelia."),
+              help='Imaging facility, e.g. "Janelia".'),
     FormField(
         "acquisition", "acquisition", "acquisition_quality", "Quality (1–5)", "select",
         options=("1", "2", "3", "4", "5"),
@@ -285,16 +292,17 @@ FORM_FIELDS: list[FormField] = [
     FormField(
         "acquisition", "md_source", "md_run_id", "MD run id", "text",
         api_suggest="md_run",
-        help="The simulation run this acquisition came from. "
+        help="MUST match a MdRuns/{id}/ folder name (the md_run.toml id). "
              "Suggested from the sample's runs; free text also accepted.",
     ),
     FormField("acquisition", "md_source", "frame", "Frame", "integer",
-              help="Frame / snapshot index within the run."),
+              help="Frame / snapshot index in the MD run."),
 
     # ---- acquisition [[tilt_series]] — one per tilt series ----------------
     FormField(
         "acquisition", "tilt_series", "tilt_series_id", "Tilt series id", "text",
-        required=True, alias="id", help="Folder name under TiltSeries/.",
+        required=True, alias="id",
+        help="MUST equal the tilt series' folder name under TiltSeries/.",
     ),
     FormField(
         "acquisition", "tilt_series", "renamed_from", "Renamed from", "text",
@@ -306,9 +314,12 @@ FORM_FIELDS: list[FormField] = [
         cross_ref="tilt_series",
         help='"Frames" (raw) or another tilt series in this acquisition.',
     ),
-    FormField("acquisition", "tilt_series", "is_aligned", "Is aligned", "boolean"),
-    FormField("acquisition", "tilt_series", "alignment_software", "Alignment software", "text"),
-    FormField("acquisition", "tilt_series", "alignment_method", "Alignment method", "text"),
+    FormField("acquisition", "tilt_series", "is_aligned", "Is aligned", "boolean",
+              help="true | false; indicates whether the tilt series is aligned."),
+    FormField("acquisition", "tilt_series", "alignment_software", "Alignment software", "text",
+              help='e.g. "IMOD 4.12", "AreTomo3".'),
+    FormField("acquisition", "tilt_series", "alignment_method", "Alignment method", "text",
+              help="e.g. fiducial | patch_tracking | feature_tracking"),
     *_derived(
         "acquisition", "tilt_series",
         "sample_id", "acquisition_id", "st_path", "zarr_path",
@@ -318,7 +329,7 @@ FORM_FIELDS: list[FormField] = [
     # ---- acquisition [raw_tomogram] — at most one reconstruction off frames --
     FormField(
         "acquisition", "raw_tomogram", "tomogram_id", "Tomogram id", "text",
-        required=True, alias="id", help="Folder name under Tomograms/.",
+        required=True, alias="id", help="MUST equal the tomogram's folder name.",
     ),
     FormField(
         "acquisition", "raw_tomogram", "renamed_from", "Renamed from", "text",
@@ -330,8 +341,10 @@ FORM_FIELDS: list[FormField] = [
         cross_ref="tilt_series",
         help="The tilt series this tomogram was reconstructed from.",
     ),
-    FormField("acquisition", "raw_tomogram", "pipeline", "Pipeline", "text"),
-    FormField("acquisition", "raw_tomogram", "software", "Software", "text"),
+    FormField("acquisition", "raw_tomogram", "pipeline", "Pipeline", "text",
+              help='e.g. "backprojection + 3D CTF correction".'),
+    FormField("acquisition", "raw_tomogram", "software", "Software", "text",
+              help='e.g. "IMOD 4.12 + novaCTF".'),
     FormField(
         "acquisition", "raw_tomogram", "derived_from", "Derived from", "multiselect",
         cross_ref="tomogram",
@@ -346,7 +359,8 @@ FORM_FIELDS: list[FormField] = [
     # ---- acquisition [[post_processed_tomogram]] — one per processed output --
     FormField(
         "acquisition", "post_processed_tomogram", "tomogram_id", "Tomogram id",
-        "text", required=True, alias="id", help="Folder name under Tomograms/.",
+        "text", required=True, alias="id",
+        help="MUST equal the tomogram's folder name.",
     ),
     FormField(
         "acquisition", "post_processed_tomogram", "renamed_from", "Renamed from",
@@ -379,14 +393,16 @@ FORM_FIELDS: list[FormField] = [
     # ---- acquisition [[annotation]] — one per segmentation -----------------
     FormField(
         "acquisition", "annotation", "annotation_id", "Annotation id", "text",
-        required=True, alias="id", help="Folder name under Annotations/.",
+        required=True, alias="id",
+        help='MUST equal the annotation\'s folder name, e.g. "membrain_seg_v10".',
     ),
     FormField(
         "acquisition", "annotation", "renamed_from", "Renamed from", "text",
         help="Previous annotation id if you renamed this directory, so the "
              "scanner records a rename instead of a deletion + new annotation.",
     ),
-    FormField("acquisition", "annotation", "type", "Type", "text"),
+    FormField("acquisition", "annotation", "type", "Type", "text",
+              help="e.g. membrane_segmentation | nucleosome_placement | active_zone"),
     FormField(
         "acquisition", "annotation", "target_tomogram", "Target tomogram", "select",
         cross_ref="tomogram",
@@ -412,28 +428,38 @@ FORM_FIELDS: list[FormField] = [
     FormField(
         "sample", "sample", "project", "Project", "select",
         required=True, options=tuple(p.value for p in Project),
+        help="synapse | chromatin | nanogold",
     ),
     FormField(
         "sample", "sample", "lab_name", "Lab", "select",
         options=tuple(n.value for n in LabName),
+        help="collepardo | gouaux | rosen | villa",
     ),
     FormField("sample", "sample", "type", "Type", "text",
               help="e.g. tissue | cellular | reconstituted"),
-    FormField("sample", "sample", "cell_type", "Cell type", "text"),
-    FormField("sample", "sample", "description", "Description", "text"),
+    FormField("sample", "sample", "cell_type", "Cell type", "text",
+              help='Required if type = "cellular".'),
+    FormField("sample", "sample", "description", "Description", "text",
+              help="Optional free-text description."),
     FormField("sample", "sample", "path", "Path", "text", derived=True),
 
     # ---- sample / [chromatin] --------------------------------------------
     FormField("sample", "chromatin", "substrate", "Substrate", "text",
               help="e.g. synthetic | native | n/a"),
-    FormField("sample", "chromatin", "linker_length_bp", "Linker length (bp)", "number"),
+    FormField("sample", "chromatin", "linker_length_bp", "Linker length (bp)", "number",
+              help="Homogenous linker length in bp."),
     FormField("sample", "chromatin", "linker_pattern", "Linker pattern", "list",
-              help="List of ints, e.g. 20, 50, 20, 50"),
-    FormField("sample", "chromatin", "linker_distribution", "Linker distribution", "text"),
-    FormField("sample", "chromatin", "buffer", "Buffer", "text"),
-    FormField("sample", "chromatin", "ptm", "PTM", "text"),
-    FormField("sample", "chromatin", "histone_variants", "Histone variants", "text"),
-    FormField("sample", "chromatin", "transcription_factors", "Transcription factors", "text"),
+              help="Patterned linker lengths, e.g. 20, 50, 20, 50"),
+    FormField("sample", "chromatin", "linker_distribution", "Linker distribution", "text",
+              help="Free-text for non-homogenous, non-patterned linkers."),
+    FormField("sample", "chromatin", "buffer", "Buffer", "text",
+              help='e.g. "2.0 mM MgCl2, 150 mM KCl"'),
+    FormField("sample", "chromatin", "ptm", "PTM", "text",
+              help="e.g. none | H3K9me3 | H3K27me3 | H3K27Ac | H4K16Ac"),
+    FormField("sample", "chromatin", "histone_variants", "Histone variants", "text",
+              help="e.g. canonical | macroH2A | H2A.Z"),
+    FormField("sample", "chromatin", "transcription_factors", "Transcription factors", "text",
+              help="e.g. none | HP1a | Brd4"),
     FormField("sample", "chromatin", "nucleosome_count", "Nucleosome count", "integer"),
     FormField("sample", "chromatin", "dna_length_bp", "DNA length (bp)", "integer"),
     FormField("sample", "chromatin", "nucleosome_uM", "Nucleosome (uM)", "number"),
@@ -445,37 +471,46 @@ FORM_FIELDS: list[FormField] = [
 
     # ---- sample / [[label]] (repeatable) ---------------------------------
     FormField("sample", "label", "label_target", "Label target", "text",
-              help="protein name, e.g. AMPAR, NMDAR"),
+              help="Protein name, e.g. AMPAR, NMDAR, etc."),
     FormField("sample", "label", "aunp_type", "AuNP type", "text",
-              help="monomer, dimer, trimer, …"),
+              help="monomer, dimer, trimer, etc."),
     FormField("sample", "label", "aunp_size_nm", "AuNP size (nm)", "list",
               help="float or list, e.g. 1.4 or 1.4, 2.2"),
-    FormField("sample", "label", "conjugation", "Conjugation", "text"),
-    FormField("sample", "label", "conjugation_target", "Conjugation target", "text"),
+    FormField("sample", "label", "conjugation", "Conjugation", "text",
+              help="e.g. Fab | nanobody | chemical_tag | none"),
+    FormField("sample", "label", "conjugation_target", "Conjugation target", "text",
+              help="e.g. GluA2, H3K9me3"),
     FormField("sample", "label", "fluorophore", "Fluorophore", "text"),
-    FormField("sample", "label", "notes", "Notes", "text"),
+    FormField("sample", "label", "notes", "Notes", "text", help="Optional."),
 
     # ---- sample / [fiducial] ---------------------------------------------
-    FormField("sample", "fiducial", "aunp_size_nm", "AuNP size (nm)", "number"),
-    FormField("sample", "fiducial", "vendor", "Vendor", "text"),
+    FormField("sample", "fiducial", "aunp_size_nm", "AuNP size (nm)", "number",
+              help="Fiducial diameter in nm."),
+    FormField("sample", "fiducial", "vendor", "Vendor", "text", help="Vendor name."),
     FormField("sample", "fiducial", "catalog_number", "Catalog number", "text"),
     FormField("sample", "fiducial", "product_name", "Product name", "text"),
     FormField("sample", "fiducial", "concentration_value", "Concentration value", "number"),
     FormField("sample", "fiducial", "concentration_unit", "Concentration unit", "text"),
 
     # ---- sample / [freezing] ---------------------------------------------
-    FormField("sample", "freezing", "grid_type", "Grid type", "text"),
-    FormField("sample", "freezing", "solution_type", "Solution type", "text"),
-    FormField("sample", "freezing", "cryoprotectant", "Cryoprotectant", "text"),
+    FormField("sample", "freezing", "grid_type", "Grid type", "text",
+              help='e.g. "Quantifoil R2/2"'),
+    FormField("sample", "freezing", "solution_type", "Solution type", "text",
+              help='e.g. "HEPES-based"'),
+    FormField("sample", "freezing", "cryoprotectant", "Cryoprotectant", "text",
+              help='or "none"'),
     FormField("sample", "freezing", "method", "Method", "text",
               help="plunge_frozen | HPF"),
-    FormField("sample", "freezing", "planchette_size", "Planchette size", "text"),
-    FormField("sample", "freezing", "spacer_thickness", "Spacer thickness", "text"),
+    FormField("sample", "freezing", "planchette_size", "Planchette size", "text",
+              help='e.g. "3 mm"'),
+    FormField("sample", "freezing", "spacer_thickness", "Spacer thickness", "text",
+              help='e.g. "100 um"'),
 
     # ---- sample / [milling] ----------------------------------------------
     FormField("sample", "milling", "scheme", "Scheme", "text", help="e.g. cryo-FIB"),
-    FormField("sample", "milling", "date", "Milling date", "date"),
-    FormField("sample", "milling", "quality", "Quality", "text"),
+    FormField("sample", "milling", "date", "Milling date", "date", help="YYYY-MM-DD"),
+    FormField("sample", "milling", "quality", "Quality", "text",
+              help="Comment on FIB quality."),
 ]
 
 
