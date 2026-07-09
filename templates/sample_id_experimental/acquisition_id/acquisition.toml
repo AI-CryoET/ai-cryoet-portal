@@ -51,6 +51,8 @@
 #                                          #   3 = Medium, minor projection images discarded before reconstruction
 #                                          #   2 = Marginal, major projection images discarded; usable only after heavy manual work
 #                                          #   1 = Low, not alignable / not useful for analysis
+# renamed_from  = "<old-acquisition-id>"   # uncomment if you renamed this acquistion's directory.
+#   Set this to the PREVIOUS directory name so the scanner records a rename instead of reading it as a deletion + new acquistion.
 
 # ── Tilt series (uncomment and fill in) ────────────────────────────────────────
 # One acquisition can have MULTIPLE tilt series, both raw/unaligned and aligned — copy-paste this block to add as

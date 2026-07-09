@@ -7,6 +7,10 @@
           "title": "Acquisition Id",
           "type": "string"
         },
+        "renamed_from": {
+          "title": "Renamed From",
+          "type": "string"
+        },
         "resolution": {
           "title": "Resolution",
           "type": "number"
@@ -36,7 +40,7 @@
           "type": "string"
         },
         "acquisition_quality": {
-          "title": "Acquistion Quality",
+          "title": "Acquisition Quality",
           "maximum": 5,
           "minimum": 1,
           "type": "integer"
@@ -118,6 +122,10 @@
           "title": "Id",
           "type": "string"
         },
+        "renamed_from": {
+          "title": "Renamed From",
+          "type": "string"
+        },
         "type": {
           "title": "Type",
           "type": "string"
@@ -160,6 +168,10 @@
       "properties": {
         "id": {
           "title": "Id",
+          "type": "string"
+        },
+        "renamed_from": {
+          "title": "Renamed From",
           "type": "string"
         },
         "tilt_series_id": {
@@ -238,6 +250,10 @@
           "title": "Id",
           "type": "string"
         },
+        "renamed_from": {
+          "title": "Renamed From",
+          "type": "string"
+        },
         "tilt_series_id": {
           "title": "Tilt Series Id",
           "type": "string"
@@ -313,6 +329,10 @@
         },
         "id": {
           "title": "Id",
+          "type": "string"
+        },
+        "renamed_from": {
+          "title": "Renamed From",
           "type": "string"
         },
         "derived_from": {

@@ -5,6 +5,7 @@ Usage::
     python -m catalog scan <root>
         [--db sqlite:///path.db] [--force] [--init]
         [--prune] [--prune-dry-run] [--prune-safety-floor 0.5]
+        [--child-prune-safety-floor 0.5] [--child-prune-min-count 3]
 """
 from __future__ import annotations
 
@@ -60,6 +61,25 @@ def _build_parser() -> argparse.ArgumentParser:
         help=(
             "abort prune if fraction of live samples to delete exceeds this "
             "(default 0.5)"
+        ),
+    )
+    scan.add_argument(
+        "--child-prune-safety-floor",
+        type=float,
+        default=0.5,
+        help=(
+            "abort a sample's upsert if the fraction dropped for a guarded "
+            "child type (acquisitions, md_source, raw/post tomograms, "
+            "annotations, tilt series) exceeds this (default 0.5)"
+        ),
+    )
+    scan.add_argument(
+        "--child-prune-min-count",
+        type=int,
+        default=3,
+        help=(
+            "only enforce --child-prune-safety-floor when at least this many "
+            "rows existed for the child type (default 3)"
         ),
     )
     scan.add_argument(
@@ -144,6 +164,8 @@ def _cmd_scan(args) -> int:
             prune=args.prune,
             prune_dry_run=args.prune_dry_run,
             prune_safety_floor=args.prune_safety_floor,
+            child_prune_safety_floor=args.child_prune_safety_floor,
+            child_prune_min_count=args.child_prune_min_count,
             thumbnail_dir=thumbnail_dir,
         )
     except Exception as e:  # noqa: BLE001

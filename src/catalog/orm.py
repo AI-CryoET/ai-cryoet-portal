@@ -422,9 +422,10 @@ class ExtrasORM(Base):
 # Scan data model — run history (append-only) + current materialized state.
 #
 # Splits "what did this run find?" (run history: scan_runs, scan_log_lines,
-# scan_sample_outcomes) from "what is broken/fresh right now?" (current state:
-# issues, sample_scan_status, acquisition_scan_status). These tables are
-# catalog-operational and intentionally excluded from the Pydantic drift test.
+# scan_sample_outcomes, deletion_events) from "what is broken/fresh right
+# now?" (current state: issues, sample_scan_status, acquisition_scan_status).
+# These tables are catalog-operational and intentionally excluded from the
+# Pydantic drift test.
 # ---------------------------------------------------------------------------
 
 
@@ -513,6 +514,67 @@ class ScanSampleOutcomeORM(Base):
     detail: Mapped[str | None] = mapped_column(String, nullable=True)
 
     __table_args__ = (UniqueConstraint("scan_run_id", "sample_id"),)
+
+
+class DeletionEventORM(Base):
+    """One row per scan-detected disappearance (append-only audit feed, §08a).
+
+    Records entities dropped by ``_delete_stale_children`` (acquisition,
+    md_source, raw/post-processed tomogram, annotation, tilt series) and
+    samples soft-deleted by ``soft_delete_missing_samples``. Deliberately has
+    no dismiss/resolve — the feed accumulates and is reviewed via
+    ``GET /manage/deletions``. Events are naturally one-shot: once a row is
+    gone (or a sample leaves the live set), the next scan can't re-detect it,
+    so no dedup is needed. ``last_known_path``/``last_known_json`` capture
+    enough of the dropped row to identify what was lost.
+
+    ``kind`` (§08c) distinguishes an ordinary deletion from a rename detected
+    via the ``renamed_from`` hint — reusing this table rather than a second
+    one, since a rename is audit-feed content of the same shape (old id, last
+    known state) with a different disposition. Defaults to ``"deletion"``
+    client-side (not a DB server-default) since this table is brand new in
+    this same epic (08a) with no released rows to backfill; every insert site
+    either passes ``kind="rename"`` explicitly or relies on this default.
+    For a rename, ``last_known_json`` holds
+    ``{"renamed_from": old_id, "renamed_to": new_id}`` instead of a row
+    snapshot — there's no dedicated old/new id column.
+    """
+
+    __tablename__ = "deletion_events"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    scan_run_id: Mapped[str] = mapped_column(
+        String,
+        ForeignKey("scan_runs.scan_run_id"),
+        nullable=False,
+        index=True,
+    )
+    detected_at: Mapped[float] = mapped_column(Float, nullable=False)
+    entity_type: Mapped[str] = mapped_column(
+        SAEnum(
+            "sample",
+            "acquisition",
+            "raw_tomogram",
+            "post_processed_tomogram",
+            "annotation",
+            "tilt_series",
+            "md_source",
+            name="deletion_entity_type",
+        ),
+        nullable=False,
+    )
+    kind: Mapped[str] = mapped_column(
+        SAEnum("deletion", "rename", name="deletion_event_kind"),
+        nullable=False,
+        default="deletion",
+    )
+    sample_id: Mapped[str] = mapped_column(
+        String(_ID_MAX_LEN), nullable=False, index=True
+    )
+    acquisition_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    entity_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    last_known_path: Mapped[str | None] = mapped_column(String, nullable=True)
+    last_known_json: Mapped[str | None] = mapped_column(String, nullable=True)
 
 
 class IssueORM(Base):

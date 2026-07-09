@@ -68,6 +68,8 @@ def scan_root(
     prune: bool = False,
     prune_dry_run: bool = False,
     prune_safety_floor: float = 0.5,
+    child_prune_safety_floor: float = 0.5,
+    child_prune_min_count: int = 3,
     on_error: Literal["collect", "raise"] = "collect",
     thumbnail_dir: Path | None = None,
 ) -> ScanReport:
@@ -81,6 +83,13 @@ def scan_root(
     loop. ``prune_dry_run=True`` reports what would be deleted without writing.
     ``prune_safety_floor`` (0..1.0) caps the fraction of live samples that may
     be deleted in one run; raise PruneSafetyFloorExceeded otherwise.
+
+    ``child_prune_safety_floor``/``child_prune_min_count`` (§08b) are the same
+    guard one level down: per sample, per guarded child type (acquisitions,
+    md_source, raw/post tomograms, annotations, tilt series), abort that
+    sample's upsert with ``ChildPruneSafetyFloorExceeded`` if the fraction
+    dropped exceeds the floor and at least the min count existed. Threaded
+    through to ``persistence.upsert_sample_record`` via ``_scan_one_sample``.
 
     ``on_error='collect'`` records sample-level exceptions to ``report.errors``
     and continues. ``'raise'`` propagates the first exception.
@@ -135,6 +144,11 @@ def scan_root(
         run_started = time.perf_counter()
 
         fs_sample_ids: set[str] = set()
+        # §08c: old sample ids named via renamed_from by some sample scanned
+        # this run — exempted from soft_delete_missing_samples's deletion
+        # event + floor below (populated across the whole loop since that
+        # call happens once, after every sample has been scanned).
+        sample_renames_exempt: set[str] = set()
         for idx, sample_loc in enumerate(sample_locs, start=1):
             fs_sample_ids.add(sample_loc.sample_id)
             with logger.contextualize(sample_id=sample_loc.sample_id):
@@ -142,7 +156,7 @@ def scan_root(
 
                 # Per-sample work in its own transaction
                 try:
-                    _scan_one_sample(
+                    old_sample_id = _scan_one_sample(
                         session,
                         sample_loc,
                         force=force,
@@ -151,7 +165,11 @@ def scan_root(
                         now=run_now,
                         report=report,
                         thumbnail_dir=thumbnail_dir,
+                        child_prune_safety_floor=child_prune_safety_floor,
+                        child_prune_min_count=child_prune_min_count,
                     )
+                    if old_sample_id is not None:
+                        sample_renames_exempt.add(old_sample_id)
                 except Exception as e:  # noqa: BLE001
                     # Make sure no partial transaction is left dangling.
                     if session.in_transaction():
@@ -207,9 +225,12 @@ def scan_root(
                     persistence.soft_delete_missing_samples(
                         session,
                         fs_sample_ids,
+                        run_id=scan_run_id,
+                        now=run_now,
                         dry_run=prune_dry_run,
                         safety_floor=prune_safety_floor,
                         report=report,
+                        renamed_exempt=frozenset(sample_renames_exempt),
                     )
                 except persistence.PruneSafetyFloorExceeded as exc:
                     report.errors.append(
@@ -346,8 +367,18 @@ def _scan_one_sample(
     now: float,
     report: ScanReport,
     thumbnail_dir: Path | None,
-) -> None:
-    """Per-sample scan inside its own transaction. Mutates ``report`` in place."""
+    child_prune_safety_floor: float = 0.5,
+    child_prune_min_count: int = 3,
+) -> str | None:
+    """Per-sample scan inside its own transaction. Mutates ``report`` in place.
+
+    Returns the old sample id if this sample was persisted as a §08c rename
+    target (``record.sample.renamed_from`` was set), else ``None`` — the
+    caller accumulates these across the run to exempt them from
+    ``soft_delete_missing_samples``'s deletion event + floor (continuity
+    stamps for the sample/acquisition levels are handled inline, below, using
+    ``upsert_sample_record``'s full rename-info return value).
+    """
     parse_targets = discovery.parse_targets_for_sample(sample_loc)
 
     # Gating check (read state in its own short transaction)
@@ -428,7 +459,7 @@ def _scan_one_sample(
         logger.debug("  skipped (unchanged): {}", sample_loc.sample_id)
         report.skipped += 1
         report.skipped_ids.append(sample_loc.sample_id)
-        return
+        return None
 
     # Assemble + persist in one transaction
     with session.begin():
@@ -468,7 +499,7 @@ def _scan_one_sample(
                 run_id=scan_run_id,
                 changed=False,
             )
-            return
+            return None
         for e in result.errors:
             report.errors.append(f"{sample_loc.sample_id}: {e}")
 
@@ -493,7 +524,48 @@ def _scan_one_sample(
                 time.perf_counter() - thumb_started,
                 thumb_rel or "none",
             )
-        persistence.upsert_sample_record(
+        # §08c: derive rename hints via `persistence.derive_rename_hints` —
+        # the same helper `upsert_sample_record` uses internally — rather
+        # than reading its return value, so both the acquisition
+        # status-continuity snapshot AND issue reconciliation happen BEFORE
+        # upsert_sample_record runs. That call's own
+        # `_prune_orphan_acquisition_status` step deletes the old
+        # (sample_id, acquisition_id) status row *and* its acquisition-scope
+        # issues in the same transaction (the old acquisition_id is no longer
+        # in keep_acq_pks) — reading/matching against them *after* the call
+        # would find them already gone. Sample-level continuity has no such
+        # hazard (upsert_sample_record never touches sample_scan_status, and
+        # can't delete a *different* sample's issues), but deriving it here
+        # too keeps both levels symmetric.
+        pre_renamed_sample_id, pre_acq_renames = persistence.derive_rename_hints(
+            result.record
+        )
+        carried_acq_last_changed_by_new_id: dict[str, float] = {}
+        for acq_id, old_acq_id in pre_acq_renames.items():
+            lookup_sample_id = pre_renamed_sample_id or sample_loc.sample_id
+            old_acq_status = session.get(
+                orm.AcquisitionScanStatusORM, (lookup_sample_id, old_acq_id)
+            )
+            if old_acq_status is not None:
+                carried_acq_last_changed_by_new_id[acq_id] = (
+                    old_acq_status.last_changed_at
+                )
+
+        # Reconcile this sample's fresh issue set against its outstanding set
+        # — BEFORE upsert_sample_record, for the reason above.
+        n_new, n_resolved = persistence.reconcile_sample_issues(
+            session,
+            scan_run_id,
+            sample_loc.sample_id,
+            list(result.warnings),
+            now,
+            renamed_from_sample=pre_renamed_sample_id,
+            renamed_acquisitions=pre_acq_renames,
+        )
+        report.n_new_issues += n_new
+        report.n_resolved_issues += n_resolved
+
+        rename_info = persistence.upsert_sample_record(
             session,
             result.record,
             extras=result.extras,
@@ -501,17 +573,22 @@ def _scan_one_sample(
             now=now,
             disk_size_bytes=disk_size,
             thumbnail_path=thumb_rel,
+            child_prune_safety_floor=child_prune_safety_floor,
+            child_prune_min_count=child_prune_min_count,
         )
-        # Reconcile this sample's fresh issue set against its outstanding set.
-        n_new, n_resolved = persistence.reconcile_sample_issues(
-            session,
-            scan_run_id,
-            sample_loc.sample_id,
-            list(result.warnings),
-            now,
-        )
-        report.n_new_issues += n_new
-        report.n_resolved_issues += n_resolved
+        old_sample_id: str | None = rename_info.sample
+
+        # §08c: carry sample_scan_status.last_changed_at from the old row on
+        # a rename, so it doesn't read as freshly changed. `old_sample_id`'s
+        # own status row (if any) is untouched by this scan — it belongs to a
+        # directory that no longer exists on disk.
+        carried_sample_last_changed = None
+        if old_sample_id is not None:
+            old_sample_status = session.get(
+                orm.SampleScanStatusORM, old_sample_id
+            )
+            if old_sample_status is not None:
+                carried_sample_last_changed = old_sample_status.last_changed_at
 
         # Freshness + thumbnail provenance status (upserted ⇒ changed=True).
         persistence.upsert_sample_scan_status(
@@ -521,6 +598,7 @@ def _scan_one_sample(
             outcome="upserted",
             run_id=scan_run_id,
             changed=True,
+            carried_last_changed_at=carried_sample_last_changed,
         )
         thumb_by_acq = (
             {r.acquisition_id: r for r in thumb_result.per_acq}
@@ -529,6 +607,12 @@ def _scan_one_sample(
         )
         for acq_id in result.record.acquisitions:
             acq_res = thumb_by_acq.get(acq_id)
+            # §08c: carried_acq_last_changed_by_new_id was snapshotted BEFORE
+            # upsert_sample_record ran (see comment above) — reusing it here
+            # rather than re-querying (the old row is already gone by now).
+            carried_acq_last_changed = carried_acq_last_changed_by_new_id.get(
+                acq_id
+            )
             persistence.upsert_acquisition_scan_status(
                 session,
                 sample_loc.sample_id,
@@ -544,6 +628,7 @@ def _scan_one_sample(
                     now if acq_res and acq_res.status == "ok" else None
                 ),
                 thumbnail_status=acq_res.status if acq_res else None,
+                carried_last_changed_at=carried_acq_last_changed,
             )
 
         # Update mtime state for every parse target.
@@ -559,6 +644,7 @@ def _scan_one_sample(
         )
         report.upserted += 1
         report.upserted_ids.append(sample_loc.sample_id)
+        return old_sample_id
 
 
 __all__ = ["ScanReport", "scan_root"]

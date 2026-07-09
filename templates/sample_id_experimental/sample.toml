@@ -44,6 +44,9 @@ project         = "<FILL IN>"   # enum: synapse | chromatin | nanogold
 # type          = "<FILL IN>"   # text, e.g. tissue | cellular | reconstituted
 # cell_type     = "<FILL IN>"   # text, required if type = "cellular"
 # description   = "<FILL IN>"   # text, optional free-text description
+# renamed_from  = "<old-sample-id>"   # uncomment if you renamed this sample's directory.
+#   Set this to the PREVIOUS directory name so the scanner records a rename
+#   instead of reading it as a deletion + new sample.
 
 
 # ── Chromatin-specific  (delete this block if project = "synapse") ───────────

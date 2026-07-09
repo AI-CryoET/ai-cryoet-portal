@@ -7,6 +7,7 @@ Replaces the old per-scan-run ``/scans`` router. The model splits run history
   GET /manage/summary                       -> ManageSummary
   GET /manage/issues                        -> list[IssueGroup]   (outstanding)
   GET /manage/issues/resolved               -> list[IssueGroup]   (recently resolved)
+  GET /manage/deletions                     -> list[DeletionEvent] (append-only feed, §08a)
   GET /manage/scans                         -> list[ScanRun]
   GET /manage/scans/{id}                    -> ScanRun
   GET /manage/scans/{id}/logs               -> list[ScanLogLine]
@@ -25,6 +26,7 @@ from sqlalchemy.orm import Session
 from catalog import orm
 from catalog.api.deps import get_session
 from catalog.api.schemas import (
+    DeletionEvent,
     IssueGroup,
     IssueItem,
     LatestScanInfo,
@@ -162,7 +164,8 @@ def _group_issues(
 def get_summary(session: Session = Depends(get_session)):
     """Status/cadence card: latest scan, configured cadence, outstanding counts."""
     # Latest scan = latest completed run; fall back to latest run of any status.
-    run = _latest_completed_run(session)
+    completed_run = _latest_completed_run(session)
+    run = completed_run
     if run is None:
         run = session.execute(
             select(orm.ScanRunORM)
@@ -197,11 +200,21 @@ def get_summary(session: Session = Depends(get_session)):
         warnings=counts.get("warning", 0),
     )
 
+    # Deletion events from the latest completed run (badge count, §08a).
+    deletions_latest_run = 0
+    if completed_run is not None:
+        deletions_latest_run = session.execute(
+            select(func.count())
+            .select_from(orm.DeletionEventORM)
+            .where(orm.DeletionEventORM.scan_run_id == completed_run.scan_run_id)
+        ).scalar_one()
+
     return ManageSummary(
         latest_scan=latest_scan,
         cadence_cron=os.environ.get("SCAN_CADENCE_CRON", "0 * * * *"),
         cadence_tz=os.environ.get("SCAN_CADENCE_TZ", "UTC"),
         outstanding=outstanding,
+        deletions_latest_run=deletions_latest_run,
     )
 
 
@@ -272,6 +285,52 @@ def get_resolved_issues(
         latest_scan_at=latest_scan_at,
         resolved=True,
     )
+
+
+# ── Deletion audit feed (§08a) ──────────────────────────────────────────────
+
+
+@router.get("/deletions", response_model=list[DeletionEvent])
+def get_deletions(
+    entity_type: str | None = Query(None),
+    sample_id: str | None = Query(None),
+    within_hours: float | None = Query(None, gt=0),
+    limit: int = Query(100, le=500),
+    offset: int = Query(0, ge=0),
+    session: Session = Depends(get_session),
+):
+    """Append-only deletion feed, newest-first. No resolve/dismiss — every
+    scan-detected disappearance stays in the feed (§08a)."""
+    stmt = select(orm.DeletionEventORM)
+    if entity_type is not None:
+        stmt = stmt.where(orm.DeletionEventORM.entity_type == entity_type)
+    if sample_id is not None:
+        stmt = stmt.where(orm.DeletionEventORM.sample_id == sample_id)
+    if within_hours is not None:
+        cutoff = time.time() - within_hours * 3600.0
+        stmt = stmt.where(orm.DeletionEventORM.detected_at >= cutoff)
+    stmt = (
+        stmt.order_by(orm.DeletionEventORM.detected_at.desc())
+        .limit(limit)
+        .offset(offset)
+    )
+
+    rows = session.execute(stmt).scalars().all()
+    return [
+        DeletionEvent(
+            id=r.id,
+            scan_run_id=r.scan_run_id,
+            detected_at=r.detected_at,
+            entity_type=_enum_val(r.entity_type),
+            kind=_enum_val(r.kind),
+            sample_id=r.sample_id,
+            acquisition_id=r.acquisition_id,
+            entity_id=r.entity_id,
+            last_known_path=r.last_known_path,
+            last_known_json=r.last_known_json,
+        )
+        for r in rows
+    ]
 
 
 # ── Scan runs ──────────────────────────────────────────────────────────────

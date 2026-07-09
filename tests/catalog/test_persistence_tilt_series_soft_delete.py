@@ -145,12 +145,21 @@ def test_stale_per_mdoc_rows_pruned_on_relaxed_parser(session) -> None:
         len(session.execute(select(orm.TiltSeriesORM)).scalars().all()) == 33
     )
 
-    # Re-upsert with the collapsed (new-parser) shape: one row.
+    # Re-upsert with the collapsed (new-parser) shape: one row. This is a
+    # deliberate 32-of-33 (97%) drop — exactly the shape §08b's child safety
+    # floor exists to catch — so this stand-in for an operator-run parser
+    # migration opts out via an explicit floor, the same way a real migration
+    # would pass a relaxed --child-prune-safety-floor for that one run.
     r_new = _make_record_with_tilt_series(
         tilt_series_ids=("20241211_HippWaffle_49",)
     )
     upsert_sample_record(
-        session, r_new, extras=[], run_id="run-new", now=time.time()
+        session,
+        r_new,
+        extras=[],
+        run_id="run-new",
+        now=time.time(),
+        child_prune_safety_floor=1.0,
     )
     session.commit()
 

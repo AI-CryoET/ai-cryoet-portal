@@ -292,6 +292,8 @@ export type ManageSummary = {
   cadence_cron: string
   cadence_tz: string
   outstanding: { errors: number; warnings: number }
+  // Deletion/rename events recorded in the latest completed run (§08a badge).
+  deletions_latest_run: number
 }
 
 // ── Manage page: issues (outstanding + recently resolved) ───────────────────
@@ -352,6 +354,35 @@ export type ScanLogLine = {
   level: ScanLogLevel
   sample_id: string | null
   message: string
+}
+
+// ── Manage page: deletion / rename audit feed (§08a/§08c) ───────────────────
+
+export type DeletionEntityType =
+  | 'sample'
+  | 'acquisition'
+  | 'raw_tomogram'
+  | 'post_processed_tomogram'
+  | 'annotation'
+  | 'tilt_series'
+  | 'md_source'
+
+export type DeletionEventKind = 'deletion' | 'rename'
+
+// One row of the append-only deletion audit feed. For `kind: "rename"`,
+// `last_known_json` holds `{"renamed_from": old_id, "renamed_to": new_id}`
+// instead of a row snapshot.
+export type DeletionEvent = {
+  id: number
+  scan_run_id: string
+  detected_at: number
+  entity_type: DeletionEntityType
+  kind: DeletionEventKind
+  sample_id: string
+  acquisition_id: string | null
+  entity_id: string | null
+  last_known_path: string | null
+  last_known_json: string | null
 }
 
 export type ScanSampleOutcome = {

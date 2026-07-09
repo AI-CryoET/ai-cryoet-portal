@@ -148,6 +148,12 @@ AcquistionQuality = Annotated[int, Field(ge=1, le=5)]
 class Sample(_Base):
     # directory (sample folder name, injected on load)
     sample_id: IdStr | None = None
+    # sample.toml ([sample]) — scan-time directive, not stored (§08c): names
+    # the prior sample_id this directory was renamed from, so the scanner can
+    # migrate continuity + suppress the false deletion event instead of
+    # reading the rename as delete-old + add-new. Excluded from the ORM
+    # mirror — see tests/catalog/test_orm_drift.py's directive_only carve-out.
+    renamed_from: str | None = None
     # directory (top-level arm: Experimental/ -> experimental,
     # MdSimulation/<SubDir>/ -> simulation). Derived from the path by the
     # scanner / loader (infer_arm) and no longer authored in sample.toml;
@@ -241,6 +247,9 @@ class MdRun(_Base):
 class Acquisition(_Base):
     # directory (acquisition folder name, injected on load)
     acquisition_id: IdStr | None = None
+    # acquisition.toml ([acquisition]) — scan-time directive, not stored
+    # (§08c); see Sample.renamed_from.
+    renamed_from: str | None = None
     # acquisition.toml ([acquisition])
     resolution: float | None = None          # angstrom
     tilt_spacing: float | None = None        # degrees
@@ -277,6 +286,8 @@ class Acquisition(_Base):
 class RawTomogram(_Base):
     # directory / acquisition.toml [raw_tomogram] (folder name = tomogram_id = TOML `id`)
     tomogram_id: IdStr = Field(alias="id")
+    # scan-time directive, not stored (§08c); see Sample.renamed_from.
+    renamed_from: str | None = None
     # id of the [[tilt_series]] (in this acquisition) this reconstruction was
     # built from; validated against the acquisition's tilt-series ids in
     # AcquisitionFile._check_cross_refs.
@@ -300,6 +311,8 @@ class RawTomogram(_Base):
 class PostProcessedTomogram(_Base):
     # directory / acquisition.toml [[post_processed_tomogram]] (folder name = tomogram_id = TOML `id`)
     tomogram_id: IdStr = Field(alias="id")
+    # scan-time directive, not stored (§08c); see Sample.renamed_from.
+    renamed_from: str | None = None
     # id of the [[tilt_series]] (in this acquisition) this reconstruction was
     # built from; validated against the acquisition's tilt-series ids in
     # AcquisitionFile._check_cross_refs.
@@ -327,6 +340,8 @@ class PostProcessedTomogram(_Base):
 class Annotation(_Base):
     # directory / acquisition.toml [[annotation]] (folder name = annotation_id = TOML `id`)
     annotation_id: IdStr = Field(alias="id")
+    # scan-time directive, not stored (§08c); see Sample.renamed_from.
+    renamed_from: str | None = None
     type: str | None = None
     target_tomogram: IdStr | None = None
     # directory scan (artifacts discovered in the annotation folder)
@@ -353,6 +368,8 @@ class TiltSeries(_Base):
     sample_id: IdStr | None = None
     acquisition_id: IdStr | None = None
     tilt_series_id: IdStr | None = Field(default=None, alias="id")
+    # scan-time directive, not stored (§08c); see Sample.renamed_from.
+    renamed_from: str | None = None
     # acquisition.toml [[tilt_series]] — authored
     # "Frames" (raw from frames) OR another tilt_series_id in this acquisition.
     derived_from: str | None = None

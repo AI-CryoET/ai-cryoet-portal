@@ -849,3 +849,235 @@ def test_crashed_scan_persists_partial_log_and_failed_status(engine, tmp_path):
         assert rows, "expected partial log lines for the crashed run"
     finally:
         s.close()
+
+
+def _write_acquisition(sample_dir: Path, acq_id: str) -> Path:
+    """Write the smallest legal acquisition.toml under ``sample_dir / acq_id``."""
+    d = sample_dir / acq_id
+    d.mkdir(parents=True)
+    (d / "acquisition.toml").write_text('[acquisition]\nmicroscope = "Krios"\n')
+    return d
+
+
+def test_child_prune_safety_floor_fails_only_that_sample(engine, tmp_path):
+    """§08b: a sample that loses most of its acquisitions in one scan aborts
+    *that sample's* upsert with ChildPruneSafetyFloorExceeded — recorded
+    failed, no rows deleted for it — while an unrelated healthy sample in the
+    same run still upserts normally (the failure's blast radius is one
+    sample, not the whole run)."""
+    sample_a = _write_minimal_sample(tmp_path, "sample_a")
+    for acq_id in ("acq1", "acq2", "acq3", "acq4"):
+        _write_acquisition(sample_a, acq_id)
+    _write_minimal_sample(tmp_path, "sample_b")
+
+    scanner.scan_root(engine, tmp_path)
+
+    s = _session(engine)
+    try:
+        assert (
+            len(
+                s.execute(
+                    select(orm.AcquisitionORM).where(
+                        orm.AcquisitionORM.sample_id == "sample_a"
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            == 4
+        )
+    finally:
+        s.close()
+
+    # Drop 3 of 4 acquisitions on disk: 75% > the default 50% floor, and 4 >=
+    # the default min-count of 3, so this must trip.
+    import shutil
+
+    shutil.rmtree(sample_a / "acq2")
+    shutil.rmtree(sample_a / "acq3")
+    shutil.rmtree(sample_a / "acq4")
+
+    report = scanner.scan_root(engine, tmp_path, force=True)
+
+    assert [sid for sid, _ in report.failed_samples] == ["sample_a"]
+    assert "sample_b" in report.upserted_ids
+
+    s = _session(engine)
+    try:
+        acqs = (
+            s.execute(
+                select(orm.AcquisitionORM).where(
+                    orm.AcquisitionORM.sample_id == "sample_a"
+                )
+            )
+            .scalars()
+            .all()
+        )
+        assert len(acqs) == 4, "the failed sample's transaction must roll back"
+        assert (
+            s.execute(select(orm.DeletionEventORM)).scalars().all() == []
+        ), "no deletion events for a floor-aborted upsert"
+        latest = (
+            s.execute(
+                select(orm.ScanRunORM).order_by(orm.ScanRunORM.started_at.desc())
+            )
+            .scalars()
+            .first()
+        )
+        # Per-sample failures are isolated — the run as a whole still completes.
+        assert latest.status == "completed"
+    finally:
+        s.close()
+
+
+def test_child_prune_safety_floor_configurable_from_cli_kwargs(engine, tmp_path):
+    """Relaxing --child-prune-safety-floor / --child-prune-min-count lets a
+    scan that would otherwise trip the default floor go through."""
+    sample_a = _write_minimal_sample(tmp_path, "sample_a")
+    for acq_id in ("acq1", "acq2", "acq3", "acq4"):
+        _write_acquisition(sample_a, acq_id)
+    scanner.scan_root(engine, tmp_path)
+
+    import shutil
+
+    shutil.rmtree(sample_a / "acq2")
+    shutil.rmtree(sample_a / "acq3")
+    shutil.rmtree(sample_a / "acq4")
+
+    report = scanner.scan_root(
+        engine,
+        tmp_path,
+        force=True,
+        child_prune_safety_floor=0.9,
+    )
+    assert report.failed_samples == []
+    assert "sample_a" in report.upserted_ids
+
+    s = _session(engine)
+    try:
+        acqs = (
+            s.execute(
+                select(orm.AcquisitionORM).where(
+                    orm.AcquisitionORM.sample_id == "sample_a"
+                )
+            )
+            .scalars()
+            .all()
+        )
+        assert len(acqs) == 1
+    finally:
+        s.close()
+
+
+# ─── §08c `renamed_from` hint (end-to-end via scan_root) ──────────────────────
+
+
+def test_sample_rename_hint_suppresses_deletion_and_carries_continuity(
+    engine, tmp_path
+):
+    """Renaming a sample directory and authoring `renamed_from` in the new
+    sample.toml suppresses the old id's ordinary §08a deletion event (a
+    rename event is recorded instead) and carries
+    sample_scan_status.last_changed_at from the old row onto the new one —
+    the continuity-stamp wiring only scanner.py has enough context to do
+    (upsert_sample_record's rename-info return value threaded through)."""
+    import shutil
+
+    sample_a = _write_minimal_sample(tmp_path, "sample_a")
+    scanner.scan_root(engine, tmp_path)
+
+    s = _session(engine)
+    try:
+        old_status = s.get(orm.SampleScanStatusORM, "sample_a")
+        assert old_status is not None
+        old_last_changed = old_status.last_changed_at
+    finally:
+        s.close()
+
+    renamed_dir = tmp_path / "Experimental" / "sample_a_renamed"
+    shutil.move(str(sample_a), str(renamed_dir))
+    (renamed_dir / "sample.toml").write_text(
+        '[sample]\ndata_source = "experimental"\nproject = "chromatin"\n'
+        'renamed_from = "sample_a"\n'
+    )
+
+    report = scanner.scan_root(engine, tmp_path, prune=True)
+    assert "sample_a_renamed" in report.upserted_ids
+    assert report.errors == []
+
+    s = _session(engine)
+    try:
+        # Old row still soft-deletes as usual — no PK rewrite.
+        old_sample = s.get(orm.SampleORM, "sample_a")
+        assert old_sample is not None and old_sample.deleted_at is not None
+        new_sample = s.get(orm.SampleORM, "sample_a_renamed")
+        assert new_sample is not None and new_sample.deleted_at is None
+
+        events = s.execute(select(orm.DeletionEventORM)).scalars().all()
+        assert len(events) == 1, "no ordinary deletion event for sample_a"
+        assert events[0].kind == "rename"
+        assert events[0].entity_type == "sample"
+        assert events[0].sample_id == "sample_a_renamed"
+
+        new_status = s.get(orm.SampleScanStatusORM, "sample_a_renamed")
+        assert new_status is not None
+        assert new_status.last_changed_at == old_last_changed
+    finally:
+        s.close()
+
+
+def test_acquisition_rename_hint_carries_scan_status_continuity(engine, tmp_path):
+    """Same as the sample-level test, one level down: renaming an
+    acquisition directory + `renamed_from` in acquisition.toml suppresses the
+    old acquisition's deletion event, records a rename event, and carries
+    acquisition_scan_status.last_changed_at forward."""
+    import shutil
+
+    sample_a = _write_minimal_sample(tmp_path, "sample_a")
+    _write_acquisition(sample_a, "acq1")
+    scanner.scan_root(engine, tmp_path)
+
+    s = _session(engine)
+    try:
+        old_status = s.get(orm.AcquisitionScanStatusORM, ("sample_a", "acq1"))
+        assert old_status is not None
+        old_last_changed = old_status.last_changed_at
+    finally:
+        s.close()
+
+    shutil.move(str(sample_a / "acq1"), str(sample_a / "acq1_renamed"))
+    (sample_a / "acq1_renamed" / "acquisition.toml").write_text(
+        '[acquisition]\nmicroscope = "Krios"\nrenamed_from = "acq1"\n'
+    )
+
+    report = scanner.scan_root(engine, tmp_path, force=True)
+    assert "sample_a" in report.upserted_ids
+    assert report.errors == []
+
+    s = _session(engine)
+    try:
+        acq_ids = {
+            a.acquisition_id
+            for a in s.execute(
+                select(orm.AcquisitionORM).where(
+                    orm.AcquisitionORM.sample_id == "sample_a"
+                )
+            )
+            .scalars()
+            .all()
+        }
+        assert acq_ids == {"acq1_renamed"}
+
+        events = s.execute(select(orm.DeletionEventORM)).scalars().all()
+        assert len(events) == 1, "no ordinary deletion event for acq1"
+        assert events[0].kind == "rename"
+        assert events[0].entity_type == "acquisition"
+        assert events[0].acquisition_id == "acq1_renamed"
+
+        new_status = s.get(
+            orm.AcquisitionScanStatusORM, ("sample_a", "acq1_renamed")
+        )
+        assert new_status is not None
+        assert new_status.last_changed_at == old_last_changed
+    finally:
+        s.close()

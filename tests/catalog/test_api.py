@@ -216,6 +216,18 @@ def test_get_sample_detail(client):
     assert acq["post_processed_tomograms"][0]["voxel_size"] == pytest.approx(11.72)
 
 
+def test_get_sample_detail_never_exposes_renamed_from(client):
+    """§08c: ``renamed_from`` is a scan-time directive, never stored/served —
+    spot-check the API response schema doesn't leak it even though the
+    underlying Pydantic models carry the field."""
+    body = client.get("/samples/sample_a").json()
+    assert "renamed_from" not in body
+    assert len(body["acquisitions"]) == 1
+    acq = body["acquisitions"][0]
+    assert "renamed_from" not in acq
+    assert "renamed_from" not in acq["post_processed_tomograms"][0]
+
+
 def test_get_sample_404(client):
     r = client.get("/samples/missing")
     assert r.status_code == 404
