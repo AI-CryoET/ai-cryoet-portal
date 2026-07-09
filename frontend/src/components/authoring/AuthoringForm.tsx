@@ -212,6 +212,13 @@ function SectionedAuthoringForm({ form, initialId, initialSampleId }: Props) {
     }
   }
 
+  // Reset to an empty form, dropping the loaded id and every field value.
+  const handleClear = () => {
+    seed({}, false)
+    setSampleId('')
+    setLoadId('')
+  }
+
   // Update one scalar (or one repeatable entry's) field value.
   const setValue = (section: string, field: string, v: string, index?: number) => {
     setDone(false)
@@ -310,6 +317,8 @@ function SectionedAuthoringForm({ form, initialId, initialSampleId }: Props) {
           loadId={loadId}
           onLoadIdChange={setLoadId}
           onLoad={handleLoad}
+          // md_run has no portal load path — nothing loaded, nothing to clear.
+          onClear={form === 'md_run' ? undefined : handleClear}
           // md_run has no portal load-by-id path yet.
           showLoadById={form !== 'md_run'}
           extra={
@@ -847,6 +856,7 @@ function UploadLoadToolbar({
   loadId,
   onLoadIdChange,
   onLoad,
+  onClear,
   extra,
   showLoadById = true,
 }: {
@@ -855,6 +865,9 @@ function UploadLoadToolbar({
   loadId: string
   onLoadIdChange: (v: string) => void
   onLoad: () => void
+  // Reset the form to empty, dropping any loaded id. Omitted where clearing
+  // isn't offered (md_run).
+  onClear?: () => void
   extra?: React.ReactNode
   // md_run has no portal load-by-id path yet — hide the field there.
   showLoadById?: boolean
@@ -883,6 +896,11 @@ function UploadLoadToolbar({
             Load
           </Button>
         </>
+      )}
+      {onClear && (
+        <Button variant="text" size="small" onClick={onClear}>
+          Clear
+        </Button>
       )}
     </Stack>
   )
@@ -999,6 +1017,14 @@ function CompositeAuthoringForm({
     }
   }
 
+  // Reset to an empty form, dropping the loaded id and every field value.
+  const handleClear = () => {
+    seed({}, false)
+    setLoadId('')
+    setArm('experimental')
+    setArmLocked(false)
+  }
+
   // Deep-link auto-load (?id=…): pull from the API once on mount.
   React.useEffect(() => {
     if (autoLoadId) handleLoad(autoLoadId)
@@ -1112,6 +1138,7 @@ function CompositeAuthoringForm({
           loadId={loadId}
           onLoadIdChange={setLoadId}
           onLoad={() => handleLoad(loadId)}
+          onClear={handleClear}
         />
 
         <DataSourceRadio
