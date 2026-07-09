@@ -58,8 +58,9 @@ validate = "python -m schema.validate"
 json-schema = "python -m schema.generate_json_schema"
 form-fields = "python -m schema.generate_form_fields"
 sync-templates = "python -m schema.sync_templates"
+template-zips = "python -m schema.build_template_zips"
 # Regenerate every artifact derived from schema.py + the canonical templates.
-sync = { depends-on = ["json-schema", "form-fields", "sync-templates"] }
+sync = { depends-on = ["json-schema", "form-fields", "sync-templates", "template-zips"] }
 scan = { cmd = "python -m catalog scan", default-environment = "catalog" }
 
 [tool.pixi.feature.test.dependencies]
