@@ -128,13 +128,12 @@ function SampleDetailRoute() {
             : null
         }
         description={sample.description}
+        editLink={
+          <CustomLink to="/author" search={{ tab: 'sample', id: sampleId }}>
+            Edit sample.toml
+          </CustomLink>
+        }
       />
-
-      <Box>
-        <CustomLink to="/author" search={{ tab: 'sample', id: sampleId }}>
-          Edit sample.toml
-        </CustomLink>
-      </Box>
 
       <Divider />
 

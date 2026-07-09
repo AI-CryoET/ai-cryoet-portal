@@ -230,18 +230,19 @@ function AcquisitionDetailRoute() {
               }
             : null
         }
+        // Edit link carries the composite identity so the form auto-loads the
+        // right acquisition (acquisition_id alone isn't unique).
+        editLink={
+          <CustomLink
+            to="/author"
+            search={{ tab: 'acquisition', id: acquisitionId, sampleId }}
+            variant="body2"
+            fontWeight={700}
+          >
+            Edit acquisition.toml
+          </CustomLink>
+        }
       />
-
-      {/* Edit links carry the composite identity so the form auto-loads the
-          right acquisition (acquisition_id alone isn't unique). */}
-      <CustomLink
-        to="/author"
-        search={{ tab: 'acquisition', id: acquisitionId, sampleId }}
-        variant="body2"
-        fontWeight={700}
-      >
-        Edit acquisition.toml
-      </CustomLink>
 
       <Divider />
 
