@@ -252,6 +252,11 @@ FORM_FIELDS: list[FormField] = [
         required=True, is_id=True,
         help="Acquisition folder name. Sets identity; not written into the file.",
     ),
+    FormField(
+        "acquisition", "acquisition", "renamed_from", "Renamed from", "text",
+        help="Previous acquisition id if you renamed this directory, so the "
+             "scanner records a rename instead of a deletion + new acquisition.",
+    ),
     FormField("acquisition", "acquisition", "resolution", "Resolution (Å)", "number",
               help="Nominal resolution."),
     FormField("acquisition", "acquisition", "tilt_spacing", "Tilt spacing (°)", "number",
@@ -292,6 +297,11 @@ FORM_FIELDS: list[FormField] = [
         required=True, alias="id", help="Folder name under TiltSeries/.",
     ),
     FormField(
+        "acquisition", "tilt_series", "renamed_from", "Renamed from", "text",
+        help="Previous tilt series id if you renamed this directory, so the "
+             "scanner records a rename instead of a deletion + new tilt series.",
+    ),
+    FormField(
         "acquisition", "tilt_series", "derived_from", "Derived from", "select",
         cross_ref="tilt_series",
         help='"Frames" (raw) or another tilt series in this acquisition.',
@@ -309,6 +319,11 @@ FORM_FIELDS: list[FormField] = [
     FormField(
         "acquisition", "raw_tomogram", "tomogram_id", "Tomogram id", "text",
         required=True, alias="id", help="Folder name under Tomograms/.",
+    ),
+    FormField(
+        "acquisition", "raw_tomogram", "renamed_from", "Renamed from", "text",
+        help="Previous tomogram id if you renamed this directory, so the "
+             "scanner records a rename instead of a deletion + new tomogram.",
     ),
     FormField(
         "acquisition", "raw_tomogram", "tilt_series_id", "Tilt series", "select",
@@ -332,6 +347,12 @@ FORM_FIELDS: list[FormField] = [
     FormField(
         "acquisition", "post_processed_tomogram", "tomogram_id", "Tomogram id",
         "text", required=True, alias="id", help="Folder name under Tomograms/.",
+    ),
+    FormField(
+        "acquisition", "post_processed_tomogram", "renamed_from", "Renamed from",
+        "text",
+        help="Previous tomogram id if you renamed this directory, so the "
+             "scanner records a rename instead of a deletion + new tomogram.",
     ),
     FormField(
         "acquisition", "post_processed_tomogram", "tilt_series_id", "Tilt series",
@@ -360,6 +381,11 @@ FORM_FIELDS: list[FormField] = [
         "acquisition", "annotation", "annotation_id", "Annotation id", "text",
         required=True, alias="id", help="Folder name under Annotations/.",
     ),
+    FormField(
+        "acquisition", "annotation", "renamed_from", "Renamed from", "text",
+        help="Previous annotation id if you renamed this directory, so the "
+             "scanner records a rename instead of a deletion + new annotation.",
+    ),
     FormField("acquisition", "annotation", "type", "Type", "text"),
     FormField(
         "acquisition", "annotation", "target_tomogram", "Target tomogram", "select",
@@ -373,6 +399,11 @@ FORM_FIELDS: list[FormField] = [
         "sample", "sample", "sample_id", "Sample id", "text",
         is_id=True,
         help="Sample directory name. Sets identity; not written into the file.",
+    ),
+    FormField(
+        "sample", "sample", "renamed_from", "Renamed from", "text",
+        help="Previous sample id if you renamed this directory, so the scanner "
+             "records a rename instead of a deletion + new sample.",
     ),
     # data_source is the non-persisted arm shape control (derived from the
     # directory on ingest): it drives which sections show but is never written.
