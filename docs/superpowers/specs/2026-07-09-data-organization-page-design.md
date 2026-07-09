@@ -48,12 +48,18 @@ shape as the `/author` page (breadcrumb + `Stack` of sections).
 
 ## Tree component
 
-`@mui/x-tree-view@^7` `RichTreeView` (v7 pairs with the frontend's MUI v6;
-`^9` requires MUI v7/v9 — see Dependencies). Each tree is a static nested-data
-array (`{ id, label, comment?, kind: 'dir' | 'file', href? }`); a custom item
-slot renders a folder/file icon, the name, and the trailing `# comment` in
-muted text. Trees are default-expanded and read-only (no selection). Nodes
-with `href` render their label as a link to the relevant `/author` tab.
+`@mui/x-tree-view@^7` `SimpleTreeView` (v7 pairs with the frontend's MUI v6;
+`^9` requires MUI v7/v9 — see Dependencies). A reusable `FileTree` component
+renders a static nested-data array (`{ name, kind: 'dir' | 'file', comment?,
+children? }`) recursively into `TreeItem`s: directory names get a trailing `/`,
+the `comment` renders muted after the name, all nodes are expanded by default,
+and selection is disabled. `SimpleTreeView` (over `RichTreeView`) keeps custom
+labels trivial — arbitrary JSX per `TreeItem` label — for a purely static tree.
+
+`FileTree` stays router-free (pure presentation), so the `/author` tab links
+live in a small link row **beneath** each dataset tree rather than embedded in
+tree nodes. Keeps the component trivially unit-testable and the links equally
+discoverable.
 
 Rationale: the trees are ~20 lines deep each; a data array is far less verbose
 to author and maintain than hand-written nested `<TreeItem>` JSX.
