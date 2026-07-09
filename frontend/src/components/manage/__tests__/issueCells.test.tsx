@@ -54,14 +54,14 @@ function group(overrides: Partial<IssueGroup>): IssueGroup {
 }
 
 describe('authorLinkFor', () => {
-  it('links a sample.toml row to /author/sample?id=', () => {
+  it('links a sample.toml row to /author on the sample tab', () => {
     expect(authorLinkFor(group({}))).toEqual({
-      to: '/author/sample',
-      search: { id: 'samp1' },
+      to: '/author',
+      search: { tab: 'sample', id: 'samp1' },
     })
   })
 
-  it('links an acquisition.toml row to /author/acquisition with composite id', () => {
+  it('links an acquisition.toml row to /author with the composite id + tab', () => {
     expect(
       authorLinkFor(
         group({
@@ -71,17 +71,17 @@ describe('authorLinkFor', () => {
         }),
       ),
     ).toEqual({
-      to: '/author/acquisition',
-      search: { id: 'Pos1', sampleId: 'samp1' },
+      to: '/author',
+      search: { tab: 'acquisition', id: 'Pos1', sampleId: 'samp1' },
     })
   })
 
-  it('links an md_run.toml row to /author/md_run?id=', () => {
+  it('links an md_run.toml row to /author on the md_run tab', () => {
     expect(
       authorLinkFor(group({ file_kind: 'md_run_toml', md_run_id: 'run_a' })),
     ).toEqual({
-      to: '/author/md_run',
-      search: { id: 'run_a' },
+      to: '/author',
+      search: { tab: 'md_run', id: 'run_a' },
     })
   })
 
@@ -107,8 +107,11 @@ describe('FileCell edit link', () => {
     render(<FileCell group={group({})} />)
     const link = screen.getByText('sample_toml').closest('a')
     expect(link).not.toBeNull()
-    expect(link).toHaveAttribute('data-to', '/author/sample')
-    expect(link).toHaveAttribute('data-search', JSON.stringify({ id: 'samp1' }))
+    expect(link).toHaveAttribute('data-to', '/author')
+    expect(link).toHaveAttribute(
+      'data-search',
+      JSON.stringify({ tab: 'sample', id: 'samp1' }),
+    )
   })
 
   it('does not link a non-authorable file kind', () => {

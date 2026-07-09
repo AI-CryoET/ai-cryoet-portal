@@ -131,7 +131,7 @@ function SampleDetailRoute() {
       />
 
       <Box>
-        <CustomLink to="/author/sample" search={{ id: sampleId }}>
+        <CustomLink to="/author" search={{ tab: 'sample', id: sampleId }}>
           Edit sample.toml
         </CustomLink>
       </Box>
