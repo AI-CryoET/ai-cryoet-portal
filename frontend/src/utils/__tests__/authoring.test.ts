@@ -4,7 +4,7 @@ import {
   buildSectionedPayload,
   hydrate,
   hydrateSections,
-  inferDataSource,
+  inferSectionedDataSource,
   type SectionState,
   type SectionsState,
 } from '~/utils/authoring'
@@ -105,7 +105,7 @@ describe('buildSectionedPayload (acquisition)', () => {
   })
 })
 
-describe('hydrateSections + inferDataSource (acquisition)', () => {
+describe('hydrateSections + inferSectionedDataSource (acquisition)', () => {
   it('splits an uploaded file into sections and dealiases tilt-series id', () => {
     const seeded = {
       acquisition: { acquisition_id: 'Pos1', resolution: 3.4 },
@@ -117,12 +117,12 @@ describe('hydrateSections + inferDataSource (acquisition)', () => {
     expect((state.tilt_series as SectionState[])[0].values.tilt_series_id).toBe(
       'ts_raw',
     )
-    expect(inferDataSource(acqSections, seeded)).toBe('simulation')
+    expect(inferSectionedDataSource(acqSections, seeded)).toBe('simulation')
   })
 
   it('infers experimental when no md_source is present', () => {
     expect(
-      inferDataSource(acqSections, { acquisition: { acquisition_id: 'Pos1' } }),
+      inferSectionedDataSource(acqSections, { acquisition: { acquisition_id: 'Pos1' } }),
     ).toBe('experimental')
   })
 

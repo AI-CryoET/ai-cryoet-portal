@@ -185,8 +185,3 @@ def test_load_sample_by_id_returns_nested_fields(seeded_client):
 
 def test_load_unknown_sample_returns_404(seeded_client):
     assert seeded_client.get("/toml/sample/load/nope").status_code == 404
-
-
-def test_load_unsupported_kind_returns_404(seeded_client):
-    # acquisition load lands with its own form (issue 05); unsupported for now.
-    assert seeded_client.get("/toml/acquisition/load/x").status_code == 404

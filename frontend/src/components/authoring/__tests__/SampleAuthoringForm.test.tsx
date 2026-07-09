@@ -141,7 +141,7 @@ describe('AuthoringForm (sample) submit + seed', () => {
         { status: 200, headers: { 'Content-Type': 'application/json' } },
       ),
     )
-    render(<AuthoringForm form="sample" loadId="samp1" />)
+    render(<AuthoringForm form="sample" initialId="samp1" />)
     await waitFor(() =>
       expect(screen.getByText(/may lag the on-disk file/)).toBeInTheDocument(),
     )

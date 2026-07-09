@@ -34,7 +34,7 @@ function AuthorSampleRoute() {
         </Typography>
       </Box>
 
-      <AuthoringForm form="sample" loadId={id} />
+      <AuthoringForm form="sample" initialId={id} />
     </Stack>
   )
 }
