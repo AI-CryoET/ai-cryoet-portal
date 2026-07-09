@@ -55,6 +55,11 @@ def build_zip(src_dir: Path) -> bytes:
                 info.external_attr = (0o40755 << 16) | 0x10  # dir + drwxr-xr-x
                 zf.writestr(info, b"")
             else:
+                if path.name.startswith("."):
+                    # .gitkeep/.DS_Store etc: git uses these to track otherwise-empty
+                    # dirs, but the zip already emits explicit dir entries above, so
+                    # these dotfiles would just be unwanted noise in the download.
+                    continue
                 info = zipfile.ZipInfo(arcname, date_time=_FIXED_DT)
                 info.external_attr = 0o644 << 16
                 zf.writestr(info, path.read_bytes())

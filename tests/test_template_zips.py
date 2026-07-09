@@ -25,6 +25,13 @@ def test_zip_contains_sample_toml_and_skeleton_dirs():
     assert "sample_id_experimental/acquisition_id/Frames/" in names
 
 
+def test_zip_excludes_dotfiles():
+    src = _REPO_ROOT / "templates" / "sample_id_experimental"
+    names = zipfile.ZipFile(io.BytesIO(build_zip(src))).namelist()
+    basenames = [n.rstrip("/").rsplit("/", 1)[-1] for n in names]
+    assert not any(b.startswith(".") for b in basenames)
+
+
 def test_committed_zips_match_fresh_build():
     stale = []
     for src, out in ZIP_TARGETS:
