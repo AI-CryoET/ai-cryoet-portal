@@ -60,33 +60,30 @@ export function authorLinkFor(
 }
 
 // `file_kind` chip + a truncated, monospace `file_path` beneath it. For an
-// authorable file the chip is an edit link into its authoring form (issue 07).
+// authorable file an "Edit file" link sits to the right of the chip,
+// jumping into its authoring form (issue 07).
 export function FileCell({ group }: { group: IssueGroup }) {
   const link = authorLinkFor(group)
-  const chip = (
-    <Chip
-      label={group.file_kind}
-      size="small"
-      variant="outlined"
-      clickable={link != null}
-      sx={{ fontFamily: 'monospace', fontSize: 11 }}
-    />
-  )
   return (
     <Stack spacing={0.5} sx={{ minWidth: 0 }}>
-      <Box>
+      <Stack direction="row" spacing={1} alignItems="center">
+        <Chip
+          label={group.file_kind}
+          size="small"
+          variant="outlined"
+          sx={{ fontFamily: 'monospace', fontSize: 11 }}
+        />
         {link ? (
           <CustomLink
             to={link.to}
             search={link.search}
-            aria-label={`Edit ${group.file_kind}`}
+            variant="body2"
+            sx={{ whiteSpace: 'nowrap' }}
           >
-            {chip}
+            Edit file
           </CustomLink>
-        ) : (
-          chip
-        )}
-      </Box>
+        ) : null}
+      </Stack>
       {group.file_path ? (
         <Tooltip title={group.file_path}>
           <Typography
