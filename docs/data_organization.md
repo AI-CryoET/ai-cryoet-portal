@@ -50,7 +50,7 @@ Each `acquisition.toml` grows over time. Record the raw reconstruction once in `
 
 **Rules:**
 - Do **not** delete or modify a tomogram or annotation entry once added. Reprocessing produces a **new** entry with a new `id`, placed at the bottom of the file.
-- The `id` must match one folder name under `TiltSeries/`, `Reconstructions/Tomograms/`, or `Reconstructions/Annotations/`.
+- A tilt-series `id` must match a folder name under `TiltSeries/`. A tomogram or annotation `id` must match a **file name without extension** under `Reconstructions/{tilt_series_id}/Tomograms/` and `.../Annotations/` (experimental) or the flat `Reconstructions/Tomograms/` / `Reconstructions/Annotations/` (simulation).
 - Use `derived_from` and `target_tomogram` to record lineage (see above).
 
 ### 5. Validate
@@ -125,14 +125,13 @@ Experimental/
           alignment/                         # MAY be empty if this is the raw tilt series 
             alignment.json                   # affine matrix + interpolation recipe (or any other alignment data)
       Reconstructions/
-        Tomograms/
-          {tomogram_id}/                   # one subfolder per processing pipeline
-            *.mrc
-            *.zarr
-        Annotations/
-          {annotation_id}/
-            *.star
-            *.mrc / *.zarr
+        {tilt_series_id}/                  # grouped by the aligned tilt series that produced them
+          Tomograms/
+            {tomogram_id}.mrc              # id = file name without extension
+            {tomogram_id}.zarr
+          Annotations/
+            {annotation_id}.star          # id = file name without extension
+            {annotation_id}.mrc / .zarr
 ```
 
 ### MD simulation (sample) and associated synthetic cryoET (acquisitions) data — under `MdSimulation/<SubDir>/`
@@ -155,13 +154,11 @@ MdSimulation/{Bulk|SingleMolecule|Slab}/
             alignment/
         Reconstructions/
           Tomograms/
-            {tomogram_id}/                 # one subfolder per processing pipeline
-              *.mrc
-              *.zarr
+            {tomogram_id}.mrc              # id = file name without extension
+            {tomogram_id}.zarr
           Annotations/
-            {annotation_id}/
-              *.star
-              *.mrc / *.zarr
+            {annotation_id}.star
+            {annotation_id}.mrc / .zarr
 ```
 
 For simulation samples, the raw MD data lives under `MdRuns/{md_run_id}/` — one
@@ -178,7 +175,7 @@ relevant only to simulation samples and are rejected on experimental samples.
 The directory skeleton is adapted from the [CZI CryoET Data Portal](https://chanzuckerberg.github.io/cryoet-data-portal/stable/cryoet_data_portal_docsite_data.html) at the Sample > Acquisition > (Frames, Gains, TiltSeries, Reconstructions) level, with three deliberate departures:
 
 - **Two metadata files per sample.** Sample-level conditions live in `sample.toml` at the sample root. Per-acquisition parameters and the processing log live in `{acquisition}/acquisition.toml`. Fields derivable from MDOC files and file headers are authored in neither file; the ingest pipeline will read them directly.
-- **Tomograms are kept in per-pipeline subfolders** (e.g., `bp_3dctf_bin4/`, `bp_3dctf_bin4_ddw/`) rather than flattened into `Tomograms/`. This avoids filename collisions when new processing versions are added, and the folder name acts as the `processing_id`.
+- **Reconstruction outputs are grouped under the aligned tilt series that produced them** (`Reconstructions/{tilt_series_id}/`), and each tomogram or annotation is a **file whose stem is its id** — e.g. `bp_3dctf_bin4.mrc` has id `bp_3dctf_bin4`. Distinct processing versions get distinct file stems, so collisions are avoided by the id-as-filename within a tilt-series group. Simulation omits the tilt-series level (there is no tilt series), placing files directly under a flat `Reconstructions/Tomograms/` and `Reconstructions/Annotations/`.
 - **No `VoxelSpacing{N}/` subfolder.** Voxel spacing in Ångström is not encoded in the path or authored in `acquisition.toml`; the catalog scanner derives it (`voxel_size`) directly from each reconstruction's MRC header (`voxel_size.x`). Keeping voxel info out of the path and the TOML avoids duplicating information that already lives in the file itself.
 
 Simulation data uses a parallel structure with domain-appropriate folder names. Both share the same schema, which is what makes cross-comparison possible.
@@ -211,22 +208,19 @@ gouauxlab_20250418_AMmilled29-2/             # sample identity = directory name
         alignment/
           alignment.json                     # affine matrix + interpolation recipe
     Reconstructions/
-      Tomograms/
-        bp_3dctf_bin4/                       # renamed from "raw/"
-          *_BP_3DCTF_BIN4.mrc
-          *_BP_3DCTF_BIN4.zarr
-        bp_3dctf_bin4_ddw/                   # renamed from "ddw/"
-          *_BP_3DCTF_BIN4_ddw.mrc
-          *_BP_3DCTF_BIN4_ddw.zarr
-      Annotations/
-        activezone_1/                        # renamed to match star-file id
-          activezone_1.star
-          active_zonogram_0.mrc
-          active_zonogram_0.zarr
-          active_zonogram_0_annotated.png
-        membrain_seg_v10/
-          *_MemBrain_seg_v10_*_smooth.mrc
-          *_MemBrain_seg_v10_*_smooth.zarr
+      ts_aligned/                            # grouped by the tilt series that produced them
+        Tomograms/
+          bp_3dctf_bin4.mrc                  # id = file stem "bp_3dctf_bin4"
+          bp_3dctf_bin4.zarr
+          bp_3dctf_bin4_ddw.mrc              # id = file stem "bp_3dctf_bin4_ddw"
+          bp_3dctf_bin4_ddw.zarr
+        Annotations/
+          activezone_1.star                 # id = file stem "activezone_1"
+          activezone_1.mrc
+          activezone_1.zarr
+          activezone_1_annotated.png
+          membrain_seg_v10.mrc              # id = file stem "membrain_seg_v10"
+          membrain_seg_v10.zarr
   Position_87/
     acquisition.toml
     Frames/
@@ -235,8 +229,8 @@ gouauxlab_20250418_AMmilled29-2/             # sample identity = directory name
 
 Changes from the current `annotation_HHMI_reorg` layout:
 
-1. Rename `raw/` → `bp_3dctf_bin4/` and `ddw/` → `bp_3dctf_bin4_ddw/`.
-2. Rename `activezone/` → `activezone_{N}/` to match the star-file id (schema rule: annotation `id` = folder name).
+1. Move the tomogram files under `Reconstructions/{tilt_series_id}/Tomograms/` and name each file's stem for its id — `*_BP_3DCTF_BIN4.mrc` → `bp_3dctf_bin4.mrc`, `*_BP_3DCTF_BIN4_ddw.mrc` → `bp_3dctf_bin4_ddw.mrc` (a tomogram's `.mrc` and `.zarr` share the stem).
+2. Move the annotation files under `Reconstructions/{tilt_series_id}/Annotations/` and name each file's stem to match its id (schema rule: annotation `id` = file name without extension) — e.g. the star file becomes `activezone_1.star`.
 3. Add `sample.toml` at the sample level.
 4. Add `acquisition.toml` in each acquisition directory.
 5. Create `TiltSeries/{tilt_series_id}/{stack,alignment}/` (pending `.eer` conversion). Multiple tilt series per acquisition — e.g. one raw and one aligned — are an expected, first-class case.
@@ -273,7 +267,7 @@ The only required authored field is `sample.project`. `sample.data_source` is se
 
 ### Folder naming rules
 
-Five folder names become primary keys in the portal database: the sample directory (`sample_id`), each acquisition directory (`acquisition_id`), each tilt-series subfolder under `TiltSeries/` (`tilt_series_id`; the folder holds a `stack/` and an `alignment/` subdirectory), each tomogram processing subfolder (`tomogram_id`), and each annotation subfolder (`annotation_id`). The same strings may also be used in path expressions, URLs, and shell commands, so they are restricted to a conservative, cross-platform-safe allowlist.
+Five names become primary keys in the portal database: the sample directory (`sample_id`), each acquisition directory (`acquisition_id`), and each tilt-series subfolder under `TiltSeries/` (`tilt_series_id`; the folder holds a `stack/` and an `alignment/` subdirectory) are **folder** names; each tomogram (`tomogram_id`) and each annotation (`annotation_id`) is a **file stem** — the file name without extension — under `Reconstructions/{tilt_series_id}/Tomograms/` and `.../Annotations/` (experimental) or the flat `Reconstructions/Tomograms/` / `Reconstructions/Annotations/` (simulation). The same strings may also be used in path expressions, URLs, and shell commands, so they are restricted to a conservative, cross-platform-safe allowlist.
 
 A valid id must:
 
@@ -299,7 +293,7 @@ Each Pydantic model is configured with `extra="allow"`, so unknown keys are pres
 
 ### Lineage: `derived_from` and `target_tomogram`
 
-`derived_from` records lineage across tomogram entries, and `target_tomogram` links annotations to the tomogram they were generated from. Both reference ids within the same `acquisition.toml`:
+`derived_from` records lineage across tomogram entries, and `target_tomogram` links annotations to the tomogram they were generated from. Both reference ids within the same `acquisition.toml`. (A tomogram's `tilt_series_id` is not authored here — it is derived from the enclosing `Reconstructions/{tilt_series_id}/` folder, or `None` for simulation; `target_tomogram` stays authored because a group folder holds many tomograms.)
 
 ```toml
 # In .../Position_86/acquisition.toml

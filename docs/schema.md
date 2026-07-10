@@ -10,7 +10,7 @@ This document enumerates every field that will be stored in the portal database,
 | `.eer` / `.tiff` | Derived from frame file extension or EER header metadata. |
 | `MRC header` | Read from the `.mrc` file header on ingest. |
 | `OME-Zarr .zattrs` | Read from the multiscale metadata in `.ome.zarr` arrays. |
-| `directory` | Implicit from the prescribed directory structure (sample dir name, acquisition dir name, processing folder name). |
+| `directory` | Implicit from the prescribed directory structure — sample dir name, acquisition dir name, tilt-series folder name, the tilt-series group folder (`Reconstructions/{tilt_series_id}/`), and the tomogram/annotation **file stem** (file name without extension). |
 | `derived` | Computed on ingest from other DB fields (e.g., tilt range formatted string). |
 
 Researcher-authored fields live in one of two files: sample-level metadata in `sample.toml` at the sample root, and per-acquisition parameters plus the processing log in `acquisition.toml` inside each acquisition directory. Both files are governed by `schema.py`; the section in parentheses identifies the TOML table (`[sample]`, `[chromatin]`, `[acquisition]`, `[raw_tomogram]`, `[[post_processed_tomogram]]`, etc.). Fields coming from any other source are **not** entered by researchers and are not duplicated in either TOML (no-duplication principle).
@@ -213,9 +213,10 @@ tomogram in the same `acquisition.toml`.
 
 | Field | Type | Source | Source Type | Notes |
 |---|---|---|---|---|
-| `tomogram_id` | text (PK) | `directory` ↔ `acquisition.toml` (`[raw_tomogram].id`) | researcher authored | Processing folder name, e.g. `bp_3dctf_bin4`; the TOML `id` must match the folder. |
+| `tomogram_id` | text (PK) | `directory` ↔ `acquisition.toml` (`[raw_tomogram].id`) | researcher authored | Tomogram **file stem** under `Reconstructions/{tilt_series_id}/Tomograms/` (experimental) or `Reconstructions/Tomograms/` (simulation), e.g. `bp_3dctf_bin4`; the TOML `id` must match the file name without extension. |
 | `acquisition_id` | text (FK) | `directory` | derived | Parent acquisition folder name. |
 | `sample_id` | text (FK) | `directory` | derived | Parent sample folder name. |
+| `tilt_series_id` | text | `directory` | derived | Enclosing `Reconstructions/{tilt_series_id}/` folder (experimental), gated on a declared `[[tilt_series]]`; `None` for simulation. Formerly authored. |
 | `pipeline` | text | `acquisition.toml` (`[raw_tomogram]`) | researcher authored | Human description. |
 | `software` | text | `acquisition.toml` (`[raw_tomogram]`) | researcher authored | |
 | `voxel_size` | float | `MRC header` | derived | Ångström/pixel. Populated by the catalog scanner from the reconstruction MRC header's `voxel_size.x`; not authored in any TOML. |
@@ -235,9 +236,10 @@ tomogram in the same `acquisition.toml`.
 
 | Field | Type | Source | Source Type | Notes |
 |---|---|---|---|---|
-| `tomogram_id` | text (PK) | `directory` ↔ `acquisition.toml` (`[[post_processed_tomogram]].id`) | researcher authored | Processing folder name; the TOML `id` must match the folder. |
+| `tomogram_id` | text (PK) | `directory` ↔ `acquisition.toml` (`[[post_processed_tomogram]].id`) | researcher authored | Tomogram **file stem** under `Reconstructions/{tilt_series_id}/Tomograms/` (experimental) or `Reconstructions/Tomograms/` (simulation); the TOML `id` must match the file name without extension. |
 | `acquisition_id` | text (FK) | `directory` | derived | Parent acquisition folder name. |
 | `sample_id` | text (FK) | `directory` | derived | Parent sample folder name. |
+| `tilt_series_id` | text | `directory` | derived | Enclosing `Reconstructions/{tilt_series_id}/` folder (experimental), gated on a declared `[[tilt_series]]`; `None` for simulation. Formerly authored. |
 | `denoising_software` | text | `acquisition.toml` (`[[post_processed_tomogram]]`) | researcher authored | |
 | `ctf_software` | text | `acquisition.toml` (`[[post_processed_tomogram]]`) | researcher authored | |
 | `missing_wedge_software` | text | `acquisition.toml` (`[[post_processed_tomogram]]`) | researcher authored | |
@@ -261,7 +263,7 @@ One row per annotation output. Primary key: `(sample_id, acquisition_id, annotat
 
 | Field | Type | Source | Source Type | Notes |
 |---|---|---|---|---|
-| `annotation_id` | text (PK) | `directory` ↔ `acquisition.toml` (`[[annotation]].id`) | researcher authored | Annotation folder name, e.g. `membrain_seg_v10`; the TOML `id` must match the folder. |
+| `annotation_id` | text (PK) | `directory` ↔ `acquisition.toml` (`[[annotation]].id`) | researcher authored | Annotation **file stem** under `Reconstructions/{tilt_series_id}/Annotations/` (experimental) or `Reconstructions/Annotations/` (simulation), e.g. `membrain_seg_v10`; the TOML `id` must match the file name without extension. |
 | `acquisition_id` | text (FK) | `directory` | derived | Parent acquisition folder name. |
 | `sample_id` | text (FK) | `directory` | derived | Parent sample folder name. |
 | `type` | text | `acquisition.toml` (`[[annotation]]`) | researcher authored | e.g. `membrane_segmentation`, `nucleosome_placement`, `nucleosome_orientation`, `sta_result`. |
