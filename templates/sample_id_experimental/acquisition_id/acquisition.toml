@@ -81,21 +81,23 @@
 # ════════════════════════════════════════════════════════════════
 
 # [raw_tomogram]
-# id             = "<FILL IN>"   # text, MUST equal the tomogram's folder name
-# tilt_series_id = "<FILL IN>"   # text, id of the [[tilt_series]] above this reconstruction was built from. MUST equal a tilt_series id recorded above. Omit if not applicable.
+# id             = "<FILL IN>"   # text, MUST equal the tomogram file's name without extension, e.g. `bp_3dctf_bin4` for `bp_3dctf_bin4.mrc`
+# The tomogram's tilt series is derived from its folder: experimental tomograms live under
+# Reconstructions/{tilt_series_id}/Tomograms/; simulation tomograms live flat under Reconstructions/Tomograms/ (no tilt series).
 # pipeline       = "<FILL IN>"   # text, e.g. "backprojection + 3D CTF correction"
 # software       = "<FILL IN>"   # text, e.g. "IMOD 4.12 + novaCTF"
 # derived_from   = "<FILL IN>"   # list[text], list of tomogram ids in this acquisition; empty for raw reconstructions
 
 # [[post_processed_tomogram]]
-# id                        = "<FILL IN>"   # text, MUST equal the tomogram's folder name
-# tilt_series_id            = "<FILL IN>"   # text, id of the [[tilt_series]] above this reconstruction was built from. MUST equal a tilt_series id recorded above. Omit if not applicable.
+# id                        = "<FILL IN>"   # text, MUST equal the tomogram file's name without extension, e.g. `bp_3dctf_bin4` for `bp_3dctf_bin4.mrc`
+# The tomogram's tilt series is derived from its folder: experimental tomograms live under
+# Reconstructions/{tilt_series_id}/Tomograms/; simulation tomograms live flat under Reconstructions/Tomograms/ (no tilt series).
 # denoising_software        = "<FILL IN>"   # text
 # ctf_software              = "<FILL IN>"   # text
 # missing_wedge_software    = "<FILL IN>"   # text
 # derived_from              = "<FILL IN>"   # list of tomogram ids in this acquisition; empty for raw reconstructions
 
 # [[annotation]]
-# id              = "<FILL IN>"   # text, MUST equal the annotation's folder name, e.g. "membrain_seg_v10"
+# id              = "<FILL IN>"   # text, MUST equal the annotation file's name without extension
 # type            = "<FILL IN>"   # text, e.g. membrane_segmentation | nucleosome_placement | active_zone
 # target_tomogram = "<FILL IN>"   # text, id of the tomogram in this acquisition that this was generated from

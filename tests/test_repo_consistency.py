@@ -78,16 +78,16 @@ _SKELETON_DIRS = {
         "acquisition_id/Gains",
         "acquisition_id/TiltSeries/tilt_series_id/stack",
         "acquisition_id/TiltSeries/tilt_series_id/alignment",
-        "acquisition_id/Reconstructions/Tomograms/tomogram_id",
-        "acquisition_id/Reconstructions/Annotations/annotation_id",
+        "acquisition_id/Reconstructions/tilt_series_id/Tomograms",
+        "acquisition_id/Reconstructions/tilt_series_id/Annotations",
     },
     "sample_id_simulation": {
         "MdRuns/md_run_id/Trajectories",
         "MdRuns/md_run_id/Snapshots",
         "SyntheticCryoET/acquisition_id/TiltSeries/tilt_series_id/stack",
         "SyntheticCryoET/acquisition_id/TiltSeries/tilt_series_id/alignment",
-        "SyntheticCryoET/acquisition_id/Reconstructions/Tomograms/tomogram_id",
-        "SyntheticCryoET/acquisition_id/Reconstructions/Annotations/annotation_id",
+        "SyntheticCryoET/acquisition_id/Reconstructions/Tomograms",
+        "SyntheticCryoET/acquisition_id/Reconstructions/Annotations",
     },
 }
 
