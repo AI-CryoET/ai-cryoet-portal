@@ -41,3 +41,5 @@ k8s/overlays/*/secrets.env
 # thumbnail cache
 thumbnails/
 *.png.tmp
+# superpowers SDD scratch
+.superpowers/
