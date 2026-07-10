@@ -78,6 +78,13 @@ export function SampleAcquisitionsTable(props: {
         ),
       },
       {
+        id: 'tilt_count',
+        header: 'Tilt images',
+        // One tilt image per tilt angle.
+        accessorFn: (a) => a.tilt_angles?.length ?? 0,
+        size: 120,
+      },
+      {
         id: 'n_tilt_series',
         header: 'Tilt series',
         accessorFn: (a) => a.tilt_series.length,
