@@ -475,6 +475,11 @@ def test_undeclared_reconstruction_group_leaves_tilt_series_id_none(tmp_path):
     ]
     assert len(warned) == 1
     assert "tomo1" in warned[0].message
+    # The loader's own tilt_series_id derivation note for this same tomogram
+    # must not also be forwarded — it has no dedicated category and would
+    # otherwise surface as spurious extra_field/<unknown> noise alongside the
+    # correct undeclared_reconstruction_group warning above.
+    assert not any(w.category == "extra_field" for w in result.warnings)
 
 
 def test_duplicate_tomogram_id_across_tilt_series_warns(tmp_path):

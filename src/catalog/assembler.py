@@ -157,6 +157,30 @@ def _resolve_file(
     return ("sample_toml", str(sample_dir / "sample.toml"), None, None)
 
 
+def _is_tilt_series_id_derivation_note(s: str) -> bool:
+    """True for the loader's tomogram ``tilt_series_id`` derivation notes.
+
+    ``schema.loader._inject_tilt_series_ids`` emits exactly three such notes
+    (all containing ``"tomogram["`` plus either ``"tilt_series_id left
+    unset"`` or ``"authored tilt_series_id"``). The assembler re-derives
+    ``tilt_series_id`` itself on the scanner path and already emits the
+    correct ``undeclared_reconstruction_group`` warning for the mismatch
+    case, so forwarding these notes too is redundant — and since none of
+    ``_categorize_loader_warning``'s branches recognize them, they'd
+    otherwise fall through to a spurious ``extra_field``/``<unknown>``.
+
+    Deliberately narrower than "contains tilt_series_id": the sibling
+    "id has no matching folder" warning (also ``tomogram[...]``) literally
+    embeds the placeholder text ``Reconstructions/{tilt_series_id}/`` in its
+    message, so a bare substring check on ``tilt_series_id`` would wrongly
+    swallow it too. That warning is still wanted (categorized as
+    ``declared_id_without_folder``), so it must keep flowing through.
+    """
+    return "tomogram[" in s and (
+        "tilt_series_id left unset" in s or "authored tilt_series_id" in s
+    )
+
+
 def _categorize_loader_warning(
     s: str, sample_loc: SampleLocation
 ) -> ScanIssue:
@@ -276,6 +300,11 @@ def assemble_sample(sample_loc: SampleLocation) -> AssemblyResult:
     )
 
     for w in load.warnings:
+        if _is_tilt_series_id_derivation_note(w):
+            # The assembler re-derives tilt_series_id and emits its own
+            # undeclared_reconstruction_group warning below; forwarding the
+            # loader's note too would just duplicate it as noise.
+            continue
         result.warnings.append(_categorize_loader_warning(w, sample_loc))
     result.extras = list(load.extras)
 
