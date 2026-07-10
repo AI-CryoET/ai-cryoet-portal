@@ -1,4 +1,5 @@
 import { useMemo } from 'react'
+import { Box } from '@mui/material'
 import {
   MaterialReactTable,
   useMaterialReactTable,
@@ -17,8 +18,12 @@ function tomogramCount(a: AcquisitionOut): number {
 export function SampleAcquisitionsTable(props: {
   sampleId: string
   acquisitions: AcquisitionOut[]
+  // `compact` renders the denser, unsortable variant used in the landing-page
+  // sample dropdown; the default is the roomier sample-detail-page styling.
+  compact?: boolean
+  isLoading?: boolean
 }) {
-  const { sampleId, acquisitions } = props
+  const { sampleId, acquisitions, compact = false, isLoading } = props
 
   const columns = useMemo<MRT_ColumnDef<AcquisitionOut>[]>(
     () => [
@@ -27,19 +32,27 @@ export function SampleAcquisitionsTable(props: {
         header: '',
         columnDefType: 'display',
         enableSorting: false,
-        size: 140,
+        // Compact width is 84px (not 80) so this column spans the parent's
+        // thumbnail→Sample-id gap exactly, landing the Acquisition-id column
+        // under the Sample-id column. Combined with the 64px left inset in
+        // AcquisitionsSubTable, the thumbnails line up too. 84 = parent thumb
+        // col(80) + comfy-data-pad(16) − comfy-display-pad(12).
+        size: compact ? 84 : 140,
         Cell: ({ row }) => {
           const alt = `Middle tilt-series image for ${row.original.acquisition_id}`
-          return (
+          const thumb = (
             <PreviewThumbnail
               src={acquisitionThumbnailUrl(sampleId, row.original.acquisition_id)}
               alt={alt}
               tooltipTitle={alt}
-              width={96}
-              height={64}
+              width={compact ? 56 : 96}
+              height={compact ? 40 : 64}
               clickable
             />
           )
+          // MRT gives compact display cells zero vertical padding, so the row
+          // would be exactly the thumbnail's height; add a little breathing room.
+          return compact ? <Box sx={{ py: 0.5 }}>{thumb}</Box> : thumb
         },
       },
       {
@@ -83,24 +96,39 @@ export function SampleAcquisitionsTable(props: {
         size: 120,
       },
     ],
-    [sampleId],
+    [sampleId, compact],
   )
 
   const table = useMaterialReactTable({
     columns,
     data: acquisitions,
     getRowId: (a) => a.acquisition_id,
-    enableSorting: true,
+    state: { isLoading },
+    enableSorting: !compact,
     enableColumnActions: false,
     enableColumnFilters: false,
     enableTopToolbar: false,
     enableBottomToolbar: false,
     enableDensityToggle: false,
     enablePagination: false,
-    initialState: { density: 'comfortable' },
+    // The nested (compact) table lives in a detail panel as wide as the parent
+    // table, which is wider than its columns need. Semantic layout would stretch
+    // its columns proportionally to fill that width, so they'd no longer line up
+    // with the parent's fixed-width columns. `grid-no-grow` pins every column to
+    // its declared size (a trailing spacer absorbs the slack) so the thumbnail
+    // and Acquisition-id columns align with the parent (see AcquisitionsSubTable).
+    layoutMode: compact ? 'grid-no-grow' : undefined,
+    initialState: { density: compact ? 'compact' : 'comfortable' },
     muiTablePaperProps: {
       elevation: 0,
-      sx: { border: 1, borderColor: 'divider', borderRadius: 2 },
+      sx: {
+        border: 1,
+        borderColor: 'divider',
+        borderRadius: compact ? 1 : 2,
+        // Shrink the compact dropdown table to its columns instead of filling
+        // the full-width detail panel.
+        ...(compact ? { width: 'fit-content' } : {}),
+      },
     },
     localization: { noRecordsToDisplay: 'No acquisitions for this sample.' },
   })
