@@ -336,11 +336,6 @@ FORM_FIELDS: list[FormField] = [
         help="Previous tomogram id if you renamed this directory, so the "
              "scanner records a rename instead of a deletion + new tomogram.",
     ),
-    FormField(
-        "acquisition", "raw_tomogram", "tilt_series_id", "Tilt series", "select",
-        cross_ref="tilt_series",
-        help="The tilt series this tomogram was reconstructed from.",
-    ),
     FormField("acquisition", "raw_tomogram", "pipeline", "Pipeline", "text",
               help='e.g. "backprojection + 3D CTF correction".'),
     FormField("acquisition", "raw_tomogram", "software", "Software", "text",
@@ -352,7 +347,7 @@ FORM_FIELDS: list[FormField] = [
     ),
     *_derived(
         "acquisition", "raw_tomogram",
-        "image_size_x", "image_size_y", "image_size_z", "voxel_size",
+        "tilt_series_id", "image_size_x", "image_size_y", "image_size_z", "voxel_size",
         "mrc_path", "zarr_path", "zarr_axes", "zarr_scale",
     ),
 
@@ -368,11 +363,6 @@ FORM_FIELDS: list[FormField] = [
         help="Previous tomogram id if you renamed this directory, so the "
              "scanner records a rename instead of a deletion + new tomogram.",
     ),
-    FormField(
-        "acquisition", "post_processed_tomogram", "tilt_series_id", "Tilt series",
-        "select", cross_ref="tilt_series",
-        help="The tilt series this tomogram was reconstructed from.",
-    ),
     FormField("acquisition", "post_processed_tomogram", "denoising_software",
               "Denoising software", "text"),
     FormField("acquisition", "post_processed_tomogram", "ctf_software",
@@ -386,7 +376,7 @@ FORM_FIELDS: list[FormField] = [
     ),
     *_derived(
         "acquisition", "post_processed_tomogram",
-        "image_size_x", "image_size_y", "image_size_z", "voxel_size",
+        "tilt_series_id", "image_size_x", "image_size_y", "image_size_z", "voxel_size",
         "mrc_path", "zarr_path", "zarr_axes", "zarr_scale", "size_bytes",
     ),
 
