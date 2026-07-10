@@ -340,8 +340,11 @@ def test_tomogram_and_annotation_sharing_id_is_allowed(tmp_path):
         id = "shared_id"
         """,
     )
-    (tmp_path / "acq1" / "Reconstructions" / "Tomograms" / "shared_id").mkdir(parents=True)
-    (tmp_path / "acq1" / "Reconstructions" / "Annotations" / "shared_id").mkdir(parents=True)
+    recon = tmp_path / "acq1" / "Reconstructions" / "ts_a"
+    (recon / "Tomograms").mkdir(parents=True)
+    (recon / "Tomograms" / "shared_id.mrc").touch()
+    (recon / "Annotations").mkdir(parents=True)
+    (recon / "Annotations" / "shared_id.json").touch()
     result = load_sample_record(tmp_path)
     assert result.sample_errors == []
     assert result.acquisition_errors == {}

@@ -14,20 +14,18 @@ from typing import Iterator
 
 from schema.schema import DataSource, DatasetType
 from schema.layout import (
+    ANNOTATION_FILE_EXTENSIONS,
     DATASET_TYPE_BY_DIR,
+    TOMOGRAM_FILE_EXTENSIONS,
     TOP_LEVEL_EXPERIMENTAL,
     TOP_LEVEL_MD_SIMULATION,
-    ZARR_DIR_SUFFIXES,
     entity_id_from_path,
     infer_arm,
+    is_zarr_dir,
 )
 
-# ZARR_DIR_SUFFIXES and entity_id_from_path are imported from schema.layout —
-# the single source of truth shared with the validate CLI — and re-exported here
-# for existing catalog callers.
-ANNOTATION_FILE_EXTENSIONS = frozenset(
-    {".star", ".mrc", ".png", ".tiff", ".tif", ".csv", ".json"}
-)
+# The reconstruction allowlists, entity_id_from_path and is_zarr_dir all come
+# from schema.layout — the single source of truth shared with the validate CLI.
 REPRESENTATIVE_FRAME_SUFFIXES = frozenset({".eer", ".tiff", ".tif"})
 
 
@@ -89,11 +87,6 @@ class TiltSeriesLocation:
     st_path: Path | None
     zarr_path: Path | None
     alignment_files: tuple[Path, ...]
-
-
-def _is_zarr_dir(path: Path) -> bool:
-    name = path.name
-    return any(name.endswith(suffix) for suffix in ZARR_DIR_SUFFIXES)
 
 
 def dir_size_bytes(path: Path) -> int:
@@ -342,9 +335,9 @@ def iter_tomograms(acq: AcquisitionLocation) -> Iterator[TomogramLocation]:
         mrc_by_stem: dict[str, list[Path]] = {}
         zarr_by_stem: dict[str, list[Path]] = {}
         for entry in sorted(leaf_dir.iterdir()):
-            if entry.is_file() and entry.suffix == ".mrc":
+            if entry.is_file() and entry.suffix.lower() in TOMOGRAM_FILE_EXTENSIONS:
                 mrc_by_stem.setdefault(entity_id_from_path(entry), []).append(entry)
-            elif entry.is_dir() and _is_zarr_dir(entry):
+            elif entry.is_dir() and is_zarr_dir(entry):
                 zarr_by_stem.setdefault(entity_id_from_path(entry), []).append(entry)
         for stem in sorted(mrc_by_stem.keys() | zarr_by_stem.keys()):
             yield TomogramLocation(
@@ -369,7 +362,7 @@ def iter_annotations(acq: AcquisitionLocation) -> Iterator[AnnotationLocation]:
         for entry in leaf_dir.iterdir():
             if entry.is_file() and entry.suffix.lower() in ANNOTATION_FILE_EXTENSIONS:
                 by_stem.setdefault(entity_id_from_path(entry), []).append(entry)
-            elif entry.is_dir() and _is_zarr_dir(entry):
+            elif entry.is_dir() and is_zarr_dir(entry):
                 by_stem.setdefault(entity_id_from_path(entry), []).append(entry)
         for stem in sorted(by_stem):
             yield AnnotationLocation(
@@ -407,9 +400,9 @@ def iter_tilt_series(acq: AcquisitionLocation) -> Iterator[TiltSeriesLocation]:
             for entry in sorted(stack_dir.iterdir()):
                 if entry.is_file() and entry.suffix == ".st":
                     st_candidates.append(entry)
-                elif entry.is_file() and entry.suffix == ".mrc":
+                elif entry.is_file() and entry.suffix.lower() in TOMOGRAM_FILE_EXTENSIONS:
                     mrc_candidates.append(entry)
-                elif entry.is_dir() and _is_zarr_dir(entry) and zarr_path is None:
+                elif entry.is_dir() and is_zarr_dir(entry) and zarr_path is None:
                     zarr_path = entry
             if st_candidates:
                 st_path = st_candidates[0]
@@ -423,7 +416,7 @@ def iter_tilt_series(acq: AcquisitionLocation) -> Iterator[TiltSeriesLocation]:
             for entry in alignment_dir.iterdir():
                 if entry.is_file():
                     alignment_files.append(entry)
-                elif entry.is_dir() and _is_zarr_dir(entry):
+                elif entry.is_dir() and is_zarr_dir(entry):
                     alignment_files.append(entry)
 
         yield TiltSeriesLocation(

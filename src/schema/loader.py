@@ -36,18 +36,16 @@ from schema import (
     Sample,
     SampleRecord,
 )
-from schema.layout import entity_id_from_path, infer_arm
+from schema.layout import (
+    ANNOTATION_FILE_EXTENSIONS,
+    TOMOGRAM_FILE_EXTENSIONS,
+    entity_ids_in_dir,
+    infer_arm,
+)
 
 
 _PLACEHOLDER = "<FILL IN>"
 
-# Subdirectory layouts probed when cross-checking tomogram/annotation ids
-# against folders on disk. Tomograms live under one of two layouts (real
-# data vs simulated); annotations live under one. Kept in sync with
-# catalog.discovery.iter_tomograms / iter_annotations.
-_TOMOGRAM_PARENT_DIRS = ("Reconstructions/Tomograms", "SyntheticCryoET")
-_ANNOTATION_PARENT_DIRS = ("Reconstructions/Annotations",)
-_TILT_SERIES_PARENT_DIRS = ("TiltSeries",)
 _FOLDER_SUGGEST_CUTOFF = 80
 
 
@@ -197,60 +195,111 @@ def _format_extras_location(entry: ExtrasEntry) -> str:
     return et
 
 
-# ── id ↔ folder cross-check ──────────────────────────────────────────────────
+# ── id ↔ disk cross-check ─────────────────────────────────────────────────────
 
 
-def _reconstruction_ids_on_disk(
-    acq_dir: Path, parent_dirs: tuple[str, ...]
-) -> set[str]:
-    """Return the set of entity ids present on disk under ``parent_dirs``.
+def _reconstruction_id_map(
+    acq_dir: Path,
+    leaf: str,
+    file_extensions: frozenset[str],
+    *,
+    simulation: bool,
+) -> dict[str, str | None]:
+    """Map each on-disk entity id under ``Reconstructions/{leaf}/`` to the
+    ``tilt_series_id`` of its enclosing folder (``None`` on the simulation arm).
 
-    Tomograms and annotations are now **files** whose id is the filename stem
-    (:func:`schema.layout.entity_id_from_path`); tilt series remain folders (the
-    stem of an extensionless folder name is the name itself). Both nesting
-    depths are covered:
+    ``leaf`` is ``"Tomograms"`` or ``"Annotations"``. Tomograms and annotations
+    are **files** whose id is the stem (:func:`schema.layout.entity_id_from_path`);
+    only children matching ``file_extensions`` (or a ``.zarr`` / ``.ome.zarr``
+    dir) count. The arm decides nesting, mirroring
+    ``catalog.discovery._reconstruction_dirs`` so the loader and scanner agree on
+    both membership and the derived tilt_series_id:
 
-    - flat / legacy:  ``acq_dir/{parent}/*`` (e.g. ``Reconstructions/Tomograms/*``)
-    - experimental:   ``acq_dir/Reconstructions/{ts_id}/{leaf}/*``
+    - simulation:   ``Reconstructions/{leaf}/`` (flat)          -> ts_id ``None``
+    - experimental: ``Reconstructions/{ts_id}/{leaf}/``          -> ts_id = folder
 
-    ponytail: this mirrors ``catalog.discovery`` but re-implemented here because
-    ``schema`` must not import ``catalog``. Task 2 owns the full loader rework
-    (tilt_series_id derivation, dropping the legacy/SyntheticCryoET layouts);
-    this is the minimal stem-aware match the shared file-based fixture needs.
+    A stem appearing under two ``{ts_id}`` folders keeps the first (sorted),
+    matching the assembler's duplicate handling.
     """
-    ids: set[str] = set()
-    for sub in parent_dirs:
-        base = acq_dir / sub
-        if base.is_dir():
-            ids.update(entity_id_from_path(p) for p in base.iterdir())
-        # Experimental nesting: Reconstructions/{ts_id}/{leaf}/*.
-        parts = Path(sub).parts
-        if len(parts) == 2 and parts[0] == "Reconstructions":
-            leaf = parts[1]
-            recon = acq_dir / "Reconstructions"
-            if recon.is_dir():
-                for ts_dir in recon.iterdir():
-                    if not ts_dir.is_dir() or ts_dir.name == leaf:
-                        continue
-                    nested = ts_dir / leaf
-                    if nested.is_dir():
-                        ids.update(entity_id_from_path(p) for p in nested.iterdir())
-    return ids
+    recon = acq_dir / "Reconstructions"
+    mapping: dict[str, str | None] = {}
+    if not recon.is_dir():
+        return mapping
+    if simulation:
+        leaf_dirs: list[tuple[Path, str | None]] = [(recon / leaf, None)]
+    else:
+        leaf_dirs = [
+            (ts_dir / leaf, ts_dir.name)
+            for ts_dir in sorted(recon.iterdir())
+            if ts_dir.is_dir()
+        ]
+    for leaf_dir, ts_id in leaf_dirs:
+        for entity_id in entity_ids_in_dir(leaf_dir, file_extensions):
+            mapping.setdefault(entity_id, ts_id)
+    return mapping
 
 
-def _candidate_folder_names(acq_dir: Path, parent_dirs: tuple[str, ...]) -> list[str]:
-    """Return on-disk entity ids under the candidate parent dirs.
+def _tilt_series_ids_on_disk(acq_dir: Path) -> set[str]:
+    """Return the tilt-series ids (folder names) under ``acq_dir/TiltSeries/``.
 
-    Used to suggest the closest match when a TOML-declared id has none on disk.
-    Missing parents contribute nothing rather than erroring.
+    Tilt series remain folders (``TiltSeries/{ts_id}/``); a missing ``TiltSeries``
+    contributes nothing.
     """
-    return sorted(_reconstruction_ids_on_disk(acq_dir, parent_dirs))
+    ts_root = acq_dir / "TiltSeries"
+    if not ts_root.is_dir():
+        return set()
+    return {child.name for child in ts_root.iterdir() if child.is_dir()}
 
 
-def _has_matching_folder(
-    acq_dir: Path, parent_dirs: tuple[str, ...], entity_id: str
-) -> bool:
-    return entity_id in _reconstruction_ids_on_disk(acq_dir, parent_dirs)
+def _inject_tilt_series_ids(
+    acq_model: AcquisitionFile,
+    tomo_map: dict[str, str | None],
+    declared_ts_ids: set[str],
+) -> list[str]:
+    """Set each surviving tomogram's ``tilt_series_id`` from its disk location.
+
+    Mirrors the scanner gate (``catalog.assembler`` ~590-610): the path-derived
+    value wins over any authored one. Experimental tomograms take the enclosing
+    ``Reconstructions/{ts_id}/`` folder — but **only when that id is a declared
+    ``[[tilt_series]]``**; otherwise the id is left ``None`` and a warning is
+    emitted, because ``AcquisitionFile._check_cross_refs`` RAISES on a
+    tilt_series_id with no matching ``[[tilt_series]]`` and the loader re-validates
+    the assembled record (an unmatched id would fail the whole sample). Simulation
+    tomograms (flat layout, ts_id ``None``) always get ``None``.
+    """
+    warnings: list[str] = []
+    tomograms: list = list(acq_model.post_processed_tomogram)
+    if acq_model.raw_tomogram is not None:
+        tomograms.append(acq_model.raw_tomogram)
+    for tomo in tomograms:
+        enclosing = tomo_map.get(tomo.tomogram_id)  # ts folder, None if flat
+        authored = tomo.tilt_series_id
+        if enclosing is None:
+            derived: str | None = None
+        elif enclosing in declared_ts_ids:
+            derived = enclosing
+        else:
+            derived = None
+            warnings.append(
+                f"tomogram[{tomo.tomogram_id}]: lives under "
+                f"Reconstructions/{enclosing}/ but no [[tilt_series]] with "
+                f'id = "{enclosing}" is declared in acquisition.toml; '
+                "tilt_series_id left unset"
+            )
+        tomo.tilt_series_id = derived
+        # Warn when an authored value was overridden — the disk is authoritative.
+        if authored is not None and authored != derived and enclosing in declared_ts_ids:
+            warnings.append(
+                f"tomogram[{tomo.tomogram_id}]: authored tilt_series_id "
+                f"'{authored}' overridden by path-derived '{derived}'"
+            )
+        elif authored is not None and enclosing is None:
+            warnings.append(
+                f"tomogram[{tomo.tomogram_id}]: authored tilt_series_id "
+                f"'{authored}' ignored — no enclosing Reconstructions/"
+                "{tilt_series_id}/ folder on disk"
+            )
+    return warnings
 
 
 def _scrub_dangling_refs(
@@ -285,34 +334,47 @@ def _scrub_dangling_refs(
 
 
 def _check_id_folder_alignment(
-    acq_dir: Path, acq_model: AcquisitionFile
+    acq_dir: Path, acq_model: AcquisitionFile, *, simulation: bool
 ) -> list[str]:
-    """Drop declared tomogram/annotation/tilt-series entries whose id has no
-    matching folder on disk, returning one warning message per dropped entry.
+    """Reconcile declared tomogram/annotation/tilt-series entries against disk,
+    returning one warning message per dropped entry (plus tilt_series_id notes).
 
-    The TOML-authored ``id`` MUST equal the entity's on-disk directory name.
-    A single mismatch used to invalidate the *entire* acquisition.toml, which
-    silently discarded unrelated valid declarations in the same file (e.g. a
-    tomogram typo would also drop correctly-declared tilt series, disabling
-    their previews). Instead we drop only the offending entry — keeping its
-    valid siblings — and surface a warning so the typo gets fixed without
-    collateral data loss. References to a dropped id from surviving entries
-    are scrubbed (:func:`_scrub_dangling_refs`) so the cross-ref re-validation
-    doesn't fail the whole sample. A fuzzy suggestion is appended when the
-    closest folder name is plausibly the intended target.
+    The TOML-authored ``id`` MUST equal the entity's on-disk name — for
+    tomograms/annotations the reconstruction file's stem (``foo.mrc`` -> ``foo``),
+    for tilt series the ``TiltSeries/{id}/`` folder name. A single mismatch used
+    to invalidate the *entire* acquisition.toml, which silently discarded
+    unrelated valid declarations in the same file (e.g. a tomogram typo would
+    also drop correctly-declared tilt series, disabling their previews). Instead
+    we drop only the offending entry — keeping its valid siblings — and surface a
+    warning so the typo gets fixed without collateral data loss. References to a
+    dropped id from surviving entries are scrubbed (:func:`_scrub_dangling_refs`)
+    so the cross-ref re-validation doesn't fail the whole sample. A fuzzy
+    suggestion is appended when the closest on-disk name is a plausible target.
+
+    Finally, surviving tomograms get their ``tilt_series_id`` derived from the
+    enclosing ``Reconstructions/{ts_id}/`` folder (:func:`_inject_tilt_series_ids`).
     """
     warnings: list[str] = []
     dropped_tomo_ids: set[str] = set()
     dropped_ts_ids: set[str] = set()
 
-    tomo_candidates = _candidate_folder_names(acq_dir, _TOMOGRAM_PARENT_DIRS)
-    joined_parents = " or ".join(repr(p) for p in _TOMOGRAM_PARENT_DIRS)
+    tomo_map = _reconstruction_id_map(
+        acq_dir, "Tomograms", TOMOGRAM_FILE_EXTENSIONS, simulation=simulation
+    )
+    ann_map = _reconstruction_id_map(
+        acq_dir, "Annotations", ANNOTATION_FILE_EXTENSIONS, simulation=simulation
+    )
+    ts_on_disk = _tilt_series_ids_on_disk(acq_dir)
+    tomo_candidates = sorted(tomo_map)
+    ann_candidates = sorted(ann_map)
+    ts_candidates = sorted(ts_on_disk)
 
     def _tomo_msg(tomogram_id: str) -> str:
         msg = (
             f"tomogram[{tomogram_id}]: id has no matching folder under "
-            f"{joined_parents}; "
-            f"the id must equal the tomogram's directory name"
+            "Reconstructions/{tilt_series_id}/Tomograms/ "
+            "(Reconstructions/Tomograms/ for simulations); the id must equal a "
+            "reconstruction file's name without its extension"
         )
         match = process.extractOne(
             tomogram_id, tomo_candidates, score_cutoff=_FOLDER_SUGGEST_CUTOFF
@@ -322,9 +384,10 @@ def _check_id_folder_alignment(
         return msg
 
     # Raw and post-processed tomograms share one id namespace within the
-    # acquisition; check both against the same on-disk processing folders.
-    if acq_model.raw_tomogram is not None and not _has_matching_folder(
-        acq_dir, _TOMOGRAM_PARENT_DIRS, acq_model.raw_tomogram.tomogram_id
+    # acquisition; check both against the same on-disk reconstruction files.
+    if (
+        acq_model.raw_tomogram is not None
+        and acq_model.raw_tomogram.tomogram_id not in tomo_map
     ):
         warnings.append(_tomo_msg(acq_model.raw_tomogram.tomogram_id))
         dropped_tomo_ids.add(acq_model.raw_tomogram.tomogram_id)
@@ -332,23 +395,23 @@ def _check_id_folder_alignment(
 
     kept_post = []
     for tomo in acq_model.post_processed_tomogram:
-        if _has_matching_folder(acq_dir, _TOMOGRAM_PARENT_DIRS, tomo.tomogram_id):
+        if tomo.tomogram_id in tomo_map:
             kept_post.append(tomo)
             continue
         warnings.append(_tomo_msg(tomo.tomogram_id))
         dropped_tomo_ids.add(tomo.tomogram_id)
     acq_model.post_processed_tomogram = kept_post
 
-    ann_candidates = _candidate_folder_names(acq_dir, _ANNOTATION_PARENT_DIRS)
     kept_ann = []
     for ann in acq_model.annotation:
-        if _has_matching_folder(acq_dir, _ANNOTATION_PARENT_DIRS, ann.annotation_id):
+        if ann.annotation_id in ann_map:
             kept_ann.append(ann)
             continue
         msg = (
             f"annotation[{ann.annotation_id}]: id has no matching folder under "
-            f"{_ANNOTATION_PARENT_DIRS[0]!r}; "
-            f"the id must equal the annotation's directory name"
+            "Reconstructions/{tilt_series_id}/Annotations/ "
+            "(Reconstructions/Annotations/ for simulations); the id must equal a "
+            "reconstruction file's name without its extension"
         )
         match = process.extractOne(
             ann.annotation_id, ann_candidates, score_cutoff=_FOLDER_SUGGEST_CUTOFF
@@ -358,20 +421,16 @@ def _check_id_folder_alignment(
         warnings.append(msg)
     acq_model.annotation = kept_ann
 
-    ts_candidates = _candidate_folder_names(acq_dir, _TILT_SERIES_PARENT_DIRS)
     kept_ts = []
     for ts in acq_model.tilt_series:
         # tilt_series_id may be None on partial / scanner-pending rows; only
         # the authored folder name is cross-checked against disk.
-        if ts.tilt_series_id is None or _has_matching_folder(
-            acq_dir, _TILT_SERIES_PARENT_DIRS, ts.tilt_series_id
-        ):
+        if ts.tilt_series_id is None or ts.tilt_series_id in ts_on_disk:
             kept_ts.append(ts)
             continue
         msg = (
             f"tilt_series[{ts.tilt_series_id}]: id has no matching folder under "
-            f"{_TILT_SERIES_PARENT_DIRS[0]!r}; "
-            f"the id must equal the tilt series' directory name"
+            "'TiltSeries'; the id must equal the tilt series' directory name"
         )
         match = process.extractOne(
             ts.tilt_series_id, ts_candidates, score_cutoff=_FOLDER_SUGGEST_CUTOFF
@@ -384,6 +443,14 @@ def _check_id_folder_alignment(
 
     if dropped_tomo_ids or dropped_ts_ids:
         _scrub_dangling_refs(acq_model, dropped_tomo_ids, dropped_ts_ids)
+
+    # Derive tilt_series_id on the survivors from their on-disk location.
+    declared_ts_ids = {
+        ts.tilt_series_id
+        for ts in acq_model.tilt_series
+        if ts.tilt_series_id is not None
+    }
+    warnings.extend(_inject_tilt_series_ids(acq_model, tomo_map, declared_ts_ids))
 
     return warnings
 
@@ -616,7 +683,11 @@ def load_sample_record(
     # Per-acquisition: parse, strip placeholders, validate independently.
     # Simulation samples wrap their acquisitions in SyntheticCryoET/, so the
     # acquisition.toml sits one level deeper than the experimental layout.
-    if effective_ds == DataSource.simulation or effective_ds == DataSource.simulation.value:
+    simulation = (
+        effective_ds == DataSource.simulation
+        or effective_ds == DataSource.simulation.value
+    )
+    if simulation:
         acq_glob = "SyntheticCryoET/*/acquisition.toml"
     else:
         acq_glob = "*/acquisition.toml"
@@ -653,7 +724,9 @@ def load_sample_record(
             # reported as a warning, so valid sibling declarations survive.
             # Prefix the acquisition path so the warning's location is
             # unambiguous on the /manage view (one mismatch per acquisition).
-            for lw in _check_id_folder_alignment(acq_toml.parent, acq_model):
+            for lw in _check_id_folder_alignment(
+                acq_toml.parent, acq_model, simulation=simulation
+            ):
                 result.warnings.append(f"acquisitions.{acq_name}.{lw}")
 
             # The dangling-md_run-ref check only applies to simulation samples.

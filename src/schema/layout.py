@@ -31,6 +31,15 @@ TOP_LEVEL_MD_SIMULATION = "MdSimulation"
 # first so ``.ome.zarr`` wins over ``.zarr`` (Path.stem would leave ``foo.ome``).
 ZARR_DIR_SUFFIXES = (".zarr", ".ome.zarr")
 
+# Reconstruction file allowlists — the single source of truth shared by the
+# catalog scanner (``catalog.discovery``) and the validate CLI (``schema.loader``)
+# so both agree on which files under Reconstructions/ count as an entity. A stray
+# ``notes.txt`` next to the reconstructions is ignored by both.
+TOMOGRAM_FILE_EXTENSIONS = frozenset({".mrc"})
+ANNOTATION_FILE_EXTENSIONS = frozenset(
+    {".star", ".mrc", ".png", ".tiff", ".tif", ".csv", ".json"}
+)
+
 DATASET_TYPE_BY_DIR: dict[str, DatasetType] = {
     "Bulk": DatasetType.bulk,
     "SingleMolecule": DatasetType.single_molecule,
@@ -61,6 +70,31 @@ def entity_id_from_path(path: Path) -> str:
     return path.stem
 
 
+def is_zarr_dir(path: Path) -> bool:
+    """True if ``path`` is a Zarr store dir (``.zarr`` / ``.ome.zarr``)."""
+    return any(path.name.endswith(suffix) for suffix in ZARR_DIR_SUFFIXES)
+
+
+def entity_ids_in_dir(directory: Path, file_extensions: frozenset[str]) -> set[str]:
+    """Return entity ids (file stems) directly under ``directory``.
+
+    A child counts when it is a file whose suffix is in ``file_extensions``
+    (case-insensitive) or a ``.zarr`` / ``.ome.zarr`` store dir; everything else
+    (stray ``notes.txt`` / ``.gitkeep``) is ignored. Mirrors the per-leaf
+    grouping in ``catalog.discovery`` so the loader and scanner agree on which
+    files map to an entity id. A missing ``directory`` yields the empty set.
+    """
+    ids: set[str] = set()
+    if not directory.is_dir():
+        return ids
+    for entry in directory.iterdir():
+        if entry.is_file() and entry.suffix.lower() in file_extensions:
+            ids.add(entity_id_from_path(entry))
+        elif entry.is_dir() and is_zarr_dir(entry):
+            ids.add(entity_id_from_path(entry))
+    return ids
+
+
 def infer_arm(
     sample_dir: Path,
 ) -> tuple[DataSource | None, DatasetType | None]:
@@ -86,16 +120,22 @@ def infer_arm(
 
 
 __all__ = [
+    "ANNOTATION_FILE_EXTENSIONS",
     "DATASET_TYPE_BY_DIR",
+    "TOMOGRAM_FILE_EXTENSIONS",
     "TOP_LEVEL_EXPERIMENTAL",
     "TOP_LEVEL_MD_SIMULATION",
     "ZARR_DIR_SUFFIXES",
     "entity_id_from_path",
+    "entity_ids_in_dir",
     "infer_arm",
+    "is_zarr_dir",
 ]
 
 
 if __name__ == "__main__":
+    import tempfile
+
     # ponytail: minimal self-check for the stem rule — the one non-trivial bit.
     assert entity_id_from_path(Path("foo.mrc")) == "foo"
     assert entity_id_from_path(Path("foo.zarr")) == "foo"
@@ -105,4 +145,14 @@ if __name__ == "__main__":
         Path("a/b/foo.mrc")
     )
     assert entity_id_from_path(Path("no_ext")) == "no_ext"
+
+    # entity_ids_in_dir: allowlist + zarr grouping, stray files ignored.
+    with tempfile.TemporaryDirectory() as d:
+        leaf = Path(d)
+        (leaf / "a.mrc").touch()
+        (leaf / "a.ome.zarr").mkdir()  # same stem -> one id
+        (leaf / "b.zarr").mkdir()
+        (leaf / "notes.txt").touch()  # ignored
+        assert entity_ids_in_dir(leaf, TOMOGRAM_FILE_EXTENSIONS) == {"a", "b"}
+    assert entity_ids_in_dir(Path(d), TOMOGRAM_FILE_EXTENSIONS) == set()  # gone
     print("schema.layout self-check OK")

@@ -389,18 +389,29 @@ def test_acquisition_with_tomogram_and_annotation(tmp_path):
         [[annotation]]
         id = "ann_001"
         target_tomogram = "tomo_001"
+
+        [[tilt_series]]
+        id = "ts_a"
         """,
     )
-    (tmp_path / "acq1" / "Reconstructions" / "Tomograms" / "tomo_001").mkdir(parents=True)
-    (tmp_path / "acq1" / "Reconstructions" / "Tomograms" / "tomo_002").mkdir(parents=True)
-    (tmp_path / "acq1" / "Reconstructions" / "Annotations" / "ann_001").mkdir(parents=True)
+    # Experimental layout: tomograms/annotations are files nested under
+    # Reconstructions/{ts_id}/. Declaring ts_a lets tilt_series_id derive.
+    recon = tmp_path / "acq1" / "Reconstructions" / "ts_a"
+    (recon / "Tomograms").mkdir(parents=True)
+    (recon / "Tomograms" / "tomo_001.mrc").touch()
+    (recon / "Tomograms" / "tomo_002.mrc").touch()
+    (recon / "Annotations").mkdir(parents=True)
+    (recon / "Annotations" / "ann_001.json").touch()
+    (tmp_path / "acq1" / "TiltSeries" / "ts_a").mkdir(parents=True)
     result = load_sample_record(tmp_path)
     assert result.sample_errors == []
     assert result.acquisition_errors == {}
     assert result.record is not None
     acq = result.record.acquisitions["acq1"]
     assert acq.raw_tomogram.tomogram_id == "tomo_001"
+    assert acq.raw_tomogram.tilt_series_id == "ts_a"
     assert [t.tomogram_id for t in acq.post_processed_tomogram] == ["tomo_002"]
+    assert acq.post_processed_tomogram[0].tilt_series_id == "ts_a"
     assert acq.annotation[0].target_tomogram == "tomo_001"
 
 
@@ -460,8 +471,10 @@ def test_tomogram_id_without_matching_folder_drops_entry(tmp_path):
         id = "bp_3dctf_bin4"
         """,
     )
-    # Folder name doesn't match the declared id.
-    (tmp_path / "acq1" / "Reconstructions" / "Tomograms" / "bp_3dctf_bn4").mkdir(parents=True)
+    # File stem doesn't match the declared id (typo'd on disk).
+    tomo_dir = tmp_path / "acq1" / "Reconstructions" / "ts_a" / "Tomograms"
+    tomo_dir.mkdir(parents=True)
+    (tomo_dir / "bp_3dctf_bn4.mrc").touch()
     result = load_sample_record(tmp_path)
     assert result.record is not None
     # No longer a hard error: the acquisition is kept, the offender dropped.
@@ -496,9 +509,11 @@ def test_folder_mismatch_drops_only_offender_keeps_siblings(tmp_path):
         id = "ts_a"
         """,
     )
-    # The tilt-series folder matches; the tomogram folder does not.
+    # The tilt-series folder matches; the tomogram file stem does not.
     (tmp_path / "acq1" / "TiltSeries" / "ts_a").mkdir(parents=True)
-    (tmp_path / "acq1" / "Reconstructions" / "Tomograms" / "denoised").mkdir(parents=True)
+    tomo_dir = tmp_path / "acq1" / "Reconstructions" / "ts_a" / "Tomograms"
+    tomo_dir.mkdir(parents=True)
+    (tomo_dir / "denoised.mrc").touch()
     result = load_sample_record(tmp_path)
     assert result.record is not None
     assert "acq1" not in result.acquisition_errors
@@ -506,27 +521,6 @@ def test_folder_mismatch_drops_only_offender_keeps_siblings(tmp_path):
     assert acq.post_processed_tomogram == []  # folderless tomogram dropped
     assert [ts.tilt_series_id for ts in acq.tilt_series] == ["ts_a"]  # survived
     assert any("tomogram[wrong_id]" in w for w in result.warnings)
-
-
-def test_tomogram_id_matched_under_synthetic_layout(tmp_path):
-    """Simulated samples use SyntheticCryoET/<id>/ instead of Reconstructions/Tomograms."""
-    _minimal_sample(tmp_path)
-    _write(
-        tmp_path / "acq1" / "acquisition.toml",
-        """
-        [acquisition]
-
-        [raw_tomogram]
-        id = "synth_tomo_1"
-        """,
-    )
-    (tmp_path / "acq1" / "SyntheticCryoET" / "synth_tomo_1").mkdir(parents=True)
-    result = load_sample_record(tmp_path)
-    assert result.acquisition_errors == {}
-    assert result.record is not None
-    assert (
-        result.record.acquisitions["acq1"].raw_tomogram.tomogram_id == "synth_tomo_1"
-    )
 
 
 def test_annotation_id_without_matching_folder_drops_entry(tmp_path):
@@ -546,15 +540,17 @@ def test_annotation_id_without_matching_folder_drops_entry(tmp_path):
         target_tomogram = "tomo_001"
         """,
     )
-    (tmp_path / "acq1" / "Reconstructions" / "Tomograms" / "tomo_001").mkdir(parents=True)
-    # No matching annotation folder.
-    (tmp_path / "acq1" / "Reconstructions" / "Annotations").mkdir(parents=True)
+    recon = tmp_path / "acq1" / "Reconstructions" / "ts_a"
+    (recon / "Tomograms").mkdir(parents=True)
+    (recon / "Tomograms" / "tomo_001.mrc").touch()
+    # No matching annotation file.
+    (recon / "Annotations").mkdir(parents=True)
     result = load_sample_record(tmp_path)
     assert result.record is not None
     assert "acq1" not in result.acquisition_errors
     acq = result.record.acquisitions["acq1"]
     assert acq.raw_tomogram.tomogram_id == "tomo_001"  # sibling survives
-    assert acq.annotation == []  # folderless annotation dropped
+    assert acq.annotation == []  # fileless annotation dropped
     warning = next(w for w in result.warnings if "no matching folder" in w)
     assert "acquisitions.acq1.annotation[membrain_seg_v10]" in warning
 
@@ -709,6 +705,94 @@ def test_multiple_acquisitions(tmp_path):
     assert set(result.record.acquisitions) == {"acq_a", "acq_b"}
     for name, acq in result.record.acquisitions.items():
         assert acq.acquisition.acquisition_id == name
+
+
+# ── tilt_series_id derivation from disk layout ───────────────────────────────
+
+
+def test_experimental_tomogram_derives_tilt_series_id(tmp_path):
+    """Experimental: a tomogram under Reconstructions/{ts}/Tomograms/ gets its
+    tilt_series_id derived from the enclosing folder when that ts is declared."""
+    _minimal_sample(tmp_path)
+    _write(
+        tmp_path / "acq1" / "acquisition.toml",
+        """
+        [acquisition]
+
+        [raw_tomogram]
+        id = "tomo_001"
+
+        [[tilt_series]]
+        id = "ts_a"
+        """,
+    )
+    tomo_dir = tmp_path / "acq1" / "Reconstructions" / "ts_a" / "Tomograms"
+    tomo_dir.mkdir(parents=True)
+    (tomo_dir / "tomo_001.mrc").touch()
+    (tmp_path / "acq1" / "TiltSeries" / "ts_a").mkdir(parents=True)
+    result = load_sample_record(tmp_path)
+    assert result.acquisition_errors == {}
+    assert result.record is not None
+    assert result.record.acquisitions["acq1"].raw_tomogram.tilt_series_id == "ts_a"
+
+
+def test_experimental_undeclared_reconstruction_group_warns(tmp_path):
+    """A Reconstructions/{ts}/ folder whose name is NOT a declared [[tilt_series]]
+    keeps the tomogram with tilt_series_id=None and warns — no whole-sample fail
+    (an unmatched id would make the cross-ref re-validation drop the sample)."""
+    _minimal_sample(tmp_path)
+    _write(
+        tmp_path / "acq1" / "acquisition.toml",
+        """
+        [acquisition]
+
+        [raw_tomogram]
+        id = "tomo_001"
+        """,
+    )
+    tomo_dir = tmp_path / "acq1" / "Reconstructions" / "ts_ghost" / "Tomograms"
+    tomo_dir.mkdir(parents=True)
+    (tomo_dir / "tomo_001.mrc").touch()
+    result = load_sample_record(tmp_path)
+    assert result.record is not None
+    assert result.acquisition_errors == {}
+    raw = result.record.acquisitions["acq1"].raw_tomogram
+    assert raw.tomogram_id == "tomo_001"
+    assert raw.tilt_series_id is None
+    assert any("ts_ghost" in w and "tilt_series_id" in w for w in result.warnings)
+
+
+def test_simulation_tomogram_tilt_series_id_none(tmp_path):
+    """Simulation: flat Reconstructions/Tomograms/ has no {ts_id} level, so a
+    tomogram's tilt_series_id stays None."""
+    _write(
+        tmp_path / "sample.toml",
+        """
+        [sample]
+        data_source = "simulation"
+        project = "chromatin"
+        """,
+    )
+    _write(
+        tmp_path / "SyntheticCryoET" / "acq1" / "acquisition.toml",
+        """
+        [acquisition]
+
+        [raw_tomogram]
+        id = "tomo_001"
+        """,
+    )
+    tomo_dir = (
+        tmp_path / "SyntheticCryoET" / "acq1" / "Reconstructions" / "Tomograms"
+    )
+    tomo_dir.mkdir(parents=True)
+    (tomo_dir / "tomo_001.mrc").touch()
+    result = load_sample_record(tmp_path, data_source=DataSource.simulation)
+    assert result.acquisition_errors == {}
+    assert result.record is not None
+    raw = result.record.acquisitions["acq1"].raw_tomogram
+    assert raw.tomogram_id == "tomo_001"
+    assert raw.tilt_series_id is None
 
 
 # ── main() ───────────────────────────────────────────────────────────────────

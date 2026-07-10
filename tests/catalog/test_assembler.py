@@ -288,7 +288,10 @@ def test_unparseable_acquisition_toml_isolated(tmp_path):
         id = "tomo_good"
         """,
     )
-    (sample_dir / "Good" / "Reconstructions" / "Tomograms" / "tomo_good").mkdir(parents=True)
+    _make_mrc(
+        sample_dir / "Good" / "Reconstructions" / "ts_good" / "Tomograms"
+        / "tomo_good.mrc"
+    )
     # Bad acquisition: target_tomogram references unknown tomogram
     _write(
         sample_dir / "Bad" / "acquisition.toml",
@@ -527,10 +530,11 @@ def test_annotation_without_target_tomogram_warns(tmp_path):
         type = "segmentation"
         """,
     )
-    # A declared annotation id must match a folder on disk (loader rule).
-    (sample_dir / "acq1" / "Reconstructions" / "Annotations" / "membrane").mkdir(
-        parents=True
-    )
+    # A declared annotation id must match a reconstruction file on disk (loader
+    # rule): experimental annotations are files nested under Reconstructions/{ts}/.
+    anns = sample_dir / "acq1" / "Reconstructions" / "ts_1" / "Annotations"
+    anns.mkdir(parents=True)
+    (anns / "membrane.mrc").write_bytes(b"")
 
     loc = _sample_loc(sample_dir)
     result = assemble_sample(loc)
@@ -567,13 +571,12 @@ def test_annotation_with_target_tomogram_does_not_warn(tmp_path):
         target_tomogram = "tomo1"
         """,
     )
-    # Declared tomogram/annotation ids must match folders on disk (loader rule).
-    (sample_dir / "acq1" / "Reconstructions" / "Tomograms" / "tomo1").mkdir(
-        parents=True
-    )
-    (sample_dir / "acq1" / "Reconstructions" / "Annotations" / "membrane").mkdir(
-        parents=True
-    )
+    # Declared tomogram/annotation ids must match reconstruction files on disk
+    # (loader rule): experimental entities are files nested under Reconstructions/{ts}/.
+    recon = sample_dir / "acq1" / "Reconstructions" / "ts_1"
+    _make_mrc(recon / "Tomograms" / "tomo1.mrc")
+    (recon / "Annotations").mkdir(parents=True)
+    (recon / "Annotations" / "membrane.mrc").write_bytes(b"")
 
     loc = _sample_loc(sample_dir)
     result = assemble_sample(loc)
