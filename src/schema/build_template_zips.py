@@ -53,6 +53,9 @@ def build_zip(src_dir: Path) -> bytes:
             if path.is_dir():
                 info = zipfile.ZipInfo(arcname + "/", date_time=_FIXED_DT)
                 info.external_attr = (0o40755 << 16) | 0x10  # dir + drwxr-xr-x
+                # Pin create_system (0=Windows, 3=Unix) so bytes don't depend on
+                # the OS regenerating the zip — keeps the drift byte-compare stable.
+                info.create_system = 3
                 zf.writestr(info, b"")
             else:
                 if path.name.startswith("."):
@@ -62,6 +65,7 @@ def build_zip(src_dir: Path) -> bytes:
                     continue
                 info = zipfile.ZipInfo(arcname, date_time=_FIXED_DT)
                 info.external_attr = 0o644 << 16
+                info.create_system = 3
                 zf.writestr(info, path.read_bytes())
     return buf.getvalue()
 

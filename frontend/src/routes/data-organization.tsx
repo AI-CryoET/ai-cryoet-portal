@@ -38,7 +38,11 @@ function AuthorLinks({
       Author these files:{' '}
       {tabs.map((t, i) => (
         <span key={t.tab}>
-          {i > 0 && ' · '}
+          {i > 0 && (
+            <Box component="span" aria-hidden>
+              {' · '}
+            </Box>
+          )}
           <CustomLink to="/author" search={{ tab: t.tab }}>
             {t.label}
           </CustomLink>

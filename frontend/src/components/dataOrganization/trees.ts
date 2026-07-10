@@ -1,5 +1,9 @@
 import type { FileNode } from './FileTree'
 
+// Hand-transcribed from the canonical directory layout in the repo's
+// docs/data_organization.md + templates/. Not test-guarded — if that layout
+// changes, update these trees to match (the zip drift guard won't catch prose).
+
 // Block #1 — the data root's two arms (source of truth for data_source /
 // dataset_type, both derived from placement, never authored).
 export const dataRootTree: FileNode[] = [
