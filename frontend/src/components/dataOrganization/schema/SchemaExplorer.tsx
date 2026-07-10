@@ -38,9 +38,9 @@ export function SchemaExplorer() {
           Data schema
         </Typography>
         <Typography variant="body2" color="text.secondary">
-          Every field stored in the catalog, by entity. Toggle the arm and
+          Every field stored in the catalog, by entity. Toggle the data source and
           project to see which entities apply, and filter by whether a field is
-          authored in a TOML file or derived by the scanner.
+          authored in a TOML file or derived by the file scanner; for example, data extracted from folder names, MDOC files, or MRC file headers.
         </Typography>
       </Box>
       <SchemaControls value={controls} onChange={setControls} />

@@ -111,7 +111,7 @@ function DataOrganization() {
           navigate({ search: (prev) => ({ ...prev, tab: value }) })
         }
       >
-        <Tab value="placing" label="Placing data" />
+        <Tab value="placing" label="Directory layout" />
         <Tab value="schema" label="Data schema" />
       </Tabs>
 
