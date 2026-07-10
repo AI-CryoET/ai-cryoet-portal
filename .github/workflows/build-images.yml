@@ -56,6 +56,10 @@ jobs:
         with:
           context: ${{ matrix.context }}
           file: ${{ matrix.file }}
+          # Only the frontend Dockerfile reads APP_VERSION (inlined into the
+          # footer via Vite); harmless for the api/scanner images.
+          build-args: |
+            APP_VERSION=${{ steps.meta.outputs.version }}
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
