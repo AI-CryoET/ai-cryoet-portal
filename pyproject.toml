@@ -65,6 +65,12 @@ scan = { cmd = "python -m catalog scan", default-environment = "catalog" }
 [tool.pixi.feature.test.dependencies]
 pytest = ">=7.0"
 
+# Pinned to match the browser baked into the devcontainer image at
+# PLAYWRIGHT_BROWSERS_PATH (see .devcontainer/Dockerfile) — Playwright looks
+# up browsers by exact version, so these must move together.
+[tool.pixi.feature.test.pypi-dependencies]
+playwright = "==1.56.0"
+
 [tool.pixi.feature.test.tasks]
 test = "pytest"
 

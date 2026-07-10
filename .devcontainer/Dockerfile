@@ -25,6 +25,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       sqlite3 \
   && rm -rf /var/lib/apt/lists/*
 
+# Playwright browser + OS deps, pinned to a known-good version, in a shared path
+# readable by the node user. Done at build time (as root) so container runtime
+# never needs network access to fetch the browser through the egress firewall.
+ENV PLAYWRIGHT_BROWSERS_PATH=/opt/ms-playwright
+RUN npx --yes playwright@1.56.0 install --with-deps chromium \
+  && rm -rf /var/lib/apt/lists/*
+
 # Persist bash history across rebuilds via named volume.
 RUN mkdir -p /commandhistory \
   && touch /commandhistory/.bash_history \
