@@ -140,23 +140,22 @@ export function SamplesBrowser(props: {
           </Stack>
           <Box>
             <Typography variant="h6">
-              Showing {rows.length.toLocaleString()} of {total.toLocaleString()}{' '}
-              samples
+              {rows.length.toLocaleString()} out of {total.toLocaleString()}{' '}
+              total samples match the selected filters
             </Typography>
-            {/* Reserve a row's height whether or not chips are present so the
-                table doesn't jump as filters are added/removed. */}
-            <Box sx={{ mt: 1, minHeight: 40 }}>
+            <Stack
+              direction="row"
+              spacing={1}
+              alignItems="center"
+              flexWrap="wrap"
+              useFlexGap
+              sx={{ mt: 1, mb: 2 }}
+            >
+              <Typography variant="body2" color="text.secondary">
+                Filtered by:
+              </Typography>
               {chips.length > 0 ? (
-                <Stack
-                  direction="row"
-                  spacing={1}
-                  alignItems="center"
-                  flexWrap="wrap"
-                  useFlexGap
-                >
-                  <Typography variant="body2" color="text.secondary">
-                    Filtered by:
-                  </Typography>
+                <>
                   {chips.map((c) => (
                     <Chip
                       key={c.id}
@@ -171,9 +170,13 @@ export function SamplesBrowser(props: {
                     label="Clear all"
                     onClick={reset}
                   />
-                </Stack>
-              ) : null}
-            </Box>
+                </>
+              ) : (
+                <Typography variant="body2" color="text.secondary" fontStyle="italic">
+                  No filters selected
+                </Typography>
+              )}
+            </Stack>
           </Box>
 
           {notices.length > 0 ? (
