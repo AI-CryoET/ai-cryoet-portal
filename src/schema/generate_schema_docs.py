@@ -17,7 +17,7 @@ _TS_OUT = _ROOT / "frontend" / "src" / "components" / "dataOrganization" / "sche
 _PREAMBLE = """\
 # Database Model: CryoET + AI Portal
 
-This document enumerates every field that will be stored in the portal database, organized by entity (Sample → Acquisition → Tomogram → Annotation). For each field it lists the data type and the **authoritative source**:
+This document enumerates every field that will be stored in the portal database, organized by entity (Sample and Acquisition, with sub-entities and processing outputs nested beneath). For each field it lists the data type and the **authoritative source**:
 
 | Source | What it means |
 |---|---|

@@ -54,6 +54,7 @@ export function SchemaExplorer() {
             borderRadius: 1,
             p: 1,
             position: { md: 'sticky' },
+            // Offset below the sticky control bar (shared.tsx uses top: 0).
             top: { md: 96 },
           }}
         >

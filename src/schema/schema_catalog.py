@@ -51,6 +51,16 @@ DOMAIN_ORM: list[type] = [
     orm.PostProcessedTomogramORM, orm.AnnotationORM, orm.TiltSeriesORM,
 ]
 
+# Operational/scanner-internal ORM classes with no documented-catalog entry
+# (scan bookkeeping, issue tracking, deletion/soft-delete log, catalog meta).
+# DOMAIN_ORM + OPERATIONAL_ORM must together cover every mapped ORM class —
+# see test_domain_and_operational_orm_partition_all_tables.
+OPERATIONAL_ORM: list[type] = [
+    orm.ExtrasORM, orm.ScanRunORM, orm.ScanLogLineORM, orm.ScanSampleOutcomeORM,
+    orm.DeletionEventORM, orm.IssueORM, orm.SampleScanStatusORM,
+    orm.AcquisitionScanStatusORM, orm.ScanStateORM, orm.CatalogMetaORM,
+]
+
 # Internal/operational columns intentionally left out of the documented model.
 UNDOCUMENTED_ORM_COLUMNS: dict[str, set[str]] = {
     "samples": {"deleted_at", "disk_size_bytes", "thumbnail_path"},
