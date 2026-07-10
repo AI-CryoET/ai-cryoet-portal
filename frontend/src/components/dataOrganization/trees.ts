@@ -8,7 +8,7 @@ import type { FileNode } from './FileTree'
 // dataset_type, both derived from placement, never authored).
 export const dataRootTree: FileNode[] = [
   {
-    name: '{data_root}',
+    name: 'data',
     kind: 'dir',
     children: [
       {

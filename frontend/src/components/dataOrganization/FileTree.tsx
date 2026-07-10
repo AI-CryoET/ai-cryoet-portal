@@ -48,7 +48,22 @@ export function FileTree({ nodes }: { nodes: FileNode[] }) {
     <SimpleTreeView
       defaultExpandedItems={collectDirIds(nodes)}
       disableSelection
-      sx={{ overflowX: 'auto' }}
+      sx={{
+        overflowX: 'auto',
+        p: 1.5,
+        border: 1,
+        borderColor: 'divider',
+        borderRadius: 1,
+        bgcolor: 'action.hover',
+        // Vertical guide lines to distinguish nesting levels.
+        '& .MuiTreeItem-groupTransition': {
+          ml: '10px',
+          pl: '14px',
+          borderLeft: 1,
+          borderColor: 'divider',
+        },
+        '& .MuiTreeItem-content': { py: 0.25 },
+      }}
     >
       {renderNodes(nodes)}
     </SimpleTreeView>
