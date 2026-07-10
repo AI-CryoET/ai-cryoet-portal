@@ -171,8 +171,8 @@ def test_iter_acquisitions_finds_toml_and_frames_only():
     assert pos86.acquisition_toml is not None and pos86.acquisition_toml.is_file()
     assert pos87.acquisition_toml is None  # Frames-only acquisition
     assert pos86.frames_dir is not None
-    assert pos86.tomograms_dir is not None
-    assert pos86.annotations_dir is not None
+    assert pos86.reconstructions_dir is not None
+    assert pos86.data_source == DataSource.experimental
 
 
 def test_iter_acquisitions_simulation_nested_under_synthetic():
@@ -187,7 +187,8 @@ def test_iter_acquisitions_simulation_nested_under_synthetic():
     assert acq.acquisition_toml is not None and acq.acquisition_toml.is_file()
     # The acquisition root sits under SyntheticCryoET/.
     assert acq.path.parent.name == "SyntheticCryoET"
-    assert acq.annotations_dir is not None
+    assert acq.reconstructions_dir is not None
+    assert acq.data_source == DataSource.simulation
 
 
 def test_iter_tomograms_lists_pipeline_folders():
@@ -200,8 +201,11 @@ def test_iter_tomograms_lists_pipeline_folders():
     tomos = list(iter_tomograms(pos86))
     assert len(tomos) == 1
     assert tomos[0].tomogram_id == "bp_3dctf_bin4"
+    # id is the file stem; .mrc and .ome.zarr collapse under one tomogram.
     assert any(p.suffix == ".mrc" for p in tomos[0].mrc_files)
     assert any(p.name.endswith(".ome.zarr") for p in tomos[0].zarr_dirs)
+    # tilt_series_id is derived from the enclosing Reconstructions/{ts_id}/ folder.
+    assert tomos[0].tilt_series_id == "ts_1"
 
 
 def test_iter_annotations_filters_by_extension():
@@ -215,10 +219,121 @@ def test_iter_annotations_filters_by_extension():
     assert len(anns) == 1
     ann = anns[0]
     assert ann.annotation_id == "membrain_seg_v10"
+    # Two files sharing the stem membrain_seg_v10 collapse to one annotation.
     file_names = {p.name for p in ann.files}
-    assert "segmentation.mrc" in file_names
-    assert "metadata.json" in file_names
-    assert ".DS_Store" not in file_names
+    assert "membrain_seg_v10.mrc" in file_names
+    assert "membrain_seg_v10.json" in file_names
+    assert ann.tilt_series_id == "ts_1"
+
+
+# ---------------------------------------------------------------------------
+# file-stem grouping (new Reconstructions layout)
+# ---------------------------------------------------------------------------
+
+from catalog.discovery import AcquisitionLocation  # noqa: E402
+
+
+def _acq_loc(acq_dir: Path, data_source: DataSource) -> AcquisitionLocation:
+    recon = acq_dir / "Reconstructions"
+    return AcquisitionLocation(
+        path=acq_dir,
+        sample_id=acq_dir.parent.name,
+        acquisition_id=acq_dir.name,
+        acquisition_toml=None,
+        frames_dir=None,
+        tilt_series_dir=None,
+        reconstructions_dir=recon if recon.is_dir() else None,
+        data_source=data_source,
+    )
+
+
+def test_iter_tomograms_experimental_groups_by_stem_under_tilt_series(tmp_path):
+    # Two tomograms + two annotations under one {ts_id} folder; ids are the file
+    # stems and tilt_series_id is the enclosing folder name.
+    tomos_dir = tmp_path / "acq" / "Reconstructions" / "ts_7" / "Tomograms"
+    anns_dir = tmp_path / "acq" / "Reconstructions" / "ts_7" / "Annotations"
+    tomos_dir.mkdir(parents=True)
+    anns_dir.mkdir(parents=True)
+    (tomos_dir / "tomo_a.mrc").write_bytes(b"")
+    (tomos_dir / "tomo_b.mrc").write_bytes(b"")
+    (anns_dir / "ann_a.star").write_text("")
+    (anns_dir / "ann_b.mrc").write_bytes(b"")
+
+    acq = _acq_loc(tmp_path / "acq", DataSource.experimental)
+    tomos = list(iter_tomograms(acq))
+    assert [(t.tomogram_id, t.tilt_series_id) for t in tomos] == [
+        ("tomo_a", "ts_7"),
+        ("tomo_b", "ts_7"),
+    ]
+    anns = list(iter_annotations(acq))
+    assert [(a.annotation_id, a.tilt_series_id) for a in anns] == [
+        ("ann_a", "ts_7"),
+        ("ann_b", "ts_7"),
+    ]
+
+
+def test_iter_tomograms_collapses_mrc_and_zarr_by_stem(tmp_path):
+    # foo.mrc + foo.ome.zarr share the stem foo -> ONE tomogram (Path.stem would
+    # split foo.ome.zarr into foo.ome).
+    tomos_dir = tmp_path / "acq" / "Reconstructions" / "ts_1" / "Tomograms"
+    tomos_dir.mkdir(parents=True)
+    (tomos_dir / "foo.mrc").write_bytes(b"")
+    (tomos_dir / "foo.ome.zarr").mkdir()
+
+    acq = _acq_loc(tmp_path / "acq", DataSource.experimental)
+    tomos = list(iter_tomograms(acq))
+    assert len(tomos) == 1
+    assert tomos[0].tomogram_id == "foo"
+    assert len(tomos[0].mrc_files) == 1
+    assert len(tomos[0].zarr_dirs) == 1
+
+
+def test_iter_tomograms_ignores_stray_files(tmp_path):
+    # A .gitkeep / non-tomogram file is not grouped as a tomogram.
+    tomos_dir = tmp_path / "acq" / "Reconstructions" / "ts_1" / "Tomograms"
+    tomos_dir.mkdir(parents=True)
+    (tomos_dir / "real.mrc").write_bytes(b"")
+    (tomos_dir / ".gitkeep").write_text("")
+    (tomos_dir / "notes.txt").write_text("")
+
+    acq = _acq_loc(tmp_path / "acq", DataSource.experimental)
+    tomos = list(iter_tomograms(acq))
+    assert [t.tomogram_id for t in tomos] == ["real"]
+
+
+def test_iter_tomograms_duplicate_stem_across_tilt_series(tmp_path):
+    # Same stem under two {ts_id} folders -> two locations with distinct
+    # tilt_series_id (the assembler is what warns + skips the duplicate).
+    for ts in ("ts_a", "ts_b"):
+        d = tmp_path / "acq" / "Reconstructions" / ts / "Tomograms"
+        d.mkdir(parents=True)
+        (d / "dup.mrc").write_bytes(b"")
+
+    acq = _acq_loc(tmp_path / "acq", DataSource.experimental)
+    tomos = list(iter_tomograms(acq))
+    assert [(t.tomogram_id, t.tilt_series_id) for t in tomos] == [
+        ("dup", "ts_a"),
+        ("dup", "ts_b"),
+    ]
+
+
+def test_iter_tomograms_and_annotations_simulation_are_flat(tmp_path):
+    # Simulation arm: files sit directly under Reconstructions/Tomograms and
+    # Reconstructions/Annotations (no {ts_id} level); tilt_series_id is None.
+    tomos_dir = tmp_path / "acq" / "Reconstructions" / "Tomograms"
+    anns_dir = tmp_path / "acq" / "Reconstructions" / "Annotations"
+    tomos_dir.mkdir(parents=True)
+    anns_dir.mkdir(parents=True)
+    (tomos_dir / "backprojection.mrc").write_bytes(b"")
+    (anns_dir / "seg.mrc").write_bytes(b"")
+
+    acq = _acq_loc(tmp_path / "acq", DataSource.simulation)
+    tomos = list(iter_tomograms(acq))
+    assert [(t.tomogram_id, t.tilt_series_id) for t in tomos] == [
+        ("backprojection", None),
+    ]
+    anns = list(iter_annotations(acq))
+    assert [(a.annotation_id, a.tilt_series_id) for a in anns] == [("seg", None)]
 
 
 def test_parse_targets_for_sample_includes_all_categories():
@@ -233,8 +348,8 @@ def test_parse_targets_for_sample_includes_all_categories():
     assert sum(1 for t in target_strs if t.endswith("acquisition.toml")) == 1
     # mdoc present
     assert any(t.endswith(".mdoc") for t in target_strs)
-    # mrc inside Tomograms
-    assert any(t.endswith("recon.mrc") for t in target_strs)
+    # mrc inside Tomograms (id-stem filename under Reconstructions/{ts_id}/)
+    assert any(t.endswith("bp_3dctf_bin4.mrc") for t in target_strs)
     # zarr .zattrs
     assert any(t.endswith(".zattrs") for t in target_strs)
     # representative frame file (.eer for Position_86 and Position_87)

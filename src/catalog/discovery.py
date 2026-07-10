@@ -17,13 +17,17 @@ from schema.layout import (
     DATASET_TYPE_BY_DIR,
     TOP_LEVEL_EXPERIMENTAL,
     TOP_LEVEL_MD_SIMULATION,
+    ZARR_DIR_SUFFIXES,
+    entity_id_from_path,
     infer_arm,
 )
 
+# ZARR_DIR_SUFFIXES and entity_id_from_path are imported from schema.layout —
+# the single source of truth shared with the validate CLI — and re-exported here
+# for existing catalog callers.
 ANNOTATION_FILE_EXTENSIONS = frozenset(
     {".star", ".mrc", ".png", ".tiff", ".tif", ".csv", ".json"}
 )
-ZARR_DIR_SUFFIXES = (".zarr", ".ome.zarr")
 REPRESENTATIVE_FRAME_SUFFIXES = frozenset({".eer", ".tiff", ".tif"})
 
 
@@ -51,8 +55,10 @@ class AcquisitionLocation:
     acquisition_toml: Path | None
     frames_dir: Path | None
     tilt_series_dir: Path | None
-    tomograms_dir: Path | None
-    annotations_dir: Path | None
+    reconstructions_dir: Path | None
+    # The arm decides Reconstructions nesting depth: experimental nests tomograms
+    # /annotations under a {tilt_series_id}/ folder, simulation stays flat.
+    data_source: DataSource
 
 
 @dataclass(frozen=True)
@@ -61,6 +67,9 @@ class TomogramLocation:
     tomogram_id: str
     mrc_files: tuple[Path, ...]
     zarr_dirs: tuple[Path, ...]
+    # Enclosing Reconstructions/{ts_id}/ folder name (experimental); None on the
+    # flat simulation arm.
+    tilt_series_id: str | None
 
 
 @dataclass(frozen=True)
@@ -68,6 +77,7 @@ class AnnotationLocation:
     path: Path
     annotation_id: str
     files: tuple[Path, ...]
+    tilt_series_id: str | None
 
 
 @dataclass(frozen=True)
@@ -276,19 +286,10 @@ def iter_acquisitions(sample: SampleLocation) -> Iterator[AcquisitionLocation]:
             continue
 
         tilt_series = child / "TiltSeries"
-        # Probe both layouts for the tomograms dir; v1 uses the same field
-        # name for cryoet ("Reconstructions/Tomograms") and simulation
-        # ("SyntheticCryoET").
-        recon_tomos = child / "Reconstructions" / "Tomograms"
-        synth_tomos = child / "SyntheticCryoET"
-        if recon_tomos.is_dir():
-            tomograms_dir: Path | None = recon_tomos
-        elif synth_tomos.is_dir():
-            tomograms_dir = synth_tomos
-        else:
-            tomograms_dir = None
-
-        annotations = child / "Reconstructions" / "Annotations"
+        # Reconstructions/ holds tomograms + annotations for both arms; the
+        # per-arm nesting depth (experimental {ts_id}/ level vs. flat simulation)
+        # is resolved by iter_tomograms / iter_annotations from data_source.
+        reconstructions = child / "Reconstructions"
 
         yield AcquisitionLocation(
             path=child,
@@ -297,56 +298,86 @@ def iter_acquisitions(sample: SampleLocation) -> Iterator[AcquisitionLocation]:
             acquisition_toml=acq_toml if has_toml else None,
             frames_dir=frames if has_frames else None,
             tilt_series_dir=tilt_series if tilt_series.is_dir() else None,
-            tomograms_dir=tomograms_dir,
-            annotations_dir=annotations if annotations.is_dir() else None,
+            reconstructions_dir=reconstructions if reconstructions.is_dir() else None,
+            data_source=sample.data_source,
         )
+
+
+def _reconstruction_dirs(
+    acq: AcquisitionLocation, leaf: str
+) -> Iterator[tuple[Path, str | None]]:
+    """Yield ``(dir, tilt_series_id)`` for each Reconstructions ``leaf`` folder.
+
+    ``leaf`` is ``"Tomograms"`` or ``"Annotations"``. The arm decides nesting:
+
+    - experimental: ``Reconstructions/{ts_id}/{leaf}/`` — one per tilt-series
+      folder, ``tilt_series_id = {ts_id}``.
+    - simulation: ``Reconstructions/{leaf}/`` — flat, ``tilt_series_id = None``.
+    """
+    recon = acq.reconstructions_dir
+    if recon is None or not recon.is_dir():
+        return
+    if acq.data_source == DataSource.simulation:
+        leaf_dir = recon / leaf
+        if leaf_dir.is_dir():
+            yield leaf_dir, None
+        return
+    for ts_dir in sorted(recon.iterdir()):
+        if not ts_dir.is_dir():
+            continue
+        leaf_dir = ts_dir / leaf
+        if leaf_dir.is_dir():
+            yield leaf_dir, ts_dir.name
 
 
 def iter_tomograms(acq: AcquisitionLocation) -> Iterator[TomogramLocation]:
-    """Yield TomogramLocation for each direct child of ``acq.tomograms_dir``."""
-    if acq.tomograms_dir is None or not acq.tomograms_dir.is_dir():
-        return
-    for child in sorted(acq.tomograms_dir.iterdir()):
-        if not child.is_dir():
-            continue
-        mrc_files: list[Path] = []
-        zarr_dirs: list[Path] = []
-        for entry in sorted(child.iterdir()):
+    """Yield one TomogramLocation per file-stem under the Tomograms folder(s).
+
+    Tomograms are files (not folders): each entity's ``id`` is the filename
+    stem, so a ``foo.mrc`` and its matching ``foo.ome.zarr`` collapse to one
+    tomogram. Only ``.mrc`` / ``.zarr`` / ``.ome.zarr`` entries are grouped;
+    stray files (``.gitkeep``, etc.) are ignored.
+    """
+    for leaf_dir, tilt_series_id in _reconstruction_dirs(acq, "Tomograms"):
+        mrc_by_stem: dict[str, list[Path]] = {}
+        zarr_by_stem: dict[str, list[Path]] = {}
+        for entry in sorted(leaf_dir.iterdir()):
             if entry.is_file() and entry.suffix == ".mrc":
-                mrc_files.append(entry)
+                mrc_by_stem.setdefault(entity_id_from_path(entry), []).append(entry)
             elif entry.is_dir() and _is_zarr_dir(entry):
-                zarr_dirs.append(entry)
-        yield TomogramLocation(
-            path=child,
-            tomogram_id=child.name,
-            mrc_files=tuple(mrc_files),
-            zarr_dirs=tuple(zarr_dirs),
-        )
+                zarr_by_stem.setdefault(entity_id_from_path(entry), []).append(entry)
+        for stem in sorted(mrc_by_stem.keys() | zarr_by_stem.keys()):
+            yield TomogramLocation(
+                path=leaf_dir,
+                tomogram_id=stem,
+                mrc_files=tuple(mrc_by_stem.get(stem, ())),
+                zarr_dirs=tuple(zarr_by_stem.get(stem, ())),
+                tilt_series_id=tilt_series_id,
+            )
 
 
 def iter_annotations(acq: AcquisitionLocation) -> Iterator[AnnotationLocation]:
-    """Yield AnnotationLocation for each direct child of ``acq.annotations_dir``.
+    """Yield one AnnotationLocation per file-stem under the Annotations folder(s).
 
-    Filters discovered file children by extension allowlist; treats ``.zarr`` /
-    ``.ome.zarr`` directories as a single entry (not recursed).
+    Annotations are files (not folders): each entity's ``id`` is the filename
+    stem, so differently-suffixed files sharing a stem (``ann.json`` +
+    ``ann.mrc``) collapse to one annotation. File children are filtered by the
+    extension allowlist; ``.zarr`` / ``.ome.zarr`` dirs count as a single entry.
     """
-    if acq.annotations_dir is None or not acq.annotations_dir.is_dir():
-        return
-    for child in sorted(acq.annotations_dir.iterdir()):
-        if not child.is_dir():
-            continue
-        kept: list[Path] = []
-        for entry in child.iterdir():
-            if entry.is_file():
-                if entry.suffix.lower() in ANNOTATION_FILE_EXTENSIONS:
-                    kept.append(entry)
+    for leaf_dir, tilt_series_id in _reconstruction_dirs(acq, "Annotations"):
+        by_stem: dict[str, list[Path]] = {}
+        for entry in leaf_dir.iterdir():
+            if entry.is_file() and entry.suffix.lower() in ANNOTATION_FILE_EXTENSIONS:
+                by_stem.setdefault(entity_id_from_path(entry), []).append(entry)
             elif entry.is_dir() and _is_zarr_dir(entry):
-                kept.append(entry)
-        yield AnnotationLocation(
-            path=child,
-            annotation_id=child.name,
-            files=tuple(sorted(kept, key=lambda p: str(p))),
-        )
+                by_stem.setdefault(entity_id_from_path(entry), []).append(entry)
+        for stem in sorted(by_stem):
+            yield AnnotationLocation(
+                path=leaf_dir,
+                annotation_id=stem,
+                files=tuple(sorted(by_stem[stem], key=lambda p: str(p))),
+                tilt_series_id=tilt_series_id,
+            )
 
 
 def iter_tilt_series(acq: AcquisitionLocation) -> Iterator[TiltSeriesLocation]:

@@ -2,8 +2,13 @@
 resolution = 3.5
 microscope = "Krios"
 
+[[tilt_series]]
+id = "ts_1"
+is_aligned = true
+
 [raw_tomogram]
 id = "bp_3dctf_bin4"
+tilt_series_id = "ts_1"
 
 [[annotation]]
 id = "membrain_seg_v10"

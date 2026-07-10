@@ -129,6 +129,9 @@ def test_happy_path_chromatin_fixture():
     raw = acqs["Position_86"].raw_tomogram
     assert raw is not None
     assert raw.tomogram_id == "bp_3dctf_bin4"
+    # tilt_series_id is derived from the Reconstructions/{ts_id}/ folder (== ts_1),
+    # which matches the declared [[tilt_series]] block.
+    assert raw.tilt_series_id == "ts_1"
     assert raw.image_size_x == 4
     # voxel_size is derived from the MRC header (not authored in the TOML)
     assert raw.voxel_size == pytest.approx(11.7197, rel=1e-4)
@@ -142,8 +145,8 @@ def test_happy_path_chromatin_fixture():
     assert "membrain_seg_v10" in anns
     files = anns["membrain_seg_v10"].files
     assert files, "annotation files should be populated from disk"
-    assert any(f.endswith("segmentation.mrc") for f in files)
-    assert any(f.endswith("metadata.json") for f in files)
+    assert any(f.endswith("membrain_seg_v10.mrc") for f in files)
+    assert any(f.endswith("membrain_seg_v10.json") for f in files)
     assert files == sorted(files)
 
 
@@ -358,7 +361,8 @@ def test_unfilled_placeholder_warning_categorized(tmp_path):
 
 
 def test_undeclared_tomogram_folder_warns(tmp_path):
-    """Folder under Reconstructions/Tomograms with no tomogram block warns."""
+    """A tomogram file under Reconstructions/{ts_id}/Tomograms with no tomogram
+    block warns."""
     sample_dir = tmp_path / "sample_test"
     _write_minimal_sample_toml(sample_dir)
     _write(
@@ -368,10 +372,10 @@ def test_undeclared_tomogram_folder_warns(tmp_path):
         microscope = "Krios"
         """,
     )
-    # Folder exists on disk but is not declared in the TOML.
-    (sample_dir / "acq1" / "Reconstructions" / "Tomograms" / "stray_tomo").mkdir(
-        parents=True
-    )
+    # File exists on disk but is not declared in the TOML.
+    tomos = sample_dir / "acq1" / "Reconstructions" / "ts_1" / "Tomograms"
+    tomos.mkdir(parents=True)
+    (tomos / "stray_tomo.mrc").write_bytes(b"")
 
     loc = _sample_loc(sample_dir)
     result = assemble_sample(loc)
@@ -394,9 +398,9 @@ def test_undeclared_annotation_folder_warns(tmp_path):
         microscope = "Krios"
         """,
     )
-    (sample_dir / "acq1" / "Reconstructions" / "Annotations" / "stray_ann").mkdir(
-        parents=True
-    )
+    anns = sample_dir / "acq1" / "Reconstructions" / "ts_1" / "Annotations"
+    anns.mkdir(parents=True)
+    (anns / "stray_ann.mrc").write_bytes(b"")
 
     loc = _sample_loc(sample_dir)
     result = assemble_sample(loc)
@@ -407,6 +411,104 @@ def test_undeclared_annotation_folder_warns(tmp_path):
     assert len(undeclared) == 1
     assert "stray_ann" in undeclared[0].location
     assert "stray_ann" in undeclared[0].message
+
+
+def test_tomogram_tilt_series_id_derived_from_folder(tmp_path):
+    """The tomogram's tilt_series_id is injected from the enclosing
+    Reconstructions/{ts_id}/ folder when it matches a declared [[tilt_series]]."""
+    sample_dir = tmp_path / "sample_test"
+    _write_minimal_sample_toml(sample_dir)
+    _write(
+        sample_dir / "acq1" / "acquisition.toml",
+        """
+        [acquisition]
+        microscope = "Krios"
+
+        [[tilt_series]]
+        id = "ts_9"
+
+        [raw_tomogram]
+        id = "tomo1"
+        """,
+    )
+    (sample_dir / "acq1" / "TiltSeries" / "ts_9").mkdir(parents=True)
+    tomos = sample_dir / "acq1" / "Reconstructions" / "ts_9" / "Tomograms"
+    _make_mrc(tomos / "tomo1.mrc")
+
+    result = assemble_sample(_sample_loc(sample_dir))
+    assert result.record is not None
+    raw = result.record.acquisitions["acq1"].raw_tomogram
+    assert raw is not None and raw.tilt_series_id == "ts_9"
+    assert not any(
+        w.category == "undeclared_reconstruction_group" for w in result.warnings
+    )
+
+
+def test_undeclared_reconstruction_group_leaves_tilt_series_id_none(tmp_path):
+    """A tomogram under a Reconstructions/{ts_id}/ folder with no matching
+    [[tilt_series]] keeps tilt_series_id=None and warns (injecting the
+    undeclared id would make cross-ref re-validation drop the sample)."""
+    sample_dir = tmp_path / "sample_test"
+    _write_minimal_sample_toml(sample_dir)
+    _write(
+        sample_dir / "acq1" / "acquisition.toml",
+        """
+        [acquisition]
+        microscope = "Krios"
+
+        [raw_tomogram]
+        id = "tomo1"
+        """,
+    )
+    tomos = sample_dir / "acq1" / "Reconstructions" / "ts_ghost" / "Tomograms"
+    _make_mrc(tomos / "tomo1.mrc")
+
+    result = assemble_sample(_sample_loc(sample_dir))
+    assert result.record is not None
+    raw = result.record.acquisitions["acq1"].raw_tomogram
+    assert raw is not None and raw.tilt_series_id is None
+    warned = [
+        w for w in result.warnings if w.category == "undeclared_reconstruction_group"
+    ]
+    assert len(warned) == 1
+    assert "tomo1" in warned[0].message
+
+
+def test_duplicate_tomogram_id_across_tilt_series_warns(tmp_path):
+    """The same tomogram stem under two {ts_id} folders warns once and keeps the
+    first (never silently overwrites)."""
+    sample_dir = tmp_path / "sample_test"
+    _write_minimal_sample_toml(sample_dir)
+    _write(
+        sample_dir / "acq1" / "acquisition.toml",
+        """
+        [acquisition]
+        microscope = "Krios"
+
+        [[tilt_series]]
+        id = "ts_a"
+
+        [[tilt_series]]
+        id = "ts_b"
+
+        [raw_tomogram]
+        id = "dup"
+        """,
+    )
+    for ts in ("ts_a", "ts_b"):
+        (sample_dir / "acq1" / "TiltSeries" / ts).mkdir(parents=True)
+        _make_mrc(
+            sample_dir / "acq1" / "Reconstructions" / ts / "Tomograms" / "dup.mrc"
+        )
+
+    result = assemble_sample(_sample_loc(sample_dir))
+    assert result.record is not None
+    dupes = [w for w in result.warnings if w.category == "duplicate_tomogram_id"]
+    assert len(dupes) == 1
+    assert "dup" in dupes[0].message
+    # Kept the first folder (ts_a, by sort order).
+    raw = result.record.acquisitions["acq1"].raw_tomogram
+    assert raw is not None and raw.tilt_series_id == "ts_a"
 
 
 def test_annotation_without_target_tomogram_warns(tmp_path):

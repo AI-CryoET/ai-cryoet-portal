@@ -36,7 +36,7 @@ from schema import (
     Sample,
     SampleRecord,
 )
-from schema.layout import infer_arm
+from schema.layout import entity_id_from_path, infer_arm
 
 
 _PLACEHOLDER = "<FILL IN>"
@@ -200,25 +200,57 @@ def _format_extras_location(entry: ExtrasEntry) -> str:
 # ── id ↔ folder cross-check ──────────────────────────────────────────────────
 
 
-def _candidate_folder_names(acq_dir: Path, parent_dirs: tuple[str, ...]) -> list[str]:
-    """Return on-disk folder names from any of the candidate parent dirs.
+def _reconstruction_ids_on_disk(
+    acq_dir: Path, parent_dirs: tuple[str, ...]
+) -> set[str]:
+    """Return the set of entity ids present on disk under ``parent_dirs``.
 
-    Used to suggest the closest match when a TOML-declared id has no
-    matching folder. Missing parents contribute nothing rather than
-    erroring.
+    Tomograms and annotations are now **files** whose id is the filename stem
+    (:func:`schema.layout.entity_id_from_path`); tilt series remain folders (the
+    stem of an extensionless folder name is the name itself). Both nesting
+    depths are covered:
+
+    - flat / legacy:  ``acq_dir/{parent}/*`` (e.g. ``Reconstructions/Tomograms/*``)
+    - experimental:   ``acq_dir/Reconstructions/{ts_id}/{leaf}/*``
+
+    ponytail: this mirrors ``catalog.discovery`` but re-implemented here because
+    ``schema`` must not import ``catalog``. Task 2 owns the full loader rework
+    (tilt_series_id derivation, dropping the legacy/SyntheticCryoET layouts);
+    this is the minimal stem-aware match the shared file-based fixture needs.
     """
-    names: list[str] = []
+    ids: set[str] = set()
     for sub in parent_dirs:
-        d = acq_dir / sub
-        if d.is_dir():
-            names.extend(p.name for p in d.iterdir() if p.is_dir())
-    return names
+        base = acq_dir / sub
+        if base.is_dir():
+            ids.update(entity_id_from_path(p) for p in base.iterdir())
+        # Experimental nesting: Reconstructions/{ts_id}/{leaf}/*.
+        parts = Path(sub).parts
+        if len(parts) == 2 and parts[0] == "Reconstructions":
+            leaf = parts[1]
+            recon = acq_dir / "Reconstructions"
+            if recon.is_dir():
+                for ts_dir in recon.iterdir():
+                    if not ts_dir.is_dir() or ts_dir.name == leaf:
+                        continue
+                    nested = ts_dir / leaf
+                    if nested.is_dir():
+                        ids.update(entity_id_from_path(p) for p in nested.iterdir())
+    return ids
+
+
+def _candidate_folder_names(acq_dir: Path, parent_dirs: tuple[str, ...]) -> list[str]:
+    """Return on-disk entity ids under the candidate parent dirs.
+
+    Used to suggest the closest match when a TOML-declared id has none on disk.
+    Missing parents contribute nothing rather than erroring.
+    """
+    return sorted(_reconstruction_ids_on_disk(acq_dir, parent_dirs))
 
 
 def _has_matching_folder(
     acq_dir: Path, parent_dirs: tuple[str, ...], entity_id: str
 ) -> bool:
-    return any((acq_dir / sub / entity_id).is_dir() for sub in parent_dirs)
+    return entity_id in _reconstruction_ids_on_disk(acq_dir, parent_dirs)
 
 
 def _scrub_dangling_refs(

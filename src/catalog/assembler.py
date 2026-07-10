@@ -51,6 +51,8 @@ ScanIssueCategory = Literal[
     "undeclared_tomogram_folder",
     "undeclared_annotation_folder",
     "undeclared_tilt_series_folder",
+    "undeclared_reconstruction_group",
+    "duplicate_tomogram_id",
     "acquisition_without_tilt_series",
     "declared_id_without_folder",
     "tilt_series_alignment_mismatch",
@@ -534,10 +536,21 @@ def assemble_sample(sample_loc: SampleLocation) -> AssemblyResult:
         for t in acq_file.post_processed_tomogram:
             existing_tomos[t.tomogram_id] = t
 
+        # Tilt series declared in this acquisition — the derived tilt_series_id
+        # is injected only when the reconstruction group folder matches one of
+        # these (see the gate below). ``seen_tomo_ids`` guards against the same
+        # tomogram stem appearing under two {ts_id} folders.
+        declared_ts_ids = {
+            ts.tilt_series_id
+            for ts in acq_file.tilt_series
+            if ts.tilt_series_id is not None
+        }
+        seen_tomo_ids: set[str] = set()
+
         for tomo_loc in iter_tomograms(acq_loc):
             tomo = existing_tomos.get(tomo_loc.tomogram_id)
             if tomo is None:
-                # Tomogram folder on disk not declared in acquisition.toml.
+                # Tomogram file on disk not declared in acquisition.toml.
                 # v1 does not synthesize tomograms; warn so a forgotten
                 # [raw_tomogram] / [[post_processed_tomogram]] block doesn't
                 # go unnoticed.
@@ -550,7 +563,7 @@ def assemble_sample(sample_loc: SampleLocation) -> AssemblyResult:
                             f".tomogram[{tomo_loc.tomogram_id}]"
                         ),
                         message=(
-                            f"folder '{tomo_loc.tomogram_id}' exists on disk but is "
+                            f"tomogram '{tomo_loc.tomogram_id}' exists on disk but is "
                             "not declared in acquisition.toml — add a [raw_tomogram] "
                             "or [[post_processed_tomogram]] block with "
                             f"id = \"{tomo_loc.tomogram_id}\""
@@ -558,6 +571,59 @@ def assemble_sample(sample_loc: SampleLocation) -> AssemblyResult:
                     )
                 )
                 continue
+
+            # A tomogram stem repeated under two {ts_id} folders yields one
+            # tomogram_id with two candidate tilt_series_id values. Keep the
+            # first (sort order), skip + warn on the rest — never overwrite.
+            if tomo_loc.tomogram_id in seen_tomo_ids:
+                result.warnings.append(
+                    _make_issue(
+                        sample_loc,
+                        category="duplicate_tomogram_id",
+                        location=(
+                            f"acquisitions.{acq_loc.acquisition_id}"
+                            f".tomogram[{tomo_loc.tomogram_id}]"
+                        ),
+                        message=(
+                            f"tomogram '{tomo_loc.tomogram_id}' appears under more "
+                            "than one Reconstructions/{tilt_series_id}/ folder — "
+                            "tomogram ids must be unique within an acquisition; "
+                            "keeping the first and skipping the rest"
+                        ),
+                    )
+                )
+                continue
+            seen_tomo_ids.add(tomo_loc.tomogram_id)
+
+            # Inject the path-derived tilt_series_id (overriding any authored
+            # value). Experimental: the enclosing Reconstructions/{ts_id}/
+            # folder — but only when it matches a declared [[tilt_series]] id,
+            # else leave None and warn (an undeclared id would make the
+            # cross-ref re-validation drop the whole sample). Simulation: no
+            # {ts_id} folder, so tilt_series_id stays None.
+            if tomo_loc.tilt_series_id is None:
+                tomo.tilt_series_id = None
+            elif tomo_loc.tilt_series_id in declared_ts_ids:
+                tomo.tilt_series_id = tomo_loc.tilt_series_id
+            else:
+                tomo.tilt_series_id = None
+                result.warnings.append(
+                    _make_issue(
+                        sample_loc,
+                        category="undeclared_reconstruction_group",
+                        location=(
+                            f"acquisitions.{acq_loc.acquisition_id}"
+                            f".tomogram[{tomo_loc.tomogram_id}]"
+                        ),
+                        message=(
+                            f"tomogram '{tomo_loc.tomogram_id}' lives under "
+                            f"Reconstructions/{tomo_loc.tilt_series_id}/ but no "
+                            f"[[tilt_series]] with id = \"{tomo_loc.tilt_series_id}\" "
+                            "is declared in acquisition.toml — its tilt_series_id "
+                            "was left unset"
+                        ),
+                    )
+                )
 
             if tomo_loc.mrc_files:
                 mrc_path_str = str(tomo_loc.mrc_files[0])

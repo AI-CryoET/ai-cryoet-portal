@@ -6,7 +6,11 @@ The fixture tree mirrors the canonical two-arm data root:
       Experimental/
         sample_chromatin/            # experimental cryoET sample (data_source=experimental)
           sample.toml
-          Position_86/ ...           # acquisition with acquisition.toml + tomogram + annotation
+          Position_86/               # acquisition with acquisition.toml + tomogram + annotation
+            TiltSeries/ts_1/         # aligned tilt series (has alignment/ artifact)
+            Reconstructions/ts_1/    # tomograms/annotations grouped by tilt_series_id
+              Tomograms/bp_3dctf_bin4.mrc  bp_3dctf_bin4.ome.zarr   # id = file stem
+              Annotations/membrain_seg_v10.json  membrain_seg_v10.mrc  # id = shared stem
           Position_87/ ...           # Frames-only acquisition (no acquisition.toml)
       MdSimulation/
         SingleMolecule/
@@ -17,8 +21,8 @@ The fixture tree mirrors the canonical two-arm data root:
             SyntheticCryoET/
               sim_acq_01/            # acquisition nested under SyntheticCryoET/
                 acquisition.toml     # references run_001 via [md_source]
-                SyntheticCryoET/synth_tomo_1/recon.mrc
-                Reconstructions/Annotations/synth_ann_1/metadata.json
+                Reconstructions/Tomograms/synth_tomo_1.mrc      # flat (no tilt-series level)
+                Reconstructions/Annotations/synth_ann_1.json    # id = file stem
 
 ``data_source`` and ``dataset_type`` are derived from the top-level arm
 directory (``Experimental/`` vs ``MdSimulation/<SubDir>/``) by

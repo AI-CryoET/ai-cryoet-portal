@@ -205,7 +205,12 @@ def test_assembler_records_tomogram_size_bytes(tmp_path: Path) -> None:
         """,
     )
     mrc_path = (
-        sample_dir / "Pos1" / "Reconstructions" / "Tomograms" / "tomo_a" / "vol.mrc"
+        sample_dir
+        / "Pos1"
+        / "Reconstructions"
+        / "ts_1"
+        / "Tomograms"
+        / "tomo_a.mrc"
     )
     mrc_path.parent.mkdir(parents=True)
     with mrcfile_pkg.new(str(mrc_path), overwrite=True) as m:
