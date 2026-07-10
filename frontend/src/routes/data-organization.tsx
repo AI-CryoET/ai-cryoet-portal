@@ -17,15 +17,13 @@ import {
   experimentalTree,
   simulationTree,
 } from '~/components/dataOrganization/trees'
-import { SchemaExplorer } from '~/components/dataOrganization/schemaPrototype/SchemaExplorer'
+import { SchemaExplorer } from '~/components/dataOrganization/schema/SchemaExplorer'
 
-// tab picks the page tab; variant picks the schema-layout prototype (A | C).
-type DataOrgSearch = { tab: 'placing' | 'schema'; variant: 'A' | 'C' }
+type DataOrgSearch = { tab: 'placing' | 'schema' }
 
 export const Route = createFileRoute('/data-organization')({
   validateSearch: (search: Record<string, unknown>): DataOrgSearch => ({
     tab: search.tab === 'schema' ? 'schema' : 'placing',
-    variant: search.variant === 'C' ? 'C' : 'A',
   }),
   component: DataOrganization,
 })
@@ -95,7 +93,7 @@ function DownloadTemplate({ name, label }: { name: string; label: string }) {
 }
 
 function DataOrganization() {
-  const { tab, variant } = Route.useSearch()
+  const { tab } = Route.useSearch()
   const navigate = Route.useNavigate()
   return (
     <Stack spacing={4}>
@@ -118,12 +116,7 @@ function DataOrganization() {
       </Tabs>
 
       {tab === 'schema' ? (
-        <SchemaExplorer
-          variant={variant}
-          onVariantChange={(v) =>
-            navigate({ search: (prev) => ({ ...prev, variant: v as 'A' | 'C' }) })
-          }
-        />
+        <SchemaExplorer />
       ) : (
         <>
           <Box>
