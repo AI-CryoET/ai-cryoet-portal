@@ -48,7 +48,7 @@ export function SchemaExplorer() {
         <Box
           sx={{
             flex: '0 0 240px',
-            alignSelf: 'stretch',
+            // Natural height only — don't stretch to match a taller right pane.
             border: 1,
             borderColor: 'divider',
             borderRadius: 1,
