@@ -149,3 +149,52 @@ def test_plan_and_apply(tmp_path: Path) -> None:
     assert plan2.moves == []
     assert plan2.toml_edits == []
     assert plan2.dirs_to_remove == []
+
+
+def test_collision_warning_names_the_duplicated_suffix(tmp_path: Path) -> None:
+    """Fix 2: with children .zarr, .mrc, .mrc the warning must name '.mrc'
+    (the actually-duplicated suffix), not '.zarr' (just the first in sort order).
+    """
+    reorg = _load_reorg()
+    sim_acq = (
+        tmp_path / "MdSimulation" / "Bulk" / "sampleS" / "SyntheticCryoET" / "acqS"
+    )
+    folder = sim_acq / "Reconstructions" / "Tomograms" / "sim1"
+    (folder / "a.ome.zarr").mkdir(parents=True)
+    _write(folder / "a.mrc")
+    _write(folder / "a.rec.mrc", "")  # second file whose suffix is also '.mrc'
+
+    plan = reorg.plan_reorg(tmp_path)
+    collision_warnings = [w for w in plan.warnings if "collide" in w]
+    assert len(collision_warnings) == 1
+    assert "sim1.mrc" in collision_warnings[0]
+    assert "sim1.ome.zarr" not in collision_warnings[0]
+
+
+def test_residue_subdirectory_warns_but_files_still_move(tmp_path: Path) -> None:
+    """Fix 3: a plain (non-zarr) subdirectory left inside an OLD id-folder must
+    not be silently orphaned — it should produce a warning, while the actual
+    entity files are still queued to move (never lose data).
+    """
+    reorg = _load_reorg()
+    sim_acq = (
+        tmp_path / "MdSimulation" / "Bulk" / "sampleS" / "SyntheticCryoET" / "acqS"
+    )
+    folder = sim_acq / "Reconstructions" / "Tomograms" / "sim1"
+    _write(folder / "a.mrc")
+    _write(folder / "extra" / "notes.txt", "leftover")
+
+    plan = reorg.plan_reorg(tmp_path)
+
+    assert any(
+        "sim1" in w and "subdirector" in w for w in plan.warnings
+    ), plan.warnings
+    dsts = {dst for _, dst in plan.moves}
+    assert sim_acq / "Reconstructions" / "Tomograms" / "sim1.mrc" in dsts
+
+    reorg.apply_reorg(plan)
+    assert (sim_acq / "Reconstructions" / "Tomograms" / "sim1.mrc").is_file()
+    # The residue subdirectory stays behind; the OLD id-folder can't be
+    # removed because os.rmdir refuses a non-empty directory.
+    assert (folder / "extra" / "notes.txt").is_file()
+    assert folder.is_dir()

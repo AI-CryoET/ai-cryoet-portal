@@ -53,6 +53,7 @@ ScanIssueCategory = Literal[
     "undeclared_tilt_series_folder",
     "undeclared_reconstruction_group",
     "duplicate_tomogram_id",
+    "duplicate_annotation_id",
     "acquisition_without_tilt_series",
     "declared_id_without_folder",
     "tilt_series_alignment_mismatch",
@@ -721,6 +722,7 @@ def assemble_sample(sample_loc: SampleLocation) -> AssemblyResult:
 
         # Step 4: annotation files ------------------------------------------
         existing_anns = {a.annotation_id: a for a in acq_file.annotation}
+        seen_ann_ids: set[str] = set()
         for ann_loc in iter_annotations(acq_loc):
             ann = existing_anns.get(ann_loc.annotation_id)
             if ann is None:
@@ -740,6 +742,30 @@ def assemble_sample(sample_loc: SampleLocation) -> AssemblyResult:
                     )
                 )
                 continue
+
+            # An annotation stem repeated under two {ts_id} folders — same
+            # failure mode as duplicate_tomogram_id above. Keep the first
+            # (sort order), skip + warn on the rest — never overwrite.
+            if ann_loc.annotation_id in seen_ann_ids:
+                result.warnings.append(
+                    _make_issue(
+                        sample_loc,
+                        category="duplicate_annotation_id",
+                        location=(
+                            f"acquisitions.{acq_loc.acquisition_id}"
+                            f".annotation[{ann_loc.annotation_id}]"
+                        ),
+                        message=(
+                            f"annotation '{ann_loc.annotation_id}' appears under "
+                            "more than one Reconstructions/{tilt_series_id}/ "
+                            "folder — annotation ids must be unique within an "
+                            "acquisition; keeping the first and skipping the rest"
+                        ),
+                    )
+                )
+                continue
+            seen_ann_ids.add(ann_loc.annotation_id)
+
             if not ann.files:
                 ann.files = sorted(str(p) for p in ann_loc.files)
 

@@ -519,6 +519,52 @@ def test_duplicate_tomogram_id_across_tilt_series_warns(tmp_path):
     assert raw is not None and raw.tilt_series_id == "ts_a"
 
 
+def test_duplicate_annotation_id_across_tilt_series_warns(tmp_path):
+    """The same annotation stem under two {ts_id} folders warns once and keeps
+    the first (never silently overwrites) — mirrors duplicate_tomogram_id."""
+    sample_dir = tmp_path / "sample_test"
+    _write_minimal_sample_toml(sample_dir)
+    _write(
+        sample_dir / "acq1" / "acquisition.toml",
+        """
+        [acquisition]
+        microscope = "Krios"
+
+        [[tilt_series]]
+        id = "ts_a"
+
+        [[tilt_series]]
+        id = "ts_b"
+
+        [raw_tomogram]
+        id = "tomo1"
+
+        [[annotation]]
+        id = "dup"
+        type = "segmentation"
+        target_tomogram = "tomo1"
+        """,
+    )
+    for ts in ("ts_a", "ts_b"):
+        (sample_dir / "acq1" / "TiltSeries" / ts).mkdir(parents=True)
+    _make_mrc(
+        sample_dir / "acq1" / "Reconstructions" / "ts_a" / "Tomograms" / "tomo1.mrc"
+    )
+    for ts in ("ts_a", "ts_b"):
+        anns = sample_dir / "acq1" / "Reconstructions" / ts / "Annotations"
+        anns.mkdir(parents=True)
+        (anns / "dup.mrc").write_bytes(b"")
+
+    result = assemble_sample(_sample_loc(sample_dir))
+    assert result.record is not None
+    dupes = [w for w in result.warnings if w.category == "duplicate_annotation_id"]
+    assert len(dupes) == 1
+    assert "dup" in dupes[0].message
+    # Kept the first folder (ts_a, by sort order) — never overwritten by ts_b.
+    ann = result.record.acquisitions["acq1"].annotation[0]
+    assert ann.files and "ts_a" in ann.files[0]
+
+
 def test_annotation_without_target_tomogram_warns(tmp_path):
     """A declared annotation with no target_tomogram warns (the field is
     optional in the schema, so this is a warning rather than an error)."""

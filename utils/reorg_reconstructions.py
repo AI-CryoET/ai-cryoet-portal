@@ -57,6 +57,7 @@ import os
 import re
 import sys
 import tomllib
+from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -167,20 +168,33 @@ def _plan_id_folder(
     ``kind`` is ``"tomogram"`` / ``"annotation"`` (for warning text). A
     same-extension collision inside the folder (e.g. two ``.mrc``) leaves the
     whole entity in place with a warning — as does a planned destination that
-    already exists on disk (never silently overwrite real data).
+    already exists on disk (never silently overwrite real data). A leftover
+    non-zarr subdirectory only warns; the files still move (never lose data).
 
     Returns True iff every child was queued for a move (so ``id_folder`` will
     be emptied by ``apply_reorg``); False if the entity was left in place.
     """
     entity_id = id_folder.name
     children = _entity_children(id_folder)
+    residue = sorted(
+        c for c in id_folder.iterdir() if c.is_dir() and not is_zarr_dir(c)
+    )
+    if residue:
+        names = ", ".join(r.name for r in residue)
+        plan.warnings.append(
+            f"{id_folder}: {kind} '{entity_id}' has leftover non-zarr "
+            f"subdirector{'y' if len(residue) == 1 else 'ies'} ({names}) that will "
+            f"not be moved and will strand the OLD id-folder on disk."
+        )
     if not children:
         return False
     suffixes = [_suffix_of(c) for c in children]
     if len(set(suffixes)) != len(suffixes):
+        counts = Counter(suffixes)
+        dup_suffix = next(s for s, n in counts.items() if n > 1)
         plan.warnings.append(
             f"{id_folder}: {kind} '{entity_id}' has multiple files with the same "
-            f"extension — would collide on '{entity_id}{suffixes[0]}'; left in place."
+            f"extension — would collide on '{entity_id}{dup_suffix}'; left in place."
         )
         return False
     dsts = [dest_dir / f"{entity_id}{suffix}" for suffix in suffixes]
@@ -256,9 +270,13 @@ def _plan_acquisition(
 
     # Attempt to remove the emptied OLD parent dirs — but only when this run
     # actually leaves them with nothing behind: every current child must be one
-    # of the id-folders we just queued to move out. For simulation (flat) the
-    # dest dir *is* the old dir, so the moved-in files remain as children and
-    # it's correctly excluded; likewise if any id-folder was left in place.
+    # of the id-folders we just queued to move out. At plan time ``iterdir()``
+    # still sees the OLD id-folders (the moves haven't run yet), so for
+    # simulation (flat) the old dir IS queued here too; it survives in practice
+    # only because ``apply_reorg`` uses ``os.rmdir``, which refuses to remove it
+    # once the moved-in files have repopulated it as a non-empty dir. Any
+    # id-folder left in place (unresolvable target, collision, etc.) still
+    # correctly excludes the parent from this set.
     for old_dir, queued in (
         (old_tomo, queued_tomo_folders),
         (old_ann, queued_ann_folders),

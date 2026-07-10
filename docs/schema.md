@@ -268,5 +268,5 @@ One row per annotation output. Primary key: `(sample_id, acquisition_id, annotat
 | `sample_id` | text (FK) | `directory` | derived | Parent sample folder name. |
 | `type` | text | `acquisition.toml` (`[[annotation]]`) | researcher authored | e.g. `membrane_segmentation`, `nucleosome_placement`, `nucleosome_orientation`, `sta_result`. |
 | `target_tomogram` | text (FK) | `acquisition.toml` (`[[annotation]]`) | researcher authored | Tomogram this was generated from. |
-| `files` | list[text] | `directory` | derived | `.star`, `.mrc`, `.ome.zarr`, `.png` artifacts discovered in the folder. |
+| `files` | list[text] | `directory` | derived | `.star`, `.mrc`, `.ome.zarr`, `.png` artifacts sharing the annotation's file stem under `Annotations/`. |
 | `renamed_from` | text | `acquisition.toml` (`[[annotation]]`) | researcher authored | **Not stored in the DB.** Scan-time-only directive (§08c) — see `Sample.renamed_from`. |
