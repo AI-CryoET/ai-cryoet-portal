@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from pathlib import Path
+
+from schema.generate_schema_docs import _MD_OUT, render_md
 from schema.schema_catalog import CATALOG, DOMAIN_ORM, UNDOCUMENTED_ORM_COLUMNS
 
 
@@ -30,3 +33,10 @@ def test_every_domain_orm_column_is_documented_or_internal():
             f"{model.__name__}: ORM columns neither documented in schema_catalog "
             f"nor listed internal: {sorted(missing)}"
         )
+
+
+def test_committed_schema_md_matches_codegen():
+    assert Path(_MD_OUT).read_text() == render_md(), (
+        "docs/schema.md is out of sync with schema_catalog.py. "
+        "Regenerate with `pixi run schema-docs`."
+    )
