@@ -52,6 +52,7 @@ def _issue(
     severity="warning",
     scope="sample",
     acquisition_id=None,
+    md_run_id=None,
     file_kind="sample_toml",
     file_path=None,
 ) -> ScanIssue:
@@ -63,6 +64,7 @@ def _issue(
         message=message,
         sample_id=sample_id,
         acquisition_id=acquisition_id,
+        md_run_id=md_run_id,
         file_kind=file_kind,
         file_path=file_path,
     )
@@ -721,6 +723,35 @@ def test_reconcile_new_issue_sets_first_seen(session):
     assert row.last_seen_at == _NOW
     assert row.last_seen_run_id == "run-1"
     assert row.resolved_at is None
+
+
+def test_reconcile_persists_md_run_id(session):
+    """An md_run-scoped issue's run id round-trips through insert and reopen,
+    so the manage page can link the warning row to that run's authoring form."""
+    reconcile_sample_issues(
+        session,
+        "run-1",
+        "s1",
+        [_issue(file_kind="md_run_toml", md_run_id="run_a", location="md_run[run_a].seed")],
+        _NOW,
+    )
+    session.commit()
+    row = _outstanding(session)[0]
+    assert row.md_run_id == "run_a"
+
+    # Resolve then recur: the reopened row still carries the run id.
+    reconcile_sample_issues(session, "run-2", "s1", [], _NOW + 60.0)
+    session.commit()
+    reconcile_sample_issues(
+        session,
+        "run-3",
+        "s1",
+        [_issue(file_kind="md_run_toml", md_run_id="run_a", location="md_run[run_a].seed")],
+        _NOW + 120.0,
+    )
+    session.commit()
+    row = _outstanding(session)[0]
+    assert row.md_run_id == "run_a"
 
 
 def test_reconcile_recurring_preserves_first_seen_bumps_last_seen(session):

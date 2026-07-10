@@ -47,6 +47,7 @@ from catalog.api.routes import (
     stats,
     thumbnails as thumbnails_routes,
     tilt_series as tilt_series_routes,
+    toml_authoring,
     tomograms,
     warnings as warnings_routes,
 )
@@ -222,7 +223,7 @@ def create_app() -> FastAPI:
         CORSMiddleware,
         allow_origins=cors_origins,
         allow_credentials=False,
-        allow_methods=["GET"],
+        allow_methods=["GET", "POST"],
         allow_headers=["*"],
     )
     app.include_router(samples.router, prefix="/samples", tags=["samples"])
@@ -242,6 +243,7 @@ def create_app() -> FastAPI:
         tilt_series_routes.router, prefix="/tilt-series", tags=["tilt-series"]
     )
     app.include_router(thumbnails_routes.router, prefix="/thumbnails", tags=["thumbnails"])
+    app.include_router(toml_authoring.router, prefix="/toml", tags=["toml"])
     app.include_router(
         md_previews_routes.router, prefix="/md-previews", tags=["md-previews"]
     )

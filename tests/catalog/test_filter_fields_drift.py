@@ -19,7 +19,7 @@ import pytest
 pytest.importorskip("sqlalchemy")
 
 from catalog import orm  # noqa: E402
-from catalog.api.filter_fields import FIELDS  # noqa: E402
+from catalog.api.filter_fields import FIELDS, PROJECT_REQUIRES_DATA_SOURCE  # noqa: E402
 
 # table __tablename__ -> ORM column-name set, taken straight from the registered
 # tables so this can't drift from orm.py.
@@ -76,3 +76,16 @@ def test_ts_python_parity():
     )
     for key, py_entry in py.items():
         assert ts[key] == py_entry, f"{key}: TS {ts[key]} != PY {py_entry}"
+
+
+def test_project_requires_data_source_parity():
+    """The synapse ⇒ experimental gating constant (ADR-0003) stays mirrored."""
+    text = TS_PATH.read_text()
+    block = re.search(
+        r"PROJECT_REQUIRES_DATA_SOURCE\b.*?=\s*\{(.*?)\}", text, re.DOTALL
+    )
+    assert block, "PROJECT_REQUIRES_DATA_SOURCE not found in filterFields.ts"
+    ts = dict(re.findall(r"(\w+):\s*'(experimental|simulation)'", block.group(1)))
+    assert ts == PROJECT_REQUIRES_DATA_SOURCE, (
+        f"PROJECT_REQUIRES_DATA_SOURCE drift: TS {ts} != PY {PROJECT_REQUIRES_DATA_SOURCE}"
+    )

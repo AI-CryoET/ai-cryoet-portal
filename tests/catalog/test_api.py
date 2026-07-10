@@ -101,12 +101,13 @@ def client(tmp_path):
             last_seen_run_id="run-A",
         ))
 
-        # sample_b — minimal
+        # sample_b — minimal (nanogold has no data_source constraint, so it can
+        # be a simulation sample, unlike synapse — see ADR-0003)
         rec_b = SampleRecord(
             sample=Sample(
                 sample_id="sample_b",
                 data_source=DataSource.simulation,
-                project=Project.synapse,
+                project=Project.nanogold,
             )
         )
         upsert_sample_record(

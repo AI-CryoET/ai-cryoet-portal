@@ -25,18 +25,65 @@ export function SeverityPill({ severity }: { severity: IssueGroup['severity'] })
   )
 }
 
-// `file_kind` chip + a truncated, monospace `file_path` beneath it.
+// Edit link for an authorable file: a sample.toml / acquisition.toml /
+// md_run.toml warning row jumps straight into the matching authoring form,
+// auto-loaded by id (issue 07). Acquisition identity is composite, so the
+// link carries both ids (mirrors the acquisition detail-page "Edit
+// acquisition.toml" link). An md_run_toml row without a resolvable md_run_id
+// (e.g. a deprecated legacy [[md_run]] block, which names no single run) has
+// no link either. Other file kinds (mdoc, mrc, run-scope, …) have no form —
+// returns null.
+export function authorLinkFor(
+  group: IssueGroup,
+): { to: string; search: Record<string, string> } | null {
+  if (group.file_kind === 'sample_toml' && group.sample_id) {
+    return { to: '/author', search: { tab: 'sample', id: group.sample_id } }
+  }
+  if (
+    group.file_kind === 'acquisition_toml' &&
+    group.sample_id &&
+    group.acquisition_id
+  ) {
+    return {
+      to: '/author',
+      search: {
+        tab: 'acquisition',
+        id: group.acquisition_id,
+        sampleId: group.sample_id,
+      },
+    }
+  }
+  if (group.file_kind === 'md_run_toml' && group.md_run_id) {
+    return { to: '/author', search: { tab: 'md_run', id: group.md_run_id } }
+  }
+  return null
+}
+
+// `file_kind` chip + a truncated, monospace `file_path` beneath it. For an
+// authorable file an "Edit file" link sits to the right of the chip,
+// jumping into its authoring form (issue 07).
 export function FileCell({ group }: { group: IssueGroup }) {
+  const link = authorLinkFor(group)
   return (
     <Stack spacing={0.5} sx={{ minWidth: 0 }}>
-      <Box>
+      <Stack direction="row" spacing={1} alignItems="center">
         <Chip
           label={group.file_kind}
           size="small"
           variant="outlined"
           sx={{ fontFamily: 'monospace', fontSize: 11 }}
         />
-      </Box>
+        {link ? (
+          <CustomLink
+            to={link.to}
+            search={link.search}
+            variant="body2"
+            sx={{ whiteSpace: 'nowrap' }}
+          >
+            Edit file
+          </CustomLink>
+        ) : null}
+      </Stack>
       {group.file_path ? (
         <Tooltip title={group.file_path}>
           <Typography

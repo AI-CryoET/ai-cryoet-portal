@@ -1073,6 +1073,7 @@ def _apply_fresh_issue(
         prior.resolved_at = None
         prior.resolved_run_id = None
         prior.file_path = issue.file_path
+        prior.md_run_id = issue.md_run_id
         return True
 
     first_seen_at, first_seen_run_id = now, run_id
@@ -1099,6 +1100,7 @@ def _apply_fresh_issue(
             scope=issue.scope,
             sample_id=issue.sample_id,
             acquisition_id=issue.acquisition_id,
+            md_run_id=issue.md_run_id,
             file_kind=issue.file_kind,
             file_path=issue.file_path,
             location=issue.location,

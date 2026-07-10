@@ -314,6 +314,7 @@ export type IssueGroup = {
   scope: IssueScope
   sample_id: string | null
   acquisition_id: string | null
+  md_run_id: string | null
   file_kind: string
   file_path: string | null
   severity: IssueSeverity

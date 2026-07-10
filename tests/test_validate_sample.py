@@ -214,6 +214,64 @@ def test_simulation_block_rejected_for_cryoet(tmp_path):
     assert any("experimental" in e and "simulation" in e for e in result.sample_errors)
 
 
+def test_synapse_data_source_simulation_rejected(tmp_path):
+    """ADR-0003: synapse data is never simulation-derived."""
+    _write(
+        tmp_path / "sample.toml",
+        """
+        [sample]
+        data_source = "simulation"
+        project = "synapse"
+        """,
+    )
+    result = load_sample_record(tmp_path)
+    assert result.record is None
+    assert any("synapse" in e and "simulation" in e for e in result.sample_errors)
+
+
+def test_synapse_simulation_block_rejected(tmp_path):
+    """A [simulation] block on a synapse sample fails even when data_source is
+    unset (synapse implies experimental, ADR-0003)."""
+    _write(
+        tmp_path / "sample.toml",
+        """
+        [sample]
+        project = "synapse"
+
+        [simulation]
+        dataset_type = "bulk"
+        """,
+    )
+    result = load_sample_record(tmp_path)
+    assert result.record is None
+    assert any("synapse" in e and "simulation" in e for e in result.sample_errors)
+
+
+def test_synapse_md_source_block_rejected(tmp_path):
+    """An [md_source] block on a synapse acquisition fails the whole sample
+    (synapse implies experimental, ADR-0003)."""
+    _write(
+        tmp_path / "sample.toml",
+        """
+        [sample]
+        project = "synapse"
+        """,
+    )
+    _write(
+        tmp_path / "acq1" / "acquisition.toml",
+        """
+        [acquisition]
+
+        [md_source]
+        md_run_id = "x"
+        frame = 1
+        """,
+    )
+    result = load_sample_record(tmp_path)
+    assert result.record is None
+    assert any("synapse" in e and "md_source" in e for e in result.sample_errors)
+
+
 def test_label_block_happy_path(tmp_path):
     _write(
         tmp_path / "sample.toml",

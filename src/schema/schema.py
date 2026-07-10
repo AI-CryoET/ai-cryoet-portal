@@ -490,24 +490,33 @@ class SampleRecord(_Base):
 
     @model_validator(mode="after")
     def _check_project_blocks(self) -> "SampleRecord":
-        if self.sample.project == Project.synapse and self.chromatin is not None:
+        is_synapse = self.sample.project == Project.synapse
+        if is_synapse and self.chromatin is not None:
             raise ValueError("sample.project is 'synapse' but a [chromatin] block is present")
-        if self.sample.data_source == DataSource.experimental:
+        # synapse data is never simulation-derived (ADR-0003): a synapse sample
+        # may not declare data_source = simulation, and is held to the same
+        # "no simulation-only blocks" rule as an experimental sample.
+        if is_synapse and self.sample.data_source == DataSource.simulation:
+            raise ValueError(
+                "sample.project is 'synapse' but sample.data_source is 'simulation' "
+                "(synapse data is never simulation-derived)"
+            )
+        if self.sample.data_source == DataSource.experimental or is_synapse:
+            why = (
+                "sample.data_source is 'experimental'"
+                if self.sample.data_source == DataSource.experimental
+                else "sample.project is 'synapse'"
+            )
             if self.simulation is not None:
-                raise ValueError(
-                    "sample.data_source is 'experimental' but a [simulation] block is present"
-                )
+                raise ValueError(f"{why} but a [simulation] block is present")
             if self.md_run:
-                raise ValueError(
-                    "sample.data_source is 'experimental' but [[md_run]] block(s) are present"
-                )
+                raise ValueError(f"{why} but [[md_run]] block(s) are present")
             acqs_with_md = [
                 aid for aid, af in self.acquisitions.items() if af.md_source is not None
             ]
             if acqs_with_md:
                 raise ValueError(
-                    "sample.data_source is 'experimental' but acquisition(s) "
-                    f"{acqs_with_md} have an [md_source] block"
+                    f"{why} but acquisition(s) {acqs_with_md} have an [md_source] block"
                 )
         return self
 

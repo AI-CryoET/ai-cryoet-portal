@@ -42,6 +42,7 @@ describe('RecentlyResolvedTable', () => {
         scope: 'acquisition',
         sample_id: 'rosen_chromatin_012',
         acquisition_id: 'acq_02',
+        md_run_id: null,
         file_kind: 'acquisition_toml',
         file_path: '/data/acq_02/acquisition.toml',
         severity: 'warning',

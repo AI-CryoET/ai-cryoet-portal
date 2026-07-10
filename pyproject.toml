@@ -56,9 +56,10 @@ rapidfuzz = ">=3.0"
 [tool.pixi.tasks]
 validate = "python -m schema.validate"
 json-schema = "python -m schema.generate_json_schema"
+form-fields = "python -m schema.generate_form_fields"
 sync-templates = "python -m schema.sync_templates"
 # Regenerate every artifact derived from schema.py + the canonical templates.
-sync = { depends-on = ["json-schema", "sync-templates"] }
+sync = { depends-on = ["json-schema", "form-fields", "sync-templates"] }
 scan = { cmd = "python -m catalog scan", default-environment = "catalog" }
 
 [tool.pixi.feature.test.dependencies]
@@ -86,6 +87,7 @@ migrate-revision = "alembic -c src/catalog/migrations/alembic.ini revision --aut
 
 [tool.pixi.feature.api.dependencies]
 fastapi = ">=0.110"
+tomli-w = ">=1.0"
 uvicorn = "*"
 loguru = ">=0.7"
 numpy = ">=1.26"
