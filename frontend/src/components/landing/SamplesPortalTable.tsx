@@ -1,4 +1,5 @@
 import { useMemo } from 'react'
+import { alpha } from '@mui/material'
 import {
   MaterialReactTable,
   useMaterialReactTable,
@@ -107,8 +108,24 @@ export function SamplesPortalTable(props: {
     ),
     enableColumnActions: false,
     enableColumnFilters: false,
-    enableTopToolbar: false,
+    enableGlobalFilter: false,
     enableDensityToggle: false,
+    // Drop the whole internal-actions cluster (search/hide-columns/fullscreen)
+    // so the top toolbar holds only pagination, mirroring the /manage tables.
+    enableToolbarInternalActions: false,
+    enablePagination: true,
+    positionPagination: 'both',
+    // The bottom toolbar already reads as separate from the body via the last
+    // row's border; add the same line under the top controls so both toolbars
+    // are visually set off from the table the same way. Background matches
+    // the /manage tables' top toolbar (e.g. RecentlyResolvedTable).
+    muiTopToolbarProps: {
+      sx: {
+        bgcolor: (t) => alpha(t.palette.primary.main, 0.12),
+        borderBottom: 1,
+        borderColor: 'divider',
+      },
+    },
     // `expanded: true` opens every detail panel; MRT still mounts each panel
     // lazily (Collapse mountOnEnter), so a fetch fires per visible page row.
     // Leave `expanded` uncontrolled (undefined) when not expanding all.
