@@ -161,27 +161,40 @@ def _entity_children(id_folder: Path) -> list[Path]:
 
 def _plan_id_folder(
     id_folder: Path, dest_dir: Path, kind: str, plan: ReorgPlan
-) -> None:
+) -> bool:
     """Plan renaming every child of ``id_folder`` to ``{id}.<ext>`` in ``dest_dir``.
 
     ``kind`` is ``"tomogram"`` / ``"annotation"`` (for warning text). A
     same-extension collision inside the folder (e.g. two ``.mrc``) leaves the
-    whole entity in place with a warning.
+    whole entity in place with a warning — as does a planned destination that
+    already exists on disk (never silently overwrite real data).
+
+    Returns True iff every child was queued for a move (so ``id_folder`` will
+    be emptied by ``apply_reorg``); False if the entity was left in place.
     """
     entity_id = id_folder.name
     children = _entity_children(id_folder)
     if not children:
-        return
+        return False
     suffixes = [_suffix_of(c) for c in children]
     if len(set(suffixes)) != len(suffixes):
         plan.warnings.append(
             f"{id_folder}: {kind} '{entity_id}' has multiple files with the same "
             f"extension — would collide on '{entity_id}{suffixes[0]}'; left in place."
         )
-        return
-    for child, suffix in zip(children, suffixes):
-        plan.moves.append((child, dest_dir / f"{entity_id}{suffix}"))
+        return False
+    dsts = [dest_dir / f"{entity_id}{suffix}" for suffix in suffixes]
+    existing_dst = next((d for d in dsts if d.exists()), None)
+    if existing_dst is not None:
+        plan.warnings.append(
+            f"{id_folder}: {kind} '{entity_id}' destination already exists, "
+            f"skipping to avoid overwrite: {existing_dst}"
+        )
+        return False
+    for child, dst in zip(children, dsts):
+        plan.moves.append((child, dst))
     plan.dirs_to_remove.append(id_folder)  # emptied by the moves above
+    return True
 
 
 def _plan_acquisition(
@@ -199,6 +212,7 @@ def _plan_acquisition(
     tomo_ts, ann_target = _read_toml_maps(acq_dir / "acquisition.toml")
 
     old_tomo = recon / "Tomograms"
+    queued_tomo_folders: set[Path] = set()
     for folder in _old_id_folders(old_tomo):
         tid = folder.name
         if is_experimental:
@@ -212,9 +226,11 @@ def _plan_acquisition(
             dest_dir = recon / ts_id / "Tomograms"
         else:
             dest_dir = recon / "Tomograms"  # flat
-        _plan_id_folder(folder, dest_dir, "tomogram", plan)
+        if _plan_id_folder(folder, dest_dir, "tomogram", plan):
+            queued_tomo_folders.add(folder)
 
     old_ann = recon / "Annotations"
+    queued_ann_folders: set[Path] = set()
     for folder in _old_id_folders(old_ann):
         aid = folder.name
         if is_experimental:
@@ -235,11 +251,22 @@ def _plan_acquisition(
             dest_dir = recon / ts_id / "Annotations"
         else:
             dest_dir = recon / "Annotations"  # flat
-        _plan_id_folder(folder, dest_dir, "annotation", plan)
+        if _plan_id_folder(folder, dest_dir, "annotation", plan):
+            queued_ann_folders.add(folder)
 
-    # Attempt to remove the emptied OLD parent dirs (only if truly empty — for
-    # simulation they hold the migrated flat files and are kept).
-    plan.dirs_to_remove.extend([old_tomo, old_ann])
+    # Attempt to remove the emptied OLD parent dirs — but only when this run
+    # actually leaves them with nothing behind: every current child must be one
+    # of the id-folders we just queued to move out. For simulation (flat) the
+    # dest dir *is* the old dir, so the moved-in files remain as children and
+    # it's correctly excluded; likewise if any id-folder was left in place.
+    for old_dir, queued in (
+        (old_tomo, queued_tomo_folders),
+        (old_ann, queued_ann_folders),
+    ):
+        if old_dir.is_dir():
+            children = list(old_dir.iterdir())
+            if children and all(c in queued for c in children):
+                plan.dirs_to_remove.append(old_dir)
 
     # Strip the now-derived tilt_series_id from the toml, if any such line exists.
     if strip_tilt_series_id:
