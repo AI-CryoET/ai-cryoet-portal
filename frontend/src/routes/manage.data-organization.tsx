@@ -21,7 +21,7 @@ import { SchemaExplorer } from '~/components/dataOrganization/schema/SchemaExplo
 
 type DataOrgSearch = { tab: 'placing' | 'schema' }
 
-export const Route = createFileRoute('/data-organization')({
+export const Route = createFileRoute('/manage/data-organization')({
   validateSearch: (search: Record<string, unknown>): DataOrgSearch => ({
     tab: search.tab === 'schema' ? 'schema' : 'placing',
   }),
@@ -50,7 +50,7 @@ function AuthorLinks({
               {' · '}
             </Box>
           )}
-          <CustomLink to="/author" search={{ tab }}>
+          <CustomLink to="/manage/author" search={{ tab }}>
             {tab}.toml
           </CustomLink>
         </span>
@@ -100,6 +100,9 @@ function DataOrganization() {
       <Breadcrumbs aria-label="breadcrumb">
         <CustomLink to="/" color="inherit" sx={{ fontWeight: 700 }}>
           Home
+        </CustomLink>
+        <CustomLink to="/manage" color="inherit">
+          Manage
         </CustomLink>
         <Typography color="text.primary">Data organization</Typography>
       </Breadcrumbs>

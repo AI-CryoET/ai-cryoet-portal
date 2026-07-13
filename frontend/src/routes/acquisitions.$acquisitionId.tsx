@@ -234,7 +234,7 @@ function AcquisitionDetailRoute() {
         // right acquisition (acquisition_id alone isn't unique).
         editLink={
           <CustomLink
-            to="/author"
+            to="/manage/author"
             search={{ tab: 'acquisition', id: acquisitionId, sampleId }}
             variant="body2"
             fontWeight={700}

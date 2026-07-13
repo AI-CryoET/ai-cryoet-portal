@@ -54,14 +54,14 @@ function group(overrides: Partial<IssueGroup>): IssueGroup {
 }
 
 describe('authorLinkFor', () => {
-  it('links a sample.toml row to /author on the sample tab', () => {
+  it('links a sample.toml row to /manage/author on the sample tab', () => {
     expect(authorLinkFor(group({}))).toEqual({
-      to: '/author',
+      to: '/manage/author',
       search: { tab: 'sample', id: 'samp1' },
     })
   })
 
-  it('links an acquisition.toml row to /author with the composite id + tab', () => {
+  it('links an acquisition.toml row to /manage/author with the composite id + tab', () => {
     expect(
       authorLinkFor(
         group({
@@ -71,16 +71,16 @@ describe('authorLinkFor', () => {
         }),
       ),
     ).toEqual({
-      to: '/author',
+      to: '/manage/author',
       search: { tab: 'acquisition', id: 'Pos1', sampleId: 'samp1' },
     })
   })
 
-  it('links an md_run.toml row to /author on the md_run tab', () => {
+  it('links an md_run.toml row to /manage/author on the md_run tab', () => {
     expect(
       authorLinkFor(group({ file_kind: 'md_run_toml', md_run_id: 'run_a' })),
     ).toEqual({
-      to: '/author',
+      to: '/manage/author',
       search: { tab: 'md_run', id: 'run_a' },
     })
   })
@@ -107,7 +107,7 @@ describe('FileCell edit link', () => {
     render(<FileCell group={group({})} />)
     const link = screen.getByText('Edit file').closest('a')
     expect(link).not.toBeNull()
-    expect(link).toHaveAttribute('data-to', '/author')
+    expect(link).toHaveAttribute('data-to', '/manage/author')
     expect(link).toHaveAttribute(
       'data-search',
       JSON.stringify({ tab: 'sample', id: 'samp1' }),

@@ -11,14 +11,14 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as MdSimulationRouteImport } from './routes/md-simulation'
 import { Route as ExperimentalRouteImport } from './routes/experimental'
-import { Route as DataOrganizationRouteImport } from './routes/data-organization'
 import { Route as DataRouteImport } from './routes/data'
-import { Route as AuthorRouteImport } from './routes/author'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as ManageIndexRouteImport } from './routes/manage.index'
 import { Route as SamplesSampleIdRouteImport } from './routes/samples.$sampleId'
 import { Route as ManageScansRouteImport } from './routes/manage.scans'
 import { Route as ManageDeletionsRouteImport } from './routes/manage.deletions'
+import { Route as ManageDataOrganizationRouteImport } from './routes/manage.data-organization'
+import { Route as ManageAuthorRouteImport } from './routes/manage.author'
 import { Route as AcquisitionsAcquisitionIdRouteImport } from './routes/acquisitions.$acquisitionId'
 import { Route as ManageScansScanIdRouteImport } from './routes/manage.scans_.$scanId'
 
@@ -32,19 +32,9 @@ const ExperimentalRoute = ExperimentalRouteImport.update({
   path: '/experimental',
   getParentRoute: () => rootRouteImport,
 } as any)
-const DataOrganizationRoute = DataOrganizationRouteImport.update({
-  id: '/data-organization',
-  path: '/data-organization',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const DataRoute = DataRouteImport.update({
   id: '/data',
   path: '/data',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const AuthorRoute = AuthorRouteImport.update({
-  id: '/author',
-  path: '/author',
   getParentRoute: () => rootRouteImport,
 } as any)
 const IndexRoute = IndexRouteImport.update({
@@ -72,6 +62,16 @@ const ManageDeletionsRoute = ManageDeletionsRouteImport.update({
   path: '/manage/deletions',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ManageDataOrganizationRoute = ManageDataOrganizationRouteImport.update({
+  id: '/manage/data-organization',
+  path: '/manage/data-organization',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ManageAuthorRoute = ManageAuthorRouteImport.update({
+  id: '/manage/author',
+  path: '/manage/author',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AcquisitionsAcquisitionIdRoute =
   AcquisitionsAcquisitionIdRouteImport.update({
     id: '/acquisitions/$acquisitionId',
@@ -86,12 +86,12 @@ const ManageScansScanIdRoute = ManageScansScanIdRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
-  '/author': typeof AuthorRoute
   '/data': typeof DataRoute
-  '/data-organization': typeof DataOrganizationRoute
   '/experimental': typeof ExperimentalRoute
   '/md-simulation': typeof MdSimulationRoute
   '/acquisitions/$acquisitionId': typeof AcquisitionsAcquisitionIdRoute
+  '/manage/author': typeof ManageAuthorRoute
+  '/manage/data-organization': typeof ManageDataOrganizationRoute
   '/manage/deletions': typeof ManageDeletionsRoute
   '/manage/scans': typeof ManageScansRoute
   '/samples/$sampleId': typeof SamplesSampleIdRoute
@@ -100,12 +100,12 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
-  '/author': typeof AuthorRoute
   '/data': typeof DataRoute
-  '/data-organization': typeof DataOrganizationRoute
   '/experimental': typeof ExperimentalRoute
   '/md-simulation': typeof MdSimulationRoute
   '/acquisitions/$acquisitionId': typeof AcquisitionsAcquisitionIdRoute
+  '/manage/author': typeof ManageAuthorRoute
+  '/manage/data-organization': typeof ManageDataOrganizationRoute
   '/manage/deletions': typeof ManageDeletionsRoute
   '/manage/scans': typeof ManageScansRoute
   '/samples/$sampleId': typeof SamplesSampleIdRoute
@@ -115,12 +115,12 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
-  '/author': typeof AuthorRoute
   '/data': typeof DataRoute
-  '/data-organization': typeof DataOrganizationRoute
   '/experimental': typeof ExperimentalRoute
   '/md-simulation': typeof MdSimulationRoute
   '/acquisitions/$acquisitionId': typeof AcquisitionsAcquisitionIdRoute
+  '/manage/author': typeof ManageAuthorRoute
+  '/manage/data-organization': typeof ManageDataOrganizationRoute
   '/manage/deletions': typeof ManageDeletionsRoute
   '/manage/scans': typeof ManageScansRoute
   '/samples/$sampleId': typeof SamplesSampleIdRoute
@@ -131,12 +131,12 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
-    | '/author'
     | '/data'
-    | '/data-organization'
     | '/experimental'
     | '/md-simulation'
     | '/acquisitions/$acquisitionId'
+    | '/manage/author'
+    | '/manage/data-organization'
     | '/manage/deletions'
     | '/manage/scans'
     | '/samples/$sampleId'
@@ -145,12 +145,12 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
-    | '/author'
     | '/data'
-    | '/data-organization'
     | '/experimental'
     | '/md-simulation'
     | '/acquisitions/$acquisitionId'
+    | '/manage/author'
+    | '/manage/data-organization'
     | '/manage/deletions'
     | '/manage/scans'
     | '/samples/$sampleId'
@@ -159,12 +159,12 @@ export interface FileRouteTypes {
   id:
     | '__root__'
     | '/'
-    | '/author'
     | '/data'
-    | '/data-organization'
     | '/experimental'
     | '/md-simulation'
     | '/acquisitions/$acquisitionId'
+    | '/manage/author'
+    | '/manage/data-organization'
     | '/manage/deletions'
     | '/manage/scans'
     | '/samples/$sampleId'
@@ -174,12 +174,12 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
-  AuthorRoute: typeof AuthorRoute
   DataRoute: typeof DataRoute
-  DataOrganizationRoute: typeof DataOrganizationRoute
   ExperimentalRoute: typeof ExperimentalRoute
   MdSimulationRoute: typeof MdSimulationRoute
   AcquisitionsAcquisitionIdRoute: typeof AcquisitionsAcquisitionIdRoute
+  ManageAuthorRoute: typeof ManageAuthorRoute
+  ManageDataOrganizationRoute: typeof ManageDataOrganizationRoute
   ManageDeletionsRoute: typeof ManageDeletionsRoute
   ManageScansRoute: typeof ManageScansRoute
   SamplesSampleIdRoute: typeof SamplesSampleIdRoute
@@ -203,25 +203,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ExperimentalRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/data-organization': {
-      id: '/data-organization'
-      path: '/data-organization'
-      fullPath: '/data-organization'
-      preLoaderRoute: typeof DataOrganizationRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/data': {
       id: '/data'
       path: '/data'
       fullPath: '/data'
       preLoaderRoute: typeof DataRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/author': {
-      id: '/author'
-      path: '/author'
-      fullPath: '/author'
-      preLoaderRoute: typeof AuthorRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/': {
@@ -259,6 +245,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ManageDeletionsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/manage/data-organization': {
+      id: '/manage/data-organization'
+      path: '/manage/data-organization'
+      fullPath: '/manage/data-organization'
+      preLoaderRoute: typeof ManageDataOrganizationRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/manage/author': {
+      id: '/manage/author'
+      path: '/manage/author'
+      fullPath: '/manage/author'
+      preLoaderRoute: typeof ManageAuthorRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/acquisitions/$acquisitionId': {
       id: '/acquisitions/$acquisitionId'
       path: '/acquisitions/$acquisitionId'
@@ -278,12 +278,12 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
-  AuthorRoute: AuthorRoute,
   DataRoute: DataRoute,
-  DataOrganizationRoute: DataOrganizationRoute,
   ExperimentalRoute: ExperimentalRoute,
   MdSimulationRoute: MdSimulationRoute,
   AcquisitionsAcquisitionIdRoute: AcquisitionsAcquisitionIdRoute,
+  ManageAuthorRoute: ManageAuthorRoute,
+  ManageDataOrganizationRoute: ManageDataOrganizationRoute,
   ManageDeletionsRoute: ManageDeletionsRoute,
   ManageScansRoute: ManageScansRoute,
   SamplesSampleIdRoute: SamplesSampleIdRoute,
