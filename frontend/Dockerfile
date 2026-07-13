@@ -23,6 +23,10 @@ COPY --from=deps /app/node_modules ./node_modules
 RUN npm prune --omit=dev
 
 FROM base AS build
+# Shared image version (the `v*.*.*` git tag). Vite inlines VITE_* env vars into
+# the client bundle at build time, so the footer can show it.
+ARG APP_VERSION
+ENV VITE_APP_VERSION=$APP_VERSION
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 RUN npm run build
