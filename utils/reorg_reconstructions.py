@@ -32,17 +32,18 @@ By default this also strips the now-derived ``tilt_series_id = ...`` line from
 every ``[raw_tomogram]`` / ``[[post_processed_tomogram]]`` block (disable with
 ``--no-strip-toml``).
 
-**Dry-run by default** — prints the plan and touches nothing. Pass ``--apply``
-to perform the moves, toml edits, and empty-dir cleanup. Idempotent: it acts
-only on OLD-layout subFOLDERS, so a second run over migrated data is a no-op.
+**Dry-run by default** — writes the plan to a CSV (default ``./reorg_plan.csv``,
+override with ``--csv``) and touches nothing. Pass ``--apply`` to perform the
+moves, toml edits, and empty-dir cleanup. Idempotent: it acts only on
+OLD-layout subFOLDERS, so a second run over migrated data is a no-op.
 
 Usage
 -----
-    # dry run against $CATALOG_DATA_ROOT (prints the plan, changes nothing)
+    # dry run against $CATALOG_DATA_ROOT (writes ./reorg_plan.csv, changes nothing)
     ./reorg_reconstructions.py
 
-    # dry run against a specific root
-    ./reorg_reconstructions.py --root /path/to/data
+    # dry run against a specific root, custom CSV path
+    ./reorg_reconstructions.py --root /path/to/data --csv /tmp/plan.csv
 
     # actually perform the migration
     ./reorg_reconstructions.py --root /path/to/data --apply
@@ -53,6 +54,7 @@ Usage
 from __future__ import annotations
 
 import argparse
+import csv
 import os
 import re
 import sys
@@ -365,6 +367,19 @@ def apply_reorg(plan: ReorgPlan) -> None:
             pass  # non-empty or already gone — leave it
 
 
+def _write_plan_csv(plan: ReorgPlan, csv_path: Path) -> None:
+    """Write the dry-run plan (moves, toml edits, warnings) as CSV rows."""
+    with csv_path.open("w", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow(["action", "src", "dst", "note"])
+        for src, dst in plan.moves:
+            writer.writerow(["move", src, dst, ""])
+        for toml_path in plan.toml_edits:
+            writer.writerow(["toml_edit", toml_path, "", ""])
+        for warning in plan.warnings:
+            writer.writerow(["warning", "", "", warning])
+
+
 def _print_plan(plan: ReorgPlan, *, applied: bool) -> None:
     tag = "✓" if applied else "-"
     if plan.moves:
@@ -412,6 +427,13 @@ def main(argv: list[str] | None = None) -> None:
         help="Do NOT strip the derived tilt_series_id line from the tomls "
         "(default: strip it).",
     )
+    ap.add_argument(
+        "--csv",
+        type=Path,
+        default=Path("reorg_plan.csv"),
+        help="Where to write the dry-run plan as CSV (default: ./reorg_plan.csv). "
+        "Ignored with --apply.",
+    )
     args = ap.parse_args(argv)
 
     root = args.root.resolve()
@@ -423,12 +445,16 @@ def main(argv: list[str] | None = None) -> None:
     print(f"Root: {root}   ({'APPLY' if args.apply else 'DRY RUN'})")
     if args.apply:
         apply_reorg(plan)
-    _print_plan(plan, applied=args.apply)
-    print(
-        "\nDone."
-        if args.apply
-        else "\nDry run — nothing changed. Re-run with --apply to perform the migration."
-    )
+        _print_plan(plan, applied=True)
+        print("\nDone.")
+    else:
+        _write_plan_csv(plan, args.csv)
+        print(f"Wrote plan to {args.csv}")
+        if plan.warnings:
+            print(f"Warnings / skipped: {len(plan.warnings)} (see CSV)", file=sys.stderr)
+        print(
+            "\nDry run — nothing changed. Re-run with --apply to perform the migration."
+        )
 
 
 if __name__ == "__main__":
