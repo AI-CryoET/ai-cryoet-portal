@@ -49,6 +49,8 @@ export const SamplesPortalTable = memo(function SamplesPortalTable(props: {
         header: '',
         columnDefType: 'display',
         size: 80,
+        grow: 0, // fixed-size image; growing it just pads the cell
+
         Cell: ({ row }) => {
           const s = row.original
           // Simulation rows show the trajectory-level OVITO preview (the
@@ -75,10 +77,9 @@ export const SamplesPortalTable = memo(function SamplesPortalTable(props: {
         accessorKey: 'sample_id',
         header: 'Sample id',
         size: 220,
-        // grow: this is the only growing column, so at wide screens it absorbs
-        // the leftover width and the row fills the whole table instead of
-        // leaving dead space on the right.
-        grow: true,
+        // grow weight 4 vs the default 1: every column grows to fill leftover
+        // width at wide screens, but sample_id takes the lion's share.
+        grow: 4,
         Cell: ({ row }) => (
           <Tooltip title={row.original.sample_id}>
             <Box sx={ellipsisSx}>
@@ -92,17 +93,17 @@ export const SamplesPortalTable = memo(function SamplesPortalTable(props: {
           </Tooltip>
         ),
       },
-      { accessorKey: 'project', header: 'Project', size: 130 },
+      { accessorKey: 'project', header: 'Project', size: 100 },
       {
         accessorKey: 'lab_name',
         header: 'Lab',
-        size: 120,
+        size: 100,
         Cell: ({ cell }) => dash(cell.getValue()),
       },
       {
         accessorKey: 'type',
         header: 'Type',
-        size: 150,
+        size: 80,
         Cell: ({ cell }) => {
           const v = cell.getValue<string | null>()
           return (
@@ -112,9 +113,9 @@ export const SamplesPortalTable = memo(function SamplesPortalTable(props: {
           )
         },
       },
-      { accessorKey: 'n_acquisitions', header: 'Acquisitions', size: 140 },
+      { accessorKey: 'n_acquisitions', header: 'Acquisitions', size: 110 },
       { accessorKey: 'n_tilt_series', header: 'Tilt', size: 80 },
-      { accessorKey: 'n_tomograms', header: 'Tomo', size: 80 },
+      { accessorKey: 'n_tomograms', header: 'Tomograms', size: 110 },
     ],
     [],
   )
@@ -126,10 +127,11 @@ export const SamplesPortalTable = memo(function SamplesPortalTable(props: {
     positionExpandColumn: 'first',
     // Fixed column widths: 'grid' layout sizes columns from their `size` (not
     // their content), so widths stay put as you page/filter instead of jumping
-    // to fit each page's values. `grow: false` stops columns stretching to fill.
+    // to fit each page's values. Every column has grow weight 1 so they share
+    // leftover width at wide screens; sample_id overrides to 4 to grow most.
     layoutMode: 'grid',
     enableColumnResizing: false,
-    defaultColumn: { grow: false },
+    defaultColumn: { grow: 1 },
     // Clip overflowing cell text to an ellipsis so a long value can't force a
     // column wider than its fixed size. sample_id/type wrap their own content
     // (for the tooltip); this covers the plain-text columns (project, lab).
