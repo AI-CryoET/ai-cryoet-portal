@@ -221,9 +221,9 @@ function AcquisitionDetailRoute() {
         warning={
           acqWarnings.length > 0
             ? {
-                // Opens the manage page with outstanding issues filtered to
+                // Opens the warnings page with outstanding issues filtered to
                 // this acquisition (read from the URL search params there).
-                href: `/manage?sample=${encodeURIComponent(
+                href: `/manage/warnings?sample=${encodeURIComponent(
                   sampleId,
                 )}&acquisition=${encodeURIComponent(acquisitionId)}`,
                 text: "*There are warnings for this acquisition's metadata. Click to view",

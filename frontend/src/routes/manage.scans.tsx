@@ -22,6 +22,9 @@ function ScanHistoryRoute() {
         <CustomLink to="/manage" color="inherit">
           Manage
         </CustomLink>
+        <CustomLink to="/manage/warnings" color="inherit">
+          Warnings &amp; errors
+        </CustomLink>
         <Typography color="text.primary">Scan history</Typography>
       </Breadcrumbs>
 

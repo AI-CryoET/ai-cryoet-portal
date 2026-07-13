@@ -15,6 +15,7 @@ import { Route as DataRouteImport } from './routes/data'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as ManageIndexRouteImport } from './routes/manage.index'
 import { Route as SamplesSampleIdRouteImport } from './routes/samples.$sampleId'
+import { Route as ManageWarningsRouteImport } from './routes/manage.warnings'
 import { Route as ManageScansRouteImport } from './routes/manage.scans'
 import { Route as ManageDeletionsRouteImport } from './routes/manage.deletions'
 import { Route as ManageDataOrganizationRouteImport } from './routes/manage.data-organization'
@@ -50,6 +51,11 @@ const ManageIndexRoute = ManageIndexRouteImport.update({
 const SamplesSampleIdRoute = SamplesSampleIdRouteImport.update({
   id: '/samples/$sampleId',
   path: '/samples/$sampleId',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ManageWarningsRoute = ManageWarningsRouteImport.update({
+  id: '/manage/warnings',
+  path: '/manage/warnings',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ManageScansRoute = ManageScansRouteImport.update({
@@ -94,6 +100,7 @@ export interface FileRoutesByFullPath {
   '/manage/data-organization': typeof ManageDataOrganizationRoute
   '/manage/deletions': typeof ManageDeletionsRoute
   '/manage/scans': typeof ManageScansRoute
+  '/manage/warnings': typeof ManageWarningsRoute
   '/samples/$sampleId': typeof SamplesSampleIdRoute
   '/manage/': typeof ManageIndexRoute
   '/manage/scans/$scanId': typeof ManageScansScanIdRoute
@@ -108,6 +115,7 @@ export interface FileRoutesByTo {
   '/manage/data-organization': typeof ManageDataOrganizationRoute
   '/manage/deletions': typeof ManageDeletionsRoute
   '/manage/scans': typeof ManageScansRoute
+  '/manage/warnings': typeof ManageWarningsRoute
   '/samples/$sampleId': typeof SamplesSampleIdRoute
   '/manage': typeof ManageIndexRoute
   '/manage/scans/$scanId': typeof ManageScansScanIdRoute
@@ -123,6 +131,7 @@ export interface FileRoutesById {
   '/manage/data-organization': typeof ManageDataOrganizationRoute
   '/manage/deletions': typeof ManageDeletionsRoute
   '/manage/scans': typeof ManageScansRoute
+  '/manage/warnings': typeof ManageWarningsRoute
   '/samples/$sampleId': typeof SamplesSampleIdRoute
   '/manage/': typeof ManageIndexRoute
   '/manage/scans_/$scanId': typeof ManageScansScanIdRoute
@@ -139,6 +148,7 @@ export interface FileRouteTypes {
     | '/manage/data-organization'
     | '/manage/deletions'
     | '/manage/scans'
+    | '/manage/warnings'
     | '/samples/$sampleId'
     | '/manage/'
     | '/manage/scans/$scanId'
@@ -153,6 +163,7 @@ export interface FileRouteTypes {
     | '/manage/data-organization'
     | '/manage/deletions'
     | '/manage/scans'
+    | '/manage/warnings'
     | '/samples/$sampleId'
     | '/manage'
     | '/manage/scans/$scanId'
@@ -167,6 +178,7 @@ export interface FileRouteTypes {
     | '/manage/data-organization'
     | '/manage/deletions'
     | '/manage/scans'
+    | '/manage/warnings'
     | '/samples/$sampleId'
     | '/manage/'
     | '/manage/scans_/$scanId'
@@ -182,6 +194,7 @@ export interface RootRouteChildren {
   ManageDataOrganizationRoute: typeof ManageDataOrganizationRoute
   ManageDeletionsRoute: typeof ManageDeletionsRoute
   ManageScansRoute: typeof ManageScansRoute
+  ManageWarningsRoute: typeof ManageWarningsRoute
   SamplesSampleIdRoute: typeof SamplesSampleIdRoute
   ManageIndexRoute: typeof ManageIndexRoute
   ManageScansScanIdRoute: typeof ManageScansScanIdRoute
@@ -229,6 +242,13 @@ declare module '@tanstack/react-router' {
       path: '/samples/$sampleId'
       fullPath: '/samples/$sampleId'
       preLoaderRoute: typeof SamplesSampleIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/manage/warnings': {
+      id: '/manage/warnings'
+      path: '/manage/warnings'
+      fullPath: '/manage/warnings'
+      preLoaderRoute: typeof ManageWarningsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/manage/scans': {
@@ -286,6 +306,7 @@ const rootRouteChildren: RootRouteChildren = {
   ManageDataOrganizationRoute: ManageDataOrganizationRoute,
   ManageDeletionsRoute: ManageDeletionsRoute,
   ManageScansRoute: ManageScansRoute,
+  ManageWarningsRoute: ManageWarningsRoute,
   SamplesSampleIdRoute: SamplesSampleIdRoute,
   ManageIndexRoute: ManageIndexRoute,
   ManageScansScanIdRoute: ManageScansScanIdRoute,

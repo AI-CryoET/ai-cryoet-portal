@@ -100,6 +100,9 @@ function ScanRunDetailRoute() {
         <CustomLink to="/manage" color="inherit">
           Manage
         </CustomLink>
+        <CustomLink to="/manage/warnings" color="inherit">
+          Warnings &amp; errors
+        </CustomLink>
         <CustomLink to="/manage/scans" color="inherit">
           Scan history
         </CustomLink>

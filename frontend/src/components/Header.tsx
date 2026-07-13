@@ -63,7 +63,7 @@ const NavMenuButton = styled(Button)(
 const DATA_MANAGEMENT_LINKS = [
   { to: "/manage/data-organization" as const, label: "Data organization" },
   { to: "/manage/author" as const, label: "Author metadata" },
-  { to: "/manage" as const, label: "Review warnings and errors" },
+  { to: "/manage/warnings" as const, label: "Review warnings and errors" },
   { to: "/manage/deletions" as const, label: "View deletions and renames" },
 ];
 
