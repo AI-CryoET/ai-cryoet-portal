@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { memo, useMemo } from 'react'
 import { alpha } from '@mui/material'
 import {
   MaterialReactTable,
@@ -17,7 +17,11 @@ import { AcquisitionsSubTable } from './AcquisitionsSubTable'
 
 const dash = (v: unknown) => (v == null || v === '' ? '—' : String(v))
 
-export function SamplesPortalTable(props: {
+// memo: props (rows/filters/expandAllDetails) are all derived from the parent's
+// debounced search, so they only change every 300ms. Without memo the whole
+// table — and every mounted acquisition sub-table — re-renders on every
+// keystroke as the URL search updates immediately. This is the filtering-lag fix.
+export const SamplesPortalTable = memo(function SamplesPortalTable(props: {
   rows: SampleSummary[]
   loading?: boolean
   // Active search params threaded to each acquisition subtable for client-side
@@ -142,4 +146,4 @@ export function SamplesPortalTable(props: {
   })
 
   return <MaterialReactTable table={table} />
-}
+})
