@@ -1,5 +1,5 @@
 import { memo, useMemo } from 'react'
-import { alpha } from '@mui/material'
+import { alpha, Box, Tooltip } from '@mui/material'
 import {
   MaterialReactTable,
   useMaterialReactTable,
@@ -16,6 +16,14 @@ import {
 import { AcquisitionsSubTable } from './AcquisitionsSubTable'
 
 const dash = (v: unknown) => (v == null || v === '' ? '—' : String(v))
+
+// Shared truncation styles for cells whose content is wrapped (so the ellipsis
+// belongs to the same element the tooltip is attached to).
+const ellipsisSx = {
+  overflow: 'hidden',
+  textOverflow: 'ellipsis',
+  whiteSpace: 'nowrap',
+} as const
 
 // memo: props (rows/filters/expandAllDetails) are all derived from the parent's
 // debounced search, so they only change every 300ms. Without memo the whole
@@ -67,13 +75,21 @@ export const SamplesPortalTable = memo(function SamplesPortalTable(props: {
         accessorKey: 'sample_id',
         header: 'Sample id',
         size: 220,
+        // grow: this is the only growing column, so at wide screens it absorbs
+        // the leftover width and the row fills the whole table instead of
+        // leaving dead space on the right.
+        grow: true,
         Cell: ({ row }) => (
-          <CustomLink
-            to="/samples/$sampleId"
-            params={{ sampleId: row.original.sample_id }}
-          >
-            {row.original.sample_id}
-          </CustomLink>
+          <Tooltip title={row.original.sample_id}>
+            <Box sx={ellipsisSx}>
+              <CustomLink
+                to="/samples/$sampleId"
+                params={{ sampleId: row.original.sample_id }}
+              >
+                {row.original.sample_id}
+              </CustomLink>
+            </Box>
+          </Tooltip>
         ),
       },
       { accessorKey: 'project', header: 'Project', size: 130 },
@@ -87,9 +103,16 @@ export const SamplesPortalTable = memo(function SamplesPortalTable(props: {
         accessorKey: 'type',
         header: 'Type',
         size: 150,
-        Cell: ({ cell }) => dash(cell.getValue()),
+        Cell: ({ cell }) => {
+          const v = cell.getValue<string | null>()
+          return (
+            <Tooltip title={v ?? ''}>
+              <Box sx={ellipsisSx}>{dash(v)}</Box>
+            </Tooltip>
+          )
+        },
       },
-      { accessorKey: 'n_acquisitions', header: 'Acq', size: 80 },
+      { accessorKey: 'n_acquisitions', header: 'Acquisitions', size: 140 },
       { accessorKey: 'n_tilt_series', header: 'Tilt', size: 80 },
       { accessorKey: 'n_tomograms', header: 'Tomo', size: 80 },
     ],
@@ -107,21 +130,10 @@ export const SamplesPortalTable = memo(function SamplesPortalTable(props: {
     layoutMode: 'grid',
     enableColumnResizing: false,
     defaultColumn: { grow: false },
-    // Clip overflowing cell text (incl. the sample-id link) to an ellipsis so a
-    // long value can't force a column wider than its fixed size.
-    muiTableBodyCellProps: {
-      sx: {
-        whiteSpace: 'nowrap',
-        overflow: 'hidden',
-        textOverflow: 'ellipsis',
-        '& a': {
-          display: 'block',
-          overflow: 'hidden',
-          textOverflow: 'ellipsis',
-          whiteSpace: 'nowrap',
-        },
-      },
-    },
+    // Clip overflowing cell text to an ellipsis so a long value can't force a
+    // column wider than its fixed size. sample_id/type wrap their own content
+    // (for the tooltip); this covers the plain-text columns (project, lab).
+    muiTableBodyCellProps: { sx: ellipsisSx },
     muiTableHeadCellProps: {
       sx: {
         '& .Mui-TableHeadCell-Content-Wrapper': {
