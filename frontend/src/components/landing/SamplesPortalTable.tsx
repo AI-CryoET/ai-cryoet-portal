@@ -66,7 +66,7 @@ export const SamplesPortalTable = memo(function SamplesPortalTable(props: {
       {
         accessorKey: 'sample_id',
         header: 'Sample id',
-        minSize: 160,
+        size: 220,
         Cell: ({ row }) => (
           <CustomLink
             to="/samples/$sampleId"
@@ -76,15 +76,17 @@ export const SamplesPortalTable = memo(function SamplesPortalTable(props: {
           </CustomLink>
         ),
       },
-      { accessorKey: 'project', header: 'Project' },
+      { accessorKey: 'project', header: 'Project', size: 130 },
       {
         accessorKey: 'lab_name',
         header: 'Lab',
+        size: 120,
         Cell: ({ cell }) => dash(cell.getValue()),
       },
       {
         accessorKey: 'type',
         header: 'Type',
+        size: 150,
         Cell: ({ cell }) => dash(cell.getValue()),
       },
       { accessorKey: 'n_acquisitions', header: 'Acq', size: 80 },
@@ -99,6 +101,36 @@ export const SamplesPortalTable = memo(function SamplesPortalTable(props: {
     data: rows,
     getRowId: (r) => r.sample_id,
     positionExpandColumn: 'first',
+    // Fixed column widths: 'grid' layout sizes columns from their `size` (not
+    // their content), so widths stay put as you page/filter instead of jumping
+    // to fit each page's values. `grow: false` stops columns stretching to fill.
+    layoutMode: 'grid',
+    enableColumnResizing: false,
+    defaultColumn: { grow: false },
+    // Clip overflowing cell text (incl. the sample-id link) to an ellipsis so a
+    // long value can't force a column wider than its fixed size.
+    muiTableBodyCellProps: {
+      sx: {
+        whiteSpace: 'nowrap',
+        overflow: 'hidden',
+        textOverflow: 'ellipsis',
+        '& a': {
+          display: 'block',
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          whiteSpace: 'nowrap',
+        },
+      },
+    },
+    muiTableHeadCellProps: {
+      sx: {
+        '& .Mui-TableHeadCell-Content-Wrapper': {
+          whiteSpace: 'nowrap',
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+        },
+      },
+    },
     // MRT wraps the panel in <Collapse mountOnEnter unmountOnExit>, so this
     // component only mounts (and fetches its sample detail) when the row is
     // expanded — acquisitions load lazily on demand, not N fetches up front.
