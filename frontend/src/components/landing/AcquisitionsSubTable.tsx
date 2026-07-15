@@ -34,7 +34,8 @@ export function AcquisitionsSubTable({
     // Sample-id columns. 64px = expandCol(60) + comfy-display-pad(12) −
     // compact-display-pad(8); paired with the 84px thumbnail column in
     // SampleAcquisitionsTable (see the alignment note there).
-    <Box sx={{ p: 2, pl: '64px', bgcolor: 'action.hover' }}>
+    // width:100% — filling the cell makes the grey span the full sample-table width.
+    <Box sx={{ p: 2, pl: '64px', bgcolor: 'action.hover', width: '100%' }}>
       <Typography variant="overline" color="text.secondary">
         Acquisitions{filters ? ` (${filtered.length} of ${all.length})` : ''}
       </Typography>
