@@ -22,7 +22,7 @@ const TABS: { value: FormKind; label: string; blurb: string }[] = [
   },
 ]
 
-// tab is optional so a bare `to="/author"` link needs no search prop; the
+// tab is optional so a bare `to="/manage/author"` link needs no search prop; the
 // validator + component both default it to 'sample'.
 type AuthorSearch = { tab?: FormKind; id?: string; sampleId?: string }
 
@@ -30,7 +30,7 @@ function isTab(v: unknown): v is FormKind {
   return v === 'sample' || v === 'acquisition' || v === 'md_run'
 }
 
-export const Route = createFileRoute('/author')({
+export const Route = createFileRoute('/manage/author')({
   // One page, three tabs. Deep links carry `tab` (+ id / sampleId) so an edit
   // link from a sample / acquisition / warning row opens on the right tab and
   // auto-loads that record (ADR-0004).
@@ -55,6 +55,9 @@ function AuthorRoute() {
       <Breadcrumbs aria-label="breadcrumb">
         <CustomLink to="/" color="inherit" sx={{ fontWeight: 700 }}>
           Home
+        </CustomLink>
+        <CustomLink to="/manage" color="inherit">
+          Manage
         </CustomLink>
         <Typography color="text.primary">Author metadata</Typography>
       </Breadcrumbs>
@@ -88,6 +91,7 @@ function AuthorRoute() {
         initialId={id}
         initialSampleId={sampleId}
       />
+
     </Stack>
   )
 }

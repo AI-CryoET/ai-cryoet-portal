@@ -120,17 +120,17 @@ function SampleDetailRoute() {
         warning={
           warnings.length > 0
             ? {
-                // Opens the manage page with outstanding issues filtered to
+                // Opens the warnings page with outstanding issues filtered to
                 // this sample (read from the URL search params there).
-                href: `/manage?sample=${encodeURIComponent(sampleId)}`,
+                href: `/manage/warnings?sample=${encodeURIComponent(sampleId)}`,
                 text: "*There are warnings for this sample's metadata. Click to view",
               }
             : null
         }
         description={sample.description}
         editLink={
-          <CustomLink to="/author" search={{ tab: 'sample', id: sampleId }}>
-            Edit sample.toml
+          <CustomLink to="/manage/author" search={{ tab: 'sample', id: sampleId }}>
+            Create updated sample.toml
           </CustomLink>
         }
       />

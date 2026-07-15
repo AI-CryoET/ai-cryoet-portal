@@ -37,7 +37,7 @@ export function authorLinkFor(
   group: IssueGroup,
 ): { to: string; search: Record<string, string> } | null {
   if (group.file_kind === 'sample_toml' && group.sample_id) {
-    return { to: '/author', search: { tab: 'sample', id: group.sample_id } }
+    return { to: '/manage/author', search: { tab: 'sample', id: group.sample_id } }
   }
   if (
     group.file_kind === 'acquisition_toml' &&
@@ -45,7 +45,7 @@ export function authorLinkFor(
     group.acquisition_id
   ) {
     return {
-      to: '/author',
+      to: '/manage/author',
       search: {
         tab: 'acquisition',
         id: group.acquisition_id,
@@ -54,7 +54,7 @@ export function authorLinkFor(
     }
   }
   if (group.file_kind === 'md_run_toml' && group.md_run_id) {
-    return { to: '/author', search: { tab: 'md_run', id: group.md_run_id } }
+    return { to: '/manage/author', search: { tab: 'md_run', id: group.md_run_id } }
   }
   return null
 }
@@ -80,7 +80,7 @@ export function FileCell({ group }: { group: IssueGroup }) {
             variant="body2"
             sx={{ whiteSpace: 'nowrap' }}
           >
-            Edit file
+            Create updated file
           </CustomLink>
         ) : null}
       </Stack>

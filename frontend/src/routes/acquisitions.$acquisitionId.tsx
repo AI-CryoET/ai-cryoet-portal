@@ -221,9 +221,9 @@ function AcquisitionDetailRoute() {
         warning={
           acqWarnings.length > 0
             ? {
-                // Opens the manage page with outstanding issues filtered to
+                // Opens the warnings page with outstanding issues filtered to
                 // this acquisition (read from the URL search params there).
-                href: `/manage?sample=${encodeURIComponent(
+                href: `/manage/warnings?sample=${encodeURIComponent(
                   sampleId,
                 )}&acquisition=${encodeURIComponent(acquisitionId)}`,
                 text: "*There are warnings for this acquisition's metadata. Click to view",
@@ -234,12 +234,12 @@ function AcquisitionDetailRoute() {
         // right acquisition (acquisition_id alone isn't unique).
         editLink={
           <CustomLink
-            to="/author"
+            to="/manage/author"
             search={{ tab: 'acquisition', id: acquisitionId, sampleId }}
             variant="body2"
             fontWeight={700}
           >
-            Edit acquisition.toml
+            Create updated acquisition.toml
           </CustomLink>
         }
       />

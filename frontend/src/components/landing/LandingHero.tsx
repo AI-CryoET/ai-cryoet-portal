@@ -4,9 +4,9 @@ import { HeroBackdrop } from './HeroBackdrop'
 
 // The portal's front door: a dark banner that mirrors the app's existing
 // `primary.dark` styling (StatsBanner, Footer) and routes visitors to the two
-// data collections. The wireframe's "Browse all data" button and the
-// filter/search controls are intentionally omitted — the two data sets are
-// kept separate.
+// top-level tasks — browsing all data, or managing it (upload, author, review).
+// Per-collection browsing (experimental / MD simulation) lives in the header
+// nav rather than crowding the hero.
 export function LandingHero() {
   return (
     <Box
@@ -59,10 +59,10 @@ export function LandingHero() {
             '&:hover': { bgcolor: 'grey.200' },
           }}
         >
-          All Data
+          Explore Data
         </ButtonLink>
         <ButtonLink
-          to="/experimental"
+          to="/manage"
           variant="contained"
           size="large"
           sx={{
@@ -71,19 +71,7 @@ export function LandingHero() {
             '&:hover': { bgcolor: 'grey.200' },
           }}
         >
-          Experimental Data
-        </ButtonLink>
-        <ButtonLink
-          to="/md-simulation"
-          variant="contained"
-          size="large"
-          sx={{
-            bgcolor: 'common.white',
-            color: 'primary.dark',
-            '&:hover': { bgcolor: 'grey.200' },
-          }}
-        >
-          MD Simulations
+          Manage Data
         </ButtonLink>
       </Stack>
       </Box>

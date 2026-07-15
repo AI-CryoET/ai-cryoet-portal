@@ -1,61 +1,62 @@
 import { createFileRoute } from '@tanstack/react-router'
-import { Box, Breadcrumbs, Stack, Typography } from '@mui/material'
-import { CustomLink } from '~/components/CustomLink'
-import { StatusCadenceCard } from '~/components/manage/StatusCadenceCard'
-import { SectionHeader } from '~/components/manage/SectionHeader'
-import { OutstandingIssuesTable } from '~/components/manage/OutstandingIssuesTable'
-import { RecentlyResolvedTable } from '~/components/manage/RecentlyResolvedTable'
 import {
-  manageSummaryQueryOptions,
-  outstandingIssuesQueryOptions,
-  recentlyResolvedQueryOptions,
-  useManageSummaryQuery,
-  useRecentlyResolvedQuery,
-  type IssueFilters,
-} from '~/utils/queryOptions'
-
-// Optional entity filter carried in the URL (e.g. /manage?sample=s1 from a
-// detail page's "view metadata errors" link).
-type ManageSearch = { sample?: string; acquisition?: string }
+  Box,
+  Breadcrumbs,
+  Card,
+  CardContent,
+  Stack,
+  Typography,
+} from '@mui/material'
+import AccountTreeIcon from '@mui/icons-material/AccountTree'
+import EditNoteIcon from '@mui/icons-material/EditNote'
+import ReportProblemIcon from '@mui/icons-material/ReportProblem'
+import HistoryIcon from '@mui/icons-material/History'
+import { CustomLink } from '~/components/CustomLink'
+import type { LinkProps } from '@tanstack/react-router'
 
 export const Route = createFileRoute('/manage/')({
-  validateSearch: (search: Record<string, unknown>): ManageSearch => ({
-    sample: typeof search.sample === 'string' ? search.sample : undefined,
-    acquisition:
-      typeof search.acquisition === 'string' ? search.acquisition : undefined,
-  }),
-  loaderDeps: ({ search }) => search,
-  loader: ({ context: { queryClient }, deps }) =>
-    Promise.all([
-      queryClient.ensureQueryData(manageSummaryQueryOptions),
-      queryClient.ensureQueryData(
-        outstandingIssuesQueryOptions({ q: entityQuery(deps) }),
-      ),
-      queryClient.ensureQueryData(recentlyResolvedQueryOptions(24)),
-    ]),
-  component: ManageRoute,
+  component: ManageIndexRoute,
 })
 
-// Search text seeding the outstanding-issues box from a detail page's "view
-// warnings" link: both the sample and acquisition names (space-separated, so
-// the backend's all-terms-must-match search narrows to that one acquisition,
-// since acquisition ids aren't unique across samples).
-function entityQuery({
-  sample,
-  acquisition,
-}: ManageSearch): string | undefined {
-  return [sample, acquisition].filter(Boolean).join(' ') || undefined
-}
+// The four data-management destinations, as hub cards. `to` is typed against
+// the router so a broken link fails the build.
+const CARDS: {
+  to: LinkProps['to']
+  icon: React.ReactNode
+  title: string
+  blurb: string
+}[] = [
+  {
+    to: '/manage/data-organization',
+    icon: <AccountTreeIcon fontSize="large" color="primary" />,
+    title: 'Data organization',
+    blurb:
+      'How to upload and structure data on the file share, and review the current metadata schema.',
+  },
+  {
+    to: '/manage/author',
+    icon: <EditNoteIcon fontSize="large" color="primary" />,
+    title: 'Author metadata',
+    blurb:
+      'Use an online form to author sample.toml, acquisition.toml, and md_run.toml metadata files.',
+  },
+  {
+    to: '/manage/warnings',
+    icon: <ReportProblemIcon fontSize="large" color="primary" />,
+    title: 'Review warnings and errors',
+    blurb:
+      'Identify metadata files that need to be edited to match the metadata schema.',
+  },
+  {
+    to: '/manage/deletions',
+    icon: <HistoryIcon fontSize="large" color="primary" />,
+    title: 'View deletions and renames',
+    blurb:
+      'See all samples and acquisitions that have been deleted from the data portal.',
+  },
+]
 
-function ManageRoute() {
-  const { sample, acquisition } = Route.useSearch()
-  const { data: summary } = useManageSummaryQuery()
-  const { data: resolved } = useRecentlyResolvedQuery(24)
-
-  const outstandingCount =
-    summary.outstanding.errors + summary.outstanding.warnings
-  const initialFilters: IssueFilters = { q: entityQuery({ sample, acquisition }) }
-
+function ManageIndexRoute() {
   return (
     <Stack spacing={3}>
       <Breadcrumbs aria-label="breadcrumb">
@@ -67,35 +68,52 @@ function ManageRoute() {
 
       <Box>
         <Typography variant="h5" component="h1">
-          Manage
+          Manage data
         </Typography>
         <Typography variant="body2" color="text.secondary">
-          File system scan health, data freshness, and scan logs.
+          Everything for getting cryoET data into the catalog and keeping its
+          metadata healthy.
         </Typography>
       </Box>
 
-      <StatusCadenceCard summary={summary} />
-
-      <Box>
-        <CustomLink to="/manage/scans" variant="body2">
-          View scan history
-        </CustomLink>
-      </Box>
-
-      <Box>
-        <SectionHeader
-          count={outstandingCount}
-          title="Outstanding data warnings & errors"
-        />
-        <OutstandingIssuesTable initialFilters={initialFilters} />
-      </Box>
-
-      <Box>
-        <SectionHeader
-          count={resolved.length}
-          title="Recently resolved warnings & errors (last 24h)"
-        />
-        <RecentlyResolvedTable withinHours={24} />
+      <Box
+        sx={{
+          display: 'grid',
+          gap: 2,
+          gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, 1fr)' },
+        }}
+      >
+        {CARDS.map((card) => (
+          <CustomLink
+            key={card.to}
+            to={card.to}
+            underline="none"
+            sx={{ display: 'block', height: '100%' }}
+          >
+            <Card
+              variant="outlined"
+              sx={{
+                height: '100%',
+                transition: 'border-color 120ms, box-shadow 120ms',
+                '&:hover': { borderColor: 'primary.main', boxShadow: 2 },
+              }}
+            >
+              <CardContent>
+                <Stack direction="row" spacing={2} alignItems="flex-start">
+                  {card.icon}
+                  <Box>
+                    <Typography variant="h6" component="h2" color="text.primary">
+                      {card.title}
+                    </Typography>
+                    <Typography variant="body2" color="text.secondary">
+                      {card.blurb}
+                    </Typography>
+                  </Box>
+                </Stack>
+              </CardContent>
+            </Card>
+          </CustomLink>
+        ))}
       </Box>
     </Stack>
   )
