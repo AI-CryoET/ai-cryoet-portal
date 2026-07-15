@@ -103,9 +103,9 @@ describe('authorLinkFor', () => {
 })
 
 describe('FileCell edit link', () => {
-  it('renders an "Edit file" link beside the chip for a sample.toml row', () => {
+  it('renders a "Create updated file" link beside the chip for a sample.toml row', () => {
     render(<FileCell group={group({})} />)
-    const link = screen.getByText('Edit file').closest('a')
+    const link = screen.getByText('Create updated file').closest('a')
     expect(link).not.toBeNull()
     expect(link).toHaveAttribute('data-to', '/manage/author')
     expect(link).toHaveAttribute(
@@ -116,6 +116,6 @@ describe('FileCell edit link', () => {
 
   it('does not link a non-authorable file kind', () => {
     render(<FileCell group={group({ file_kind: 'mdoc', file_path: null })} />)
-    expect(screen.queryByText('Edit file')).toBeNull()
+    expect(screen.queryByText('Create updated file')).toBeNull()
   })
 })

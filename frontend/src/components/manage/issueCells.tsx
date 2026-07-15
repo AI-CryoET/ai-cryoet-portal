@@ -80,7 +80,7 @@ export function FileCell({ group }: { group: IssueGroup }) {
             variant="body2"
             sx={{ whiteSpace: 'nowrap' }}
           >
-            Edit file
+            Create updated file
           </CustomLink>
         ) : null}
       </Stack>

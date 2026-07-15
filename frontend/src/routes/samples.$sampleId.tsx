@@ -130,7 +130,7 @@ function SampleDetailRoute() {
         description={sample.description}
         editLink={
           <CustomLink to="/manage/author" search={{ tab: 'sample', id: sampleId }}>
-            Edit sample.toml
+            Create updated sample.toml
           </CustomLink>
         }
       />

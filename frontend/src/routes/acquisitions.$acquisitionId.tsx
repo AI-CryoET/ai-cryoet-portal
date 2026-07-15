@@ -239,7 +239,7 @@ function AcquisitionDetailRoute() {
             variant="body2"
             fontWeight={700}
           >
-            Edit acquisition.toml
+            Create updated acquisition.toml
           </CustomLink>
         }
       />
