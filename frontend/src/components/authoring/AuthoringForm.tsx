@@ -4,7 +4,6 @@ import {
   Autocomplete,
   Box,
   Button,
-  Divider,
   FormControl,
   FormControlLabel,
   FormLabel,
@@ -30,6 +29,11 @@ import {
   type FormSection,
 } from '~/utils/formFields'
 import { PROJECT_REQUIRES_DATA_SOURCE } from '~/utils/filterFields'
+import {
+  NotSavedToDiskWarning,
+  SectionDivider,
+  StaleValuesWarning,
+} from './authoringBanners'
 import {
   buildCompositePayload,
   buildSectionedPayload,
@@ -138,6 +142,9 @@ function SectionedAuthoringForm({ form, initialId, initialSampleId }: Props) {
   const [done, setDone] = React.useState(false)
   // Set on pull-from-API load: data may lag the on-disk file (ADR-0004).
   const [stale, setStale] = React.useState(false)
+  // True whenever an existing record is loaded (disk upload OR portal); drives
+  // the "not saved to disk" banner. Cleared to empty resets it.
+  const [loaded, setLoaded] = React.useState(false)
   const [seedError, setSeedError] = React.useState<string | undefined>()
 
   // In-form id namespaces feeding cross-ref dropdowns: each section's
@@ -169,6 +176,7 @@ function SectionedAuthoringForm({ form, initialId, initialSampleId }: Props) {
     setDone(false)
     setSeedError(undefined)
     setStale(fromApi)
+    setLoaded(Object.keys(seeded).length > 0)
   }
 
   // Auto-load once on mount when the route supplies an id (edit links).
@@ -311,6 +319,7 @@ function SectionedAuthoringForm({ form, initialId, initialSampleId }: Props) {
   return (
     <Box component="form" onSubmit={handleSubmit} noValidate>
       <Stack spacing={2}>
+        {loaded && <NotSavedToDiskWarning />}
         <UploadLoadToolbar
           filename={meta.filename}
           onUpload={handleUpload}
@@ -338,12 +347,7 @@ function SectionedAuthoringForm({ form, initialId, initialSampleId }: Props) {
         )}
 
         {seedError && <Alert severity="error">{seedError}</Alert>}
-        {stale && (
-          <Alert severity="warning">
-            Loaded from the portal — this may lag the on-disk file. Re-check
-            before saving over newer changes.
-          </Alert>
-        )}
+        {stale && <StaleValuesWarning />}
 
         {sections.map((s) => {
           if (s.requiresDataSource && s.requiresDataSource !== dataSource)
@@ -385,12 +389,10 @@ function SectionedAuthoringForm({ form, initialId, initialSampleId }: Props) {
           </Alert>
         )}
 
-        {/* A form with no titled sections (md_run) renders no section divider,
-            so close the fields off with one before the saving hint. */}
-        {!sections.some((s) => s.title) && (
-          <Divider sx={{ borderBottomWidth: 2, borderColor: 'primary.main' }} />
-        )}
-
+        {/* Close the fields off with a rule before the saving hint. Titled
+            sections lead with one each; md_run (untitled) gets its only one here. */}
+        <SectionDivider />
+        {loaded && <NotSavedToDiskWarning />}
         {idField && (
           <PlacementHint
             loaded={stale}
@@ -441,7 +443,7 @@ function ScalarSection({
     <Box>
       {section.title && (
         <>
-          <Divider sx={{ mb: 1.5, borderBottomWidth: 2, borderColor: 'primary.main' }} />
+          <SectionDivider />
           <Typography variant="h6" gutterBottom sx={{ fontWeight: 700 }}>
             {section.title}
             {locked && ' (read-only)'}
@@ -509,7 +511,7 @@ function RepeatableSection({
   const idFieldName = fields.find((f) => f.required)?.field
   return (
     <Box>
-      <Divider sx={{ mb: 1.5, borderBottomWidth: 2, borderColor: 'primary.main' }} />
+      <SectionDivider />
       <Typography variant="h6" gutterBottom sx={{ fontWeight: 700 }}>
         {section.title}
       </Typography>
@@ -952,6 +954,9 @@ function CompositeAuthoringForm({
   const [generalError, setGeneralError] = React.useState<string | undefined>()
   const [done, setDone] = React.useState(false)
   const [stale, setStale] = React.useState(false)
+  // True whenever an existing record is loaded (disk upload OR portal); drives
+  // the "not saved to disk" banner. Cleared to empty resets it.
+  const [loaded, setLoaded] = React.useState(false)
   const [conflict, setConflict] = React.useState(false)
   const [seedError, setSeedError] = React.useState<string | undefined>()
   const [loadId, setLoadId] = React.useState(autoLoadId ?? '')
@@ -972,6 +977,7 @@ function CompositeAuthoringForm({
     setGeneralError(undefined)
     setDone(false)
     setSeedError(undefined)
+    setLoaded(Object.keys(seeded).length > 0)
     if (fromApi) {
       // API-seeded: locked from the record + staleness warning (ADR-0004).
       setStale(true)
@@ -1132,6 +1138,7 @@ function CompositeAuthoringForm({
   return (
     <Box component="form" onSubmit={handleSubmit} noValidate>
       <Stack spacing={2}>
+        {loaded && <NotSavedToDiskWarning />}
         <UploadLoadToolbar
           filename={meta.filename}
           onUpload={handleUpload}
@@ -1157,12 +1164,7 @@ function CompositeAuthoringForm({
             source manually, then remove whichever blocks don't belong.
           </Alert>
         )}
-        {stale && (
-          <Alert severity="warning">
-            Loaded from the portal — this may lag the on-disk file. Re-check
-            before saving over newer changes.
-          </Alert>
-        )}
+        {stale && <StaleValuesWarning />}
         {generalError && <Alert severity="error">{generalError}</Alert>}
 
         {sections.map((s) => {
@@ -1170,7 +1172,7 @@ function CompositeAuthoringForm({
           const disabled = sectionDisabled(s)
           return (
             <Box key={s.section}>
-              <Divider sx={{ mb: 1.5, borderBottomWidth: 2, borderColor: 'primary.main' }} />
+              <SectionDivider />
               <Typography variant="h6" gutterBottom sx={{ fontWeight: 700 }}>
                 {s.title}
               </Typography>
@@ -1227,7 +1229,8 @@ function CompositeAuthoringForm({
             </Box>
           )
         })}
-        <Divider sx={{ mb: 1.5, borderBottomWidth: 2, borderColor: 'primary.main' }} />
+        <SectionDivider />
+        {loaded && <NotSavedToDiskWarning />}
 
         <PlacementHint
           loaded={stale}
