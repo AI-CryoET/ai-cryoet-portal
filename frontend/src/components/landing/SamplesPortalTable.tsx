@@ -132,6 +132,12 @@ export const SamplesPortalTable = memo(function SamplesPortalTable(props: {
     layoutMode: 'grid',
     enableColumnResizing: false,
     defaultColumn: { grow: 1 },
+    // Pin the leading expand column to its fixed size (defaultColumn grow:1
+    // would otherwise let it widen on wide screens). Its width is the anchor
+    // the acquisition sub-table's fixed 64px left inset lines up against — if
+    // it grows, the sub-table's thumbnail/id columns drift left of the parent's
+    // (see AcquisitionsSubTable + SampleAcquisitionsTable alignment notes).
+    displayColumnDefOptions: { 'mrt-row-expand': { grow: false } },
     // Clip overflowing cell text to an ellipsis so a long value can't force a
     // column wider than its fixed size. sample_id/type wrap their own content
     // (for the tooltip); this covers the plain-text columns (project, lab).
@@ -188,7 +194,11 @@ export const SamplesPortalTable = memo(function SamplesPortalTable(props: {
       elevation: 0,
       sx: { border: 1, borderColor: 'divider', borderRadius: 2 },
     },
-    muiDetailPanelProps: { sx: { p: 0 } },
+    // flexDirection:column — grid layoutMode makes this cell display:flex; the
+    // panel's <Collapse> wrapper is the flex child and would shrink to its
+    // content width (leaving the grey bg short of the table's right edge).
+    // Column direction stretches it (cross-axis) to the full cell width.
+    muiDetailPanelProps: { sx: { p: 0, flexDirection: 'column' } },
   })
 
   return <MaterialReactTable table={table} />
