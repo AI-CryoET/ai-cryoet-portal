@@ -97,6 +97,28 @@ export function FieldsTable({ fields }: { fields: SchemaField[] }) {
   )
 }
 
+// Aggregated view: one section per entity (subheading + its fields table),
+// used when "Include sub-entities" is on so the whole Sample/Acquisition field
+// list reads top-to-bottom like the TOML structure.
+export function GroupedFields({
+  groups,
+}: {
+  groups: { entity: SchemaEntity; fields: SchemaField[] }[]
+}) {
+  return (
+    <Stack spacing={2}>
+      {groups.map(({ entity, fields }) => (
+        <Box key={entity.id}>
+          <Typography variant="subtitle1" component="h4" sx={{ fontWeight: 600, mb: 0.5 }}>
+            {entity.name}
+          </Typography>
+          <FieldsTable fields={fields} />
+        </Box>
+      ))}
+    </Stack>
+  )
+}
+
 // Chips describing an entity's gating + cardinality — shared by both variants.
 export function EntityMeta({ entity }: { entity: SchemaEntity }) {
   return (
