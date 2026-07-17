@@ -27,6 +27,15 @@ FROM base AS build
 # the client bundle at build time, so the footer can show it.
 ARG APP_VERSION
 ENV VITE_APP_VERSION=$APP_VERSION
+
+# Fileglancer API base URL. Vite inlines VITE_* at build time. Default is the
+# prod host; override only for an allowlisted dev origin. The ARG carries the
+# prod default (not left empty) on purpose: the client reads
+# `import.meta.env.VITE_FILEGLANCER_URL ?? '<prod>'`, and `??` only falls back on
+# null/undefined — a baked empty string would slip through as "" and break the
+# client. A defaulted ARG guarantees a non-empty baked value.
+ARG FILEGLANCER_URL=https://fileglancer.int.janelia.org
+ENV VITE_FILEGLANCER_URL=$FILEGLANCER_URL
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 RUN npm run build
