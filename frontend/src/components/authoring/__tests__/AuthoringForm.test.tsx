@@ -6,12 +6,87 @@
  */
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { AuthoringForm } from '../AuthoringForm'
+import { ForbiddenError } from '~/lib/fileglancerClient'
+
+// Mock the vendored Fileglancer client: connect()/writeFile()/connectSilently()
+// are shared vi.fns (accessed via `fg`), and the error classes are real-enough
+// for describeSaveError's instanceof mapping.
+const fg = vi.hoisted(() => ({
+  connect: vi.fn(),
+  writeFile: vi.fn(),
+  connectSilently: vi.fn(),
+}))
+vi.mock('~/lib/fileglancerClient', () => {
+  class FileglancerError extends Error {
+    status: number
+    constructor(message: string, status: number) {
+      super(message)
+      this.status = status
+    }
+  }
+  class AuthRequiredError extends FileglancerError {
+    constructor(message = 'Authentication required') {
+      super(message, 401)
+      this.name = 'AuthRequiredError'
+    }
+  }
+  class ForbiddenError extends FileglancerError {
+    constructor(message = 'Forbidden') {
+      super(message, 403)
+      this.name = 'ForbiddenError'
+    }
+  }
+  class FileglancerClient {
+    connect = fg.connect
+    writeFile = fg.writeFile
+    connectSilently = fg.connectSilently
+  }
+  return {
+    default: FileglancerClient,
+    FileglancerClient,
+    FileglancerError,
+    AuthRequiredError,
+    ForbiddenError,
+  }
+})
+
+beforeEach(() => {
+  fg.connect.mockReset().mockResolvedValue({ authenticated: true })
+  fg.writeFile.mockReset().mockResolvedValue({ bytes_written: 10 })
+  fg.connectSilently.mockReset().mockResolvedValue(false)
+})
 
 afterEach(() => {
   vi.restoreAllMocks()
 })
+
+// Route the shared fetch mock by URL: portal load (GET .../load/...), upload
+// parse (POST .../parse), and the validate POST (POST /api/toml/{form}).
+function routeFetch(opts: {
+  load?: { fields: Record<string, unknown>; path: string | null }
+  parse?: { fields: Record<string, unknown> }
+  post?: () => Response
+}) {
+  vi.spyOn(globalThis, 'fetch').mockImplementation(((
+    input: RequestInfo | URL,
+  ) => {
+    const url = String(input)
+    if (url.includes('/parse')) {
+      return Promise.resolve(jsonResponse(opts.parse ?? { fields: {} }))
+    }
+    if (url.includes('/load/')) {
+      return Promise.resolve(jsonResponse(opts.load ?? { fields: {}, path: null }))
+    }
+    const post = opts.post?.() ??
+      new Response('seed = 42\n', {
+        status: 200,
+        headers: { 'Content-Type': 'application/toml' },
+      })
+    return Promise.resolve(post)
+  }) as typeof fetch)
+}
 
 describe('AuthoringForm (md_run)', () => {
   it('renders the authored md_run fields from the registry', () => {
@@ -225,6 +300,92 @@ describe('AuthoringForm (acquisition)', () => {
     // md_source present in the file → simulation inferred → field shown.
     expect(screen.getByLabelText(/MD run id/)).toBeInTheDocument()
     expect(screen.getByText(/may lag the on-disk file/)).toBeInTheDocument()
+  })
+})
+
+describe('AuthoringForm (sectioned) save to file share', () => {
+  const inMount = { fields: { seed: 42 }, path: '/groups/cryoet/cryoet/MdRuns/run01' }
+
+  async function loadRun() {
+    render(<AuthoringForm form="md_run" initialId="run01" />)
+    return waitFor(() =>
+      expect(
+        screen.getByRole('button', { name: /Save to file share/ }),
+      ).toBeInTheDocument(),
+    )
+  }
+
+  it('shows Save for a portal-loaded record and a dialog with the destination', async () => {
+    routeFetch({ load: inMount })
+    await loadRun()
+    await userEvent.click(screen.getByRole('button', { name: /Save to file share/ }))
+    expect(
+      await screen.findByText('/groups/cryoet/cryoet/MdRuns/run01/md_run.toml'),
+    ).toBeInTheDocument()
+  })
+
+  it('confirm connects BEFORE writeFile with the derived target + blob', async () => {
+    routeFetch({ load: inMount })
+    await loadRun()
+    await userEvent.click(screen.getByRole('button', { name: /Save to file share/ }))
+    await screen.findByRole('dialog')
+    await userEvent.click(screen.getByRole('button', { name: /^Save$/ }))
+    await waitFor(() => expect(fg.writeFile).toHaveBeenCalled())
+    const [fsp, subpath, blob] = fg.writeFile.mock.calls[0]
+    expect(fsp).toBe('groups_cryoet_cryoet')
+    expect(subpath).toBe('MdRuns/run01/md_run.toml')
+    // Backend-authoritative bytes: Save writes exactly what the endpoint returned.
+    expect(await (blob as Blob).text()).toBe('seed = 42\n')
+    expect(fg.connect.mock.invocationCallOrder[0]).toBeLessThan(
+      fg.writeFile.mock.invocationCallOrder[0],
+    )
+  })
+
+  it('keeps the inline 422 error and does NOT open the dialog on Save', async () => {
+    routeFetch({
+      load: inMount,
+      post: () =>
+        jsonResponse(
+          { errors: [{ loc: ['seed'], msg: 'must be an integer', type: 'int_parsing' }] },
+          422,
+        ),
+    })
+    await loadRun()
+    await userEvent.click(screen.getByRole('button', { name: /Save to file share/ }))
+    await waitFor(() =>
+      expect(screen.getByText('must be an integer')).toBeInTheDocument(),
+    )
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(fg.writeFile).not.toHaveBeenCalled()
+  })
+
+  it('maps a ForbiddenError from the write into the error alert', async () => {
+    routeFetch({ load: inMount })
+    fg.writeFile.mockRejectedValueOnce(new ForbiddenError())
+    await loadRun()
+    await userEvent.click(screen.getByRole('button', { name: /Save to file share/ }))
+    await screen.findByRole('dialog')
+    await userEvent.click(screen.getByRole('button', { name: /^Save$/ }))
+    expect(
+      await screen.findByText(/Not authorized: this app's origin/),
+    ).toBeInTheDocument()
+  })
+
+  it('hides Save for an upload-seeded form (no known path); Download remains', async () => {
+    routeFetch({ parse: { fields: { seed: 1, custom_note: 'keep me' } } })
+    render(<AuthoringForm form="md_run" />)
+    const input = document.querySelector('input[type="file"]') as HTMLInputElement
+    await userEvent.upload(
+      input,
+      new File(['seed = 1\ncustom_note = "keep me"\n'], 'md_run.toml'),
+    )
+    await waitFor(() =>
+      expect(screen.getByDisplayValue('custom_note')).toBeInTheDocument(),
+    )
+    expect(
+      screen.queryByRole('button', { name: /Save to file share/ }),
+    ).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Download/ })).toBeInTheDocument()
   })
 })
 

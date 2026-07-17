@@ -34,6 +34,7 @@ import {
   SectionDivider,
   StaleValuesWarning,
 } from './authoringBanners'
+import { SaveToShareButton } from './SaveToShareButton'
 import {
   buildCompositePayload,
   buildSectionedPayload,
@@ -55,7 +56,10 @@ import {
   type SectionEntry,
   type SectionsState,
   type SectionState,
+  type SubmitResult,
+  type TomlFieldError,
 } from '~/utils/authoring'
+import { getFileglancerClient, toFileglancerTarget } from '~/utils/fileglancer'
 
 type Props = {
   form: FormKind
@@ -75,6 +79,15 @@ function isProjectGated(form: FormKind): boolean {
 // Dispatch to the renderer matching the form's shape. Both consume the same
 // authored-field registry (ADR-0002); they differ only in section semantics.
 export function AuthoringForm({ form, initialId, initialSampleId }: Props) {
+  // Pre-warm the Fileglancer session on mount (hidden iframe, no popup) so a
+  // logged-in user's "Save to file share" is popup-free. Runs once for whichever
+  // renderer is dispatched below; failures are ignored (Save's connect() retries
+  // from a user gesture).
+  React.useEffect(() => {
+    getFileglancerClient()
+      .connectSilently()
+      .catch(() => {})
+  }, [])
   return isProjectGated(form) ? (
     <CompositeAuthoringForm form={form} autoLoadId={initialId} />
   ) : (
@@ -146,6 +159,10 @@ function SectionedAuthoringForm({ form, initialId, initialSampleId }: Props) {
   // the "not saved to disk" banner. Cleared to empty resets it.
   const [loaded, setLoaded] = React.useState(false)
   const [seedError, setSeedError] = React.useState<string | undefined>()
+  // On-disk directory of a portal-loaded record (ADR-0004 `path`); drives the
+  // "Save to file share" destination. Null for upload/parse/clear (no known
+  // location) — Save is hidden then.
+  const [recordPath, setRecordPath] = React.useState<string | null>(null)
 
   // In-form id namespaces feeding cross-ref dropdowns: each section's
   // required-id field contributes to its namespace ("tomogram" pools raw +
@@ -167,8 +184,14 @@ function SectionedAuthoringForm({ form, initialId, initialSampleId }: Props) {
     return ns
   }, [sections, sectionFields, state])
 
-  // Replace form state from a seeded source (upload / API load).
-  const seed = (seeded: Record<string, unknown>, fromApi: boolean) => {
+  // Replace form state from a seeded source (upload / API load). A portal load
+  // (fromApi) carries the record's on-disk directory so Save can target it;
+  // upload/parse/clear have no known location.
+  const seed = (
+    seeded: Record<string, unknown>,
+    fromApi: boolean,
+    path: string | null = null,
+  ) => {
     setState(hydrateSections(sections, sectionFields, seeded))
     setDataSource(inferSectionedDataSource(sections, seeded))
     setErrors({})
@@ -177,13 +200,14 @@ function SectionedAuthoringForm({ form, initialId, initialSampleId }: Props) {
     setSeedError(undefined)
     setStale(fromApi)
     setLoaded(Object.keys(seeded).length > 0)
+    setRecordPath(fromApi ? path : null)
   }
 
   // Auto-load once on mount when the route supplies an id (edit links).
   React.useEffect(() => {
     if (!initialId) return
     loadToml(form, initialId, initialSampleId)
-      .then((result) => seed(result.fields, true))
+      .then((result) => seed(result.fields, true, result.path))
       .catch((err) =>
         setSeedError(err instanceof Error ? err.message : String(err)),
       )
@@ -215,7 +239,7 @@ function SectionedAuthoringForm({ form, initialId, initialSampleId }: Props) {
     if (!id) return
     try {
       const result = await loadToml(form, id, sampleId.trim() || undefined)
-      seed(result.fields, true)
+      seed(result.fields, true, result.path)
     } catch (err) {
       setSeedError(toErrorMessage(err))
     }
@@ -278,9 +302,10 @@ function SectionedAuthoringForm({ form, initialId, initialSampleId }: Props) {
       ]?.trim()) ||
     ''
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault()
-    setDone(false)
+  // Build + validate via the backend (backend-authoritative, ADR-0001). Shared
+  // by Download (handleSubmit) and Save (SaveToShareButton) so both post the
+  // same payload and receive identical bytes.
+  async function validate(): Promise<SubmitResult> {
     const payload = buildSectionedPayload(
       sections,
       sectionFields,
@@ -293,19 +318,34 @@ function SectionedAuthoringForm({ form, initialId, initialSampleId }: Props) {
     if (idField && idSection?.root && payload[idField.field] === undefined) {
       payload[idField.field] = 'placeholder'
     }
-    const result = await postToml(form, payload, meta.filename)
-    if (result.status === 'invalid') {
-      setErrors(errorsByField(result.errors))
-      setRecordErrors(
-        result.errors.filter((er) => er.loc.length === 0).map((er) => er.msg),
-      )
-      return
-    }
+    return postToml(form, payload, meta.filename)
+  }
+
+  // Surface a 422 exactly as before: inline field errors + a record-level list.
+  const applyInvalid = (errs: TomlFieldError[]) => {
+    setErrors(errorsByField(errs))
+    setRecordErrors(errs.filter((er) => er.loc.length === 0).map((er) => er.msg))
+  }
+  const clearErrors = () => {
     setErrors({})
     setRecordErrors([])
+  }
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    setDone(false)
+    const result = await validate()
+    if (result.status === 'invalid') {
+      applyInvalid(result.errors)
+      return
+    }
+    clearErrors()
     triggerDownload(result.blob, result.filename)
     setDone(true)
   }
+
+  const dirPath = recordPath
+  const canSaveToShare = !!dirPath && toFileglancerTarget(dirPath) !== null
 
   // Loaded from the portal → concrete path with the known id; new file →
   // template showing the id the user must assign as the folder name.
@@ -402,11 +442,23 @@ function SectionedAuthoringForm({ form, initialId, initialSampleId }: Props) {
           />
         )}
 
-        <Box>
-          <Button type="submit" variant="contained">
+        <Stack direction="row" spacing={2} alignItems="center" flexWrap="wrap">
+          {canSaveToShare && dirPath && (
+            <SaveToShareButton
+              dirPath={dirPath}
+              filename={meta.filename}
+              validate={validate}
+              onInvalid={(errs) => {
+                setDone(false)
+                applyInvalid(errs)
+              }}
+              onValid={clearErrors}
+            />
+          )}
+          <Button type="submit" variant={canSaveToShare ? 'outlined' : 'contained'}>
             Download {meta.filename}
           </Button>
-        </Box>
+        </Stack>
 
         {done && <Alert severity="success">Downloaded {meta.filename}.</Alert>}
       </Stack>
@@ -961,6 +1013,9 @@ function CompositeAuthoringForm({
   const [conflict, setConflict] = React.useState(false)
   const [seedError, setSeedError] = React.useState<string | undefined>()
   const [loadId, setLoadId] = React.useState(autoLoadId ?? '')
+  // On-disk directory of a portal-loaded record (ADR-0004 `path`); drives the
+  // "Save to file share" destination. Null for upload/clear (Save hidden then).
+  const [recordPath, setRecordPath] = React.useState<string | null>(null)
 
   const sampleEntry = state['sample'] as SectionEntry
   const project = sampleEntry.values['project'] ?? ''
@@ -969,8 +1024,13 @@ function CompositeAuthoringForm({
   const armDisabled = Boolean(requiredArm) || armLocked
   const idValue = (sampleEntry.values['sample_id'] ?? '').trim()
 
-  // Replace form state from a seeded source (upload / API load).
-  const seed = (seeded: Record<string, unknown>, fromApi: boolean) => {
+  // Replace form state from a seeded source (upload / API load). A portal load
+  // (fromApi) carries the record's on-disk directory so Save can target it.
+  const seed = (
+    seeded: Record<string, unknown>,
+    fromApi: boolean,
+    path: string | null = null,
+  ) => {
     const h = hydrateComposite(form, seeded)
     setState(h.state)
     setPassthrough(h.passthrough)
@@ -979,6 +1039,7 @@ function CompositeAuthoringForm({
     setDone(false)
     setSeedError(undefined)
     setLoaded(Object.keys(seeded).length > 0)
+    setRecordPath(fromApi ? path : null)
     if (fromApi) {
       // API-seeded: locked from the record + staleness warning (ADR-0004).
       setStale(true)
@@ -1019,7 +1080,7 @@ function CompositeAuthoringForm({
     if (!trimmed) return
     try {
       const result = await loadToml(form, trimmed)
-      seed(result.fields, true)
+      seed(result.fields, true, result.path)
     } catch (err) {
       setSeedError(toErrorMessage(err))
     }
@@ -1080,28 +1141,52 @@ function CompositeAuthoringForm({
       [section]: (prev[section] as SectionEntry[]).filter((_, i) => i !== idx),
     }))
 
+  // Build + validate, shared by Download (handleSubmit) and Save
+  // (SaveToShareButton) so both post the same payload. The thin client-side id
+  // gate (full IdStr rules run on the backend) is modelled as a synthetic 422 so
+  // it flows through the same invalid-handling path.
+  async function validate(): Promise<SubmitResult> {
+    if (idValue && !ID_PATTERN.test(idValue)) {
+      return {
+        status: 'invalid',
+        errors: [
+          {
+            loc: ['sample', 'sample_id'],
+            msg: 'Invalid id: letters, digits, . _ - only',
+            type: 'value_error',
+          },
+        ],
+      }
+    }
+    const payload = buildCompositePayload(form, state, passthrough)
+    return postToml(form, payload, meta.filename)
+  }
+
+  const applyInvalid = (errs: TomlFieldError[]) => {
+    const byPath = errorsByPath(errs)
+    setErrors(byPath)
+    setGeneralError(byPath[''])
+  }
+  const clearErrors = () => {
+    setErrors({})
+    setGeneralError(undefined)
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     setDone(false)
-    // Thin id check (full IdStr rules run on the backend); id is optional here.
-    if (idValue && !ID_PATTERN.test(idValue)) {
-      setErrors({ 'sample.sample_id': 'Invalid id: letters, digits, . _ - only' })
-      setGeneralError(undefined)
-      return
-    }
-    const payload = buildCompositePayload(form, state, passthrough)
-    const result = await postToml(form, payload, meta.filename)
+    const result = await validate()
     if (result.status === 'invalid') {
-      const byPath = errorsByPath(result.errors)
-      setErrors(byPath)
-      setGeneralError(byPath[''])
+      applyInvalid(result.errors)
       return
     }
-    setErrors({})
-    setGeneralError(undefined)
+    clearErrors()
     triggerDownload(result.blob, result.filename)
     setDone(true)
   }
+
+  const dirPath = recordPath
+  const canSaveToShare = !!dirPath && toFileglancerTarget(dirPath) !== null
 
   const fieldKey = (section: string, fieldName: string, idx?: number) =>
     idx === undefined ? `${section}.${fieldName}` : `${section}.${idx}.${fieldName}`
@@ -1244,11 +1329,23 @@ function CompositeAuthoringForm({
           }
         />
 
-        <Box>
-          <Button type="submit" variant="contained">
+        <Stack direction="row" spacing={2} alignItems="center" flexWrap="wrap">
+          {canSaveToShare && dirPath && (
+            <SaveToShareButton
+              dirPath={dirPath}
+              filename={meta.filename}
+              validate={validate}
+              onInvalid={(errs) => {
+                setDone(false)
+                applyInvalid(errs)
+              }}
+              onValid={clearErrors}
+            />
+          )}
+          <Button type="submit" variant={canSaveToShare ? 'outlined' : 'contained'}>
             Download {meta.filename}
           </Button>
-        </Box>
+        </Stack>
 
         {done && <Alert severity="success">Downloaded {meta.filename}.</Alert>}
       </Stack>
