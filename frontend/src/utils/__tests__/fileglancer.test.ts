@@ -42,6 +42,16 @@ describe('toFileglancerUrl', () => {
     )
   })
 
+  it('preserves a trailing slash on the mount path (byte-identical to old impl)', () => {
+    expect(toFileglancerUrl('/groups/cryoet/cryoet/')).toBe(
+      'https://fileglancer.int.janelia.org/browse/groups_cryoet_cryoet/',
+    )
+    // distinct from the mount-root (no trailing slash) case above
+    expect(toFileglancerUrl('/groups/cryoet/cryoet/')).not.toBe(
+      toFileglancerUrl('/groups/cryoet/cryoet'),
+    )
+  })
+
   it('returns null for a path outside the mount', () => {
     expect(toFileglancerUrl('/groups/other/x')).toBeNull()
   })
