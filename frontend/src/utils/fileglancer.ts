@@ -4,10 +4,17 @@ import FileglancerClient from '~/lib/fileglancerClient'
 // is exposed as the share `groups_cryoet_cryoet`, followed by the path relative
 // to that mount. e.g. `/groups/cryoet/cryoet/data/x` ->
 // `.../browse/groups_cryoet_cryoet/data/x`.
-const FILEGLANCER_DOMAIN = 'https://fileglancer.int.janelia.org'
+//
+// The domain/mount/share default to the prod values but can be overridden via
+// VITE_* env vars (e.g. .env.local) for local testing against a different
+// Fileglancer instance and data location. Unset -> prod defaults (no-op).
+const FILEGLANCER_DOMAIN =
+  import.meta.env.VITE_FILEGLANCER_URL ?? 'https://fileglancer.int.janelia.org'
 const FILEGLANCER_BASE = `${FILEGLANCER_DOMAIN}/browse`
-const FILEGLANCER_MOUNT = '/groups/cryoet/cryoet'
-const FILEGLANCER_SHARE = 'groups_cryoet_cryoet'
+const FILEGLANCER_MOUNT =
+  import.meta.env.VITE_FILEGLANCER_MOUNT ?? '/groups/cryoet/cryoet'
+const FILEGLANCER_SHARE =
+  import.meta.env.VITE_FILEGLANCER_SHARE ?? 'groups_cryoet_cryoet'
 
 // Maps an absolute on-disk path under the data mount to its Fileglancer API
 // target (file share name + subpath relative to the mount, no leading slash).
@@ -45,7 +52,7 @@ let client: FileglancerClient | undefined
 export function getFileglancerClient(): FileglancerClient {
   if (!client) {
     client = new FileglancerClient({
-      baseUrl: import.meta.env.VITE_FILEGLANCER_URL ?? FILEGLANCER_DOMAIN,
+      baseUrl: FILEGLANCER_DOMAIN,
     })
   }
   return client
