@@ -21,6 +21,7 @@ import type { SubmitResult, TomlFieldError } from '~/utils/authoring'
 export function SaveToShareButton({
   dirPath,
   filename,
+  baseline,
   validate,
   onInvalid,
   onValid,
@@ -29,6 +30,10 @@ export function SaveToShareButton({
   // the caller). The file is written as `{dirPath}/{filename}`.
   dirPath: string
   filename: string
+  // Raw text of the file as loaded (optimistic-concurrency baseline). Non-null
+  // ⇒ Save refuses to clobber a file that changed since load (byte-compare).
+  // Null (catalog fallback / upload) ⇒ no byte-compare, but If-Match still runs.
+  baseline?: string | null
   // Runs the renderer's build + postToml (identical bytes to Download).
   validate: () => Promise<SubmitResult>
   // Invalid (422 or a client-side gate) → the renderer sets its error state.
@@ -66,7 +71,7 @@ export function SaveToShareButton({
     setSaving(true)
     try {
       await connectPromise
-      if (blob) await saveTomlToShare({ dirPath, filename, blob })
+      if (blob) await saveTomlToShare({ dirPath, filename, blob, baseline })
       setResult({ ok: true })
     } catch (err) {
       setResult({ ok: false, message: describeSaveError(err) })

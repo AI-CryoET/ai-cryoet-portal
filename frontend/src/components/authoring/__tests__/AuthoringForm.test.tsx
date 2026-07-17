@@ -15,6 +15,7 @@ import { ForbiddenError } from '~/lib/fileglancerClient'
 // for describeSaveError's instanceof mapping.
 const fg = vi.hoisted(() => ({
   connect: vi.fn(),
+  readFile: vi.fn(),
   writeFile: vi.fn(),
   connectSilently: vi.fn(),
 }))
@@ -38,8 +39,15 @@ vi.mock('~/lib/fileglancerClient', () => {
       this.name = 'ForbiddenError'
     }
   }
+  class ConflictError extends FileglancerError {
+    constructor(message = 'Precondition failed') {
+      super(message, 412)
+      this.name = 'ConflictError'
+    }
+  }
   class FileglancerClient {
     connect = fg.connect
+    readFile = fg.readFile
     writeFile = fg.writeFile
     connectSilently = fg.connectSilently
   }
@@ -49,11 +57,16 @@ vi.mock('~/lib/fileglancerClient', () => {
     FileglancerError,
     AuthRequiredError,
     ForbiddenError,
+    ConflictError,
   }
 })
 
 beforeEach(() => {
   fg.connect.mockReset().mockResolvedValue({ authenticated: true })
+  // Readback for the save-path optimistic-concurrency check (etag → If-Match).
+  fg.readFile
+    .mockReset()
+    .mockResolvedValue(new Response('', { headers: { etag: 'W/"seed"' } }))
   fg.writeFile.mockReset().mockResolvedValue({ bytes_written: 10 })
   fg.connectSilently.mockReset().mockResolvedValue(false)
 })
@@ -65,7 +78,12 @@ afterEach(() => {
 // Route the shared fetch mock by URL: portal load (GET .../load/...), upload
 // parse (POST .../parse), and the validate POST (POST /api/toml/{form}).
 function routeFetch(opts: {
-  load?: { fields: Record<string, unknown>; path: string | null }
+  load?: {
+    fields: Record<string, unknown>
+    path: string | null
+    source?: 'disk' | 'catalog'
+    baseline?: string | null
+  }
   parse?: { fields: Record<string, unknown> }
   post?: () => Response
 }) {
@@ -369,6 +387,67 @@ describe('AuthoringForm (sectioned) save to file share', () => {
     expect(
       await screen.findByText(/Not authorized: this app's origin/),
     ).toBeInTheDocument()
+  })
+
+  it('hides the staleness warning when the seed came from a live disk read', async () => {
+    // source='disk' → the form seeded from the fresh on-disk file, so the
+    // "may lag" DB warning must NOT show (but Save is still offered).
+    routeFetch({
+      load: { ...inMount, source: 'disk', baseline: 'seed = 42\n' },
+    })
+    await loadRun()
+    expect(screen.queryByText(/may lag the on-disk file/)).not.toBeInTheDocument()
+    expect(
+      screen.getByRole('button', { name: /Save to file share/ }),
+    ).toBeInTheDocument()
+  })
+
+  it('shows the staleness warning when the seed fell back to the catalog', async () => {
+    routeFetch({ load: { ...inMount, source: 'catalog', baseline: null } })
+    await loadRun()
+    expect(screen.getByText(/may lag the on-disk file/)).toBeInTheDocument()
+  })
+
+  it('connects, then reads back, then writes with the baseline etag', async () => {
+    routeFetch({
+      load: { ...inMount, source: 'disk', baseline: 'seed = 42\n' },
+    })
+    fg.readFile.mockResolvedValueOnce(
+      new Response('seed = 42\n', { headers: { etag: 'W/"live"' } }),
+    )
+    await loadRun()
+    await userEvent.click(screen.getByRole('button', { name: /Save to file share/ }))
+    await screen.findByRole('dialog')
+    await userEvent.click(screen.getByRole('button', { name: /^Save$/ }))
+    await waitFor(() => expect(fg.writeFile).toHaveBeenCalled())
+    // Ordering: connect (user gesture) → readback → guarded write.
+    expect(fg.connect.mock.invocationCallOrder[0]).toBeLessThan(
+      fg.readFile.mock.invocationCallOrder[0],
+    )
+    expect(fg.readFile.mock.invocationCallOrder[0]).toBeLessThan(
+      fg.writeFile.mock.invocationCallOrder[0],
+    )
+    // The readback etag is forwarded as If-Match on the write.
+    const [, , , options] = fg.writeFile.mock.calls[0]
+    expect(options).toEqual({ ifMatch: 'W/"live"' })
+  })
+
+  it('aborts the write and warns when the file changed since load', async () => {
+    routeFetch({
+      load: { ...inMount, source: 'disk', baseline: 'seed = 42\n' },
+    })
+    // Readback differs from the baseline → byte-compare fails, no write.
+    fg.readFile.mockResolvedValueOnce(
+      new Response('seed = 999\n', { headers: { etag: 'W/"live"' } }),
+    )
+    await loadRun()
+    await userEvent.click(screen.getByRole('button', { name: /Save to file share/ }))
+    await screen.findByRole('dialog')
+    await userEvent.click(screen.getByRole('button', { name: /^Save$/ }))
+    expect(
+      await screen.findByText(/changed since you loaded it/),
+    ).toBeInTheDocument()
+    expect(fg.writeFile).not.toHaveBeenCalled()
   })
 
   it('hides Save for an upload-seeded form (no known path); Download remains', async () => {

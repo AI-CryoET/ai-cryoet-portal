@@ -241,6 +241,66 @@ def test_load_unknown_id_returns_404(seeded_client):
     assert seeded_client.get("/toml/md_run/load/nope").status_code == 404
 
 
+# ── Fresh on-disk read at load + OCC baseline (source disk vs catalog) ───────
+
+
+def test_load_md_run_reads_live_disk_file(seeded_client, tmp_path):
+    # md_run has no path column: its directory is the owning sample's path +
+    # MdRuns/{id}. With a readable md_run.toml under the data root, load returns
+    # the FILE's parsed fields + exact text as baseline, flagged source='disk'.
+    from sqlalchemy.orm import sessionmaker
+
+    seeded_client.app.state.data_root_resolved = tmp_path.resolve()
+    sample_dir = tmp_path / "Sim" / "SS1"
+    run_dir = sample_dir / "MdRuns" / "runX"
+    run_dir.mkdir(parents=True)
+    text = "seed = 7\ntimestep = 1.5\n"
+    (run_dir / "md_run.toml").write_text(text)
+
+    Session = sessionmaker(
+        bind=seeded_client.app.state.engine, future=True, expire_on_commit=False
+    )
+    s = Session()
+    try:
+        s.add(
+            orm.SampleORM(
+                sample_id="SS1",
+                data_source=DataSource.simulation,
+                project=Project.chromatin,
+                path=str(sample_dir),
+            )
+        )
+        s.add(orm.MdRunORM(sample_id="SS1", md_run_id="runX", seed=99, timestep=9.9))
+        s.commit()
+    finally:
+        s.close()
+
+    body = seeded_client.get("/toml/md_run/load/runX").json()
+    assert body["source"] == "disk"
+    assert body["baseline"] == text
+    # Fields come from the FILE (id-less, seed=7), not the DB row (seed=99).
+    assert body["fields"] == {"seed": 7, "timestep": 1.5}
+    assert body["path"] == f"{sample_dir}/MdRuns/runX"
+
+
+def test_load_md_run_falls_back_to_catalog_without_data_root(seeded_client):
+    # No data_root_resolved configured → the guarded disk read raises and load
+    # falls back to the DB reconstruction, flagged source='catalog', no baseline.
+    body = seeded_client.get("/toml/md_run/load/run01").json()
+    assert body["source"] == "catalog"
+    assert body["baseline"] is None
+    assert body["fields"] == {"md_run_id": "run01", "seed": 42, "timestep": 2.0}
+
+
+def test_load_falls_back_to_catalog_when_file_missing_under_root(seeded_client, tmp_path):
+    # Data root configured, but the record's derived directory is outside it
+    # (samp1.path=/data/samp1) so no file is readable → catalog fallback.
+    seeded_client.app.state.data_root_resolved = tmp_path.resolve()
+    body = seeded_client.get("/toml/md_run/load/run01").json()
+    assert body["source"] == "catalog"
+    assert body["baseline"] is None
+
+
 def test_load_unsupported_kind_returns_404(seeded_client):
     # md_run, acquisition, sample are supported; an unknown kind 404s.
     assert seeded_client.get("/toml/not_a_kind/load/x").status_code == 404
@@ -366,6 +426,44 @@ def test_acquisition_load_path_is_null_when_unset(seeded_client):
     resp = seeded_client.get("/toml/acquisition/load/Position_2?sample_id=samp1")
     assert resp.status_code == 200
     assert resp.json()["path"] is None
+
+
+def test_load_acquisition_reads_live_disk_file(seeded_client, tmp_path):
+    # A readable acquisition.toml under the data root wins over the DB row: load
+    # returns the file's parsed fields + exact text as baseline, source='disk'.
+    from sqlalchemy.orm import sessionmaker
+
+    seeded_client.app.state.data_root_resolved = tmp_path.resolve()
+    acq_dir = tmp_path / "Sim" / "samp1" / "Position_9"
+    acq_dir.mkdir(parents=True)
+    text = "[acquisition]\nresolution = 9.9\n"
+    (acq_dir / "acquisition.toml").write_text(text)
+
+    Session = sessionmaker(
+        bind=seeded_client.app.state.engine, future=True, expire_on_commit=False
+    )
+    s = Session()
+    try:
+        s.add(
+            orm.AcquisitionORM(
+                sample_id="samp1",
+                acquisition_id="Position_9",
+                resolution=1.1,
+                path=str(acq_dir),
+            )
+        )
+        s.commit()
+    finally:
+        s.close()
+
+    body = seeded_client.get(
+        "/toml/acquisition/load/Position_9?sample_id=samp1"
+    ).json()
+    assert body["source"] == "disk"
+    assert body["baseline"] == text
+    # Fields come from the FILE (resolution 9.9), not the DB row (1.1).
+    assert body["fields"]["acquisition"]["resolution"] == 9.9
+    assert body["path"] == str(acq_dir)
 
 
 # ── Issue 06: processing log (tomograms, annotations, cross-refs) ───────────

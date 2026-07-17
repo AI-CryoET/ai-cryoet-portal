@@ -16,6 +16,7 @@ import { AuthRequiredError } from '~/lib/fileglancerClient'
 // rationale): connect()/writeFile()/connectSilently() are shared vi.fns.
 const fg = vi.hoisted(() => ({
   connect: vi.fn(),
+  readFile: vi.fn(),
   writeFile: vi.fn(),
   connectSilently: vi.fn(),
 }))
@@ -39,8 +40,15 @@ vi.mock('~/lib/fileglancerClient', () => {
       this.name = 'ForbiddenError'
     }
   }
+  class ConflictError extends FileglancerError {
+    constructor(message = 'Precondition failed') {
+      super(message, 412)
+      this.name = 'ConflictError'
+    }
+  }
   class FileglancerClient {
     connect = fg.connect
+    readFile = fg.readFile
     writeFile = fg.writeFile
     connectSilently = fg.connectSilently
   }
@@ -50,6 +58,7 @@ vi.mock('~/lib/fileglancerClient', () => {
     FileglancerError,
     AuthRequiredError,
     ForbiddenError,
+    ConflictError,
   }
 })
 
@@ -60,6 +69,10 @@ beforeAll(() => {
 })
 beforeEach(() => {
   fg.connect.mockReset().mockResolvedValue({ authenticated: true })
+  // Readback for the save-path optimistic-concurrency check (etag → If-Match).
+  fg.readFile
+    .mockReset()
+    .mockResolvedValue(new Response('', { headers: { etag: 'W/"seed"' } }))
   fg.writeFile.mockReset().mockResolvedValue({ bytes_written: 10 })
   fg.connectSilently.mockReset().mockResolvedValue(false)
 })
@@ -68,7 +81,12 @@ afterEach(() => vi.restoreAllMocks())
 // Route the shared fetch mock: portal load (GET .../load/...) vs the validate
 // POST (POST /api/toml/sample).
 function routeFetch(opts: {
-  load: { fields: Record<string, unknown>; path: string | null }
+  load: {
+    fields: Record<string, unknown>
+    path: string | null
+    source?: 'disk' | 'catalog'
+    baseline?: string | null
+  }
   post?: () => Response
 }) {
   vi.spyOn(globalThis, 'fetch').mockImplementation(((
@@ -284,5 +302,40 @@ describe('AuthoringForm (sample) save to file share', () => {
     expect(
       await screen.findByText('Fileglancer login was not completed — try again.'),
     ).toBeInTheDocument()
+  })
+
+  it('hides the staleness warning for a disk-sourced load and saves with If-Match', async () => {
+    routeFetch({
+      load: { ...inMount, source: 'disk', baseline: 'project = "nanogold"\n' },
+    })
+    fg.readFile.mockResolvedValueOnce(
+      new Response('project = "nanogold"\n', { headers: { etag: 'W/"live"' } }),
+    )
+    await loadSample()
+    // source='disk' → the DB "may lag" warning is suppressed.
+    expect(screen.queryByText(/may lag the on-disk file/)).not.toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: /Save to file share/ }))
+    await screen.findByRole('dialog')
+    await userEvent.click(screen.getByRole('button', { name: /^Save$/ }))
+    await waitFor(() => expect(fg.writeFile).toHaveBeenCalled())
+    const [, , , options] = fg.writeFile.mock.calls[0]
+    expect(options).toEqual({ ifMatch: 'W/"live"' })
+  })
+
+  it('aborts the save and warns when the file changed since a disk load', async () => {
+    routeFetch({
+      load: { ...inMount, source: 'disk', baseline: 'project = "nanogold"\n' },
+    })
+    fg.readFile.mockResolvedValueOnce(
+      new Response('project = "synapse"\n', { headers: { etag: 'W/"live"' } }),
+    )
+    await loadSample()
+    await userEvent.click(screen.getByRole('button', { name: /Save to file share/ }))
+    await screen.findByRole('dialog')
+    await userEvent.click(screen.getByRole('button', { name: /^Save$/ }))
+    expect(
+      await screen.findByText(/changed since you loaded it/),
+    ).toBeInTheDocument()
+    expect(fg.writeFile).not.toHaveBeenCalled()
   })
 })

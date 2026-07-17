@@ -1,10 +1,11 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   buildPayload,
   buildSectionedPayload,
   hydrate,
   hydrateSections,
   inferSectionedDataSource,
+  loadToml,
   type SectionState,
   type SectionsState,
 } from '~/utils/authoring'
@@ -160,5 +161,37 @@ describe('hydrate', () => {
       { key: 'flag', value: 'false', type: 'boolean' },
     ])
     expect(passthrough).toEqual({ tags: ['a', 'b'] })
+  })
+})
+
+describe('loadToml source + baseline', () => {
+  afterEach(() => vi.restoreAllMocks())
+
+  function mockLoad(body: unknown) {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify(body), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    )
+  }
+
+  it('threads through source + baseline from a disk read', async () => {
+    const baseline = 'seed = 7\n'
+    mockLoad({ fields: { seed: 7 }, path: '/data/x', source: 'disk', baseline })
+    const r = await loadToml('md_run', 'run01')
+    expect(r).toEqual({
+      fields: { seed: 7 },
+      path: '/data/x',
+      source: 'disk',
+      baseline,
+    })
+  })
+
+  it('defaults source to catalog and baseline to null when omitted', async () => {
+    mockLoad({ fields: { seed: 7 }, path: null })
+    const r = await loadToml('md_run', 'run01')
+    expect(r.source).toBe('catalog')
+    expect(r.baseline).toBeNull()
   })
 })

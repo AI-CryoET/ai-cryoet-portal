@@ -151,11 +151,21 @@ export async function parseToml(
 // param (mirrors the acquisition detail route's sampleId search param). `path`
 // is the on-disk directory holding the record's TOML (null if unknown) — used
 // by the "save to file share" action to know where to write it back.
+//
+// `source` records where the seed came from: 'disk' means the backend read the
+// live on-disk file (fields are fresh and `baseline` is its raw text, used for
+// the optimistic-concurrency byte-compare on save); 'catalog' means it fell back
+// to the DB reconstruction (may lag the file → the renderer warns; no baseline).
 export async function loadToml(
   form: FormKind,
   id: string,
   sampleId?: string,
-): Promise<{ fields: Record<string, unknown>; path: string | null }> {
+): Promise<{
+  fields: Record<string, unknown>
+  path: string | null
+  source: 'disk' | 'catalog'
+  baseline: string | null
+}> {
   const qs = sampleId ? `?sample_id=${encodeURIComponent(sampleId)}` : ''
   const res = await fetch(
     `/api/toml/${form}/load/${encodeURIComponent(id)}${qs}`,
@@ -165,8 +175,15 @@ export async function loadToml(
   const json = (await res.json()) as {
     fields: Record<string, unknown>
     path?: string | null
+    source?: 'disk' | 'catalog'
+    baseline?: string | null
   }
-  return { fields: json.fields, path: json.path ?? null }
+  return {
+    fields: json.fields,
+    path: json.path ?? null,
+    source: json.source ?? 'catalog',
+    baseline: json.baseline ?? null,
+  }
 }
 
 export async function postToml(

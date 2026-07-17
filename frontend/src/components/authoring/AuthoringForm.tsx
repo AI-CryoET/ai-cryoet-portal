@@ -153,8 +153,15 @@ function SectionedAuthoringForm({ form, initialId, initialSampleId }: Props) {
   const [errors, setErrors] = React.useState<Record<string, string>>({})
   const [recordErrors, setRecordErrors] = React.useState<string[]>([])
   const [done, setDone] = React.useState(false)
-  // Set on pull-from-API load: data may lag the on-disk file (ADR-0004).
+  // Set on pull-from-API load: data may lag the on-disk file (ADR-0004). Drives
+  // apiLoaded/isId-disable/placement/arm-lock — kept overloaded on `fromApi`.
   const [stale, setStale] = React.useState(false)
+  // Set only when a portal load fell back to the catalog DB (source='catalog');
+  // gates the "may lag the on-disk file" warning, which is moot for a disk read.
+  const [catalogFallback, setCatalogFallback] = React.useState(false)
+  // Raw text of the on-disk file at load (optimistic-concurrency baseline);
+  // non-null only for a disk-sourced portal load. Threaded into Save.
+  const [baseline, setBaseline] = React.useState<string | null>(null)
   // True whenever an existing record is loaded (disk upload OR portal); drives
   // the "not saved to disk" banner. Cleared to empty resets it.
   const [loaded, setLoaded] = React.useState(false)
@@ -191,6 +198,8 @@ function SectionedAuthoringForm({ form, initialId, initialSampleId }: Props) {
     seeded: Record<string, unknown>,
     fromApi: boolean,
     path: string | null = null,
+    source?: 'disk' | 'catalog',
+    baseline: string | null = null,
   ) => {
     setState(hydrateSections(sections, sectionFields, seeded))
     setDataSource(inferSectionedDataSource(sections, seeded))
@@ -199,6 +208,9 @@ function SectionedAuthoringForm({ form, initialId, initialSampleId }: Props) {
     setDone(false)
     setSeedError(undefined)
     setStale(fromApi)
+    // Only a catalog-sourced load can lag the file; a disk read is fresh.
+    setCatalogFallback(fromApi && source === 'catalog')
+    setBaseline(fromApi ? baseline : null)
     setLoaded(Object.keys(seeded).length > 0)
     setRecordPath(fromApi ? path : null)
   }
@@ -207,7 +219,9 @@ function SectionedAuthoringForm({ form, initialId, initialSampleId }: Props) {
   React.useEffect(() => {
     if (!initialId) return
     loadToml(form, initialId, initialSampleId)
-      .then((result) => seed(result.fields, true, result.path))
+      .then((result) =>
+        seed(result.fields, true, result.path, result.source, result.baseline),
+      )
       .catch((err) =>
         setSeedError(err instanceof Error ? err.message : String(err)),
       )
@@ -239,7 +253,7 @@ function SectionedAuthoringForm({ form, initialId, initialSampleId }: Props) {
     if (!id) return
     try {
       const result = await loadToml(form, id, sampleId.trim() || undefined)
-      seed(result.fields, true, result.path)
+      seed(result.fields, true, result.path, result.source, result.baseline)
     } catch (err) {
       setSeedError(toErrorMessage(err))
     }
@@ -388,7 +402,7 @@ function SectionedAuthoringForm({ form, initialId, initialSampleId }: Props) {
         )}
 
         {seedError && <Alert severity="error">{seedError}</Alert>}
-        {stale && <StaleValuesWarning />}
+        {catalogFallback && <StaleValuesWarning />}
 
         {sections.map((s) => {
           if (s.requiresDataSource && s.requiresDataSource !== dataSource)
@@ -447,6 +461,7 @@ function SectionedAuthoringForm({ form, initialId, initialSampleId }: Props) {
             <SaveToShareButton
               dirPath={dirPath}
               filename={meta.filename}
+              baseline={baseline}
               validate={validate}
               onInvalid={(errs) => {
                 setDone(false)
@@ -1007,6 +1022,12 @@ function CompositeAuthoringForm({
   const [generalError, setGeneralError] = React.useState<string | undefined>()
   const [done, setDone] = React.useState(false)
   const [stale, setStale] = React.useState(false)
+  // Set only when a portal load fell back to the catalog DB (source='catalog');
+  // gates the "may lag the on-disk file" warning, which is moot for a disk read.
+  const [catalogFallback, setCatalogFallback] = React.useState(false)
+  // Raw text of the on-disk file at load (optimistic-concurrency baseline);
+  // non-null only for a disk-sourced portal load. Threaded into Save.
+  const [baseline, setBaseline] = React.useState<string | null>(null)
   // True whenever an existing record is loaded (disk upload OR portal); drives
   // the "not saved to disk" banner. Cleared to empty resets it.
   const [loaded, setLoaded] = React.useState(false)
@@ -1030,6 +1051,8 @@ function CompositeAuthoringForm({
     seeded: Record<string, unknown>,
     fromApi: boolean,
     path: string | null = null,
+    source?: 'disk' | 'catalog',
+    baseline: string | null = null,
   ) => {
     const h = hydrateComposite(form, seeded)
     setState(h.state)
@@ -1040,6 +1063,9 @@ function CompositeAuthoringForm({
     setSeedError(undefined)
     setLoaded(Object.keys(seeded).length > 0)
     setRecordPath(fromApi ? path : null)
+    // Only a catalog-sourced load can lag the file; a disk read is fresh.
+    setCatalogFallback(fromApi && source === 'catalog')
+    setBaseline(fromApi ? baseline : null)
     if (fromApi) {
       // API-seeded: locked from the record + staleness warning (ADR-0004).
       setStale(true)
@@ -1080,7 +1106,7 @@ function CompositeAuthoringForm({
     if (!trimmed) return
     try {
       const result = await loadToml(form, trimmed)
-      seed(result.fields, true, result.path)
+      seed(result.fields, true, result.path, result.source, result.baseline)
     } catch (err) {
       setSeedError(toErrorMessage(err))
     }
@@ -1251,7 +1277,7 @@ function CompositeAuthoringForm({
             source manually, then remove whichever blocks don't belong.
           </Alert>
         )}
-        {stale && <StaleValuesWarning />}
+        {catalogFallback && <StaleValuesWarning />}
         {generalError && <Alert severity="error">{generalError}</Alert>}
 
         {sections.map((s) => {
@@ -1334,6 +1360,7 @@ function CompositeAuthoringForm({
             <SaveToShareButton
               dirPath={dirPath}
               filename={meta.filename}
+              baseline={baseline}
               validate={validate}
               onInvalid={(errs) => {
                 setDone(false)

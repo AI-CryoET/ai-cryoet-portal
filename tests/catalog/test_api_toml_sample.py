@@ -212,3 +212,55 @@ def test_load_sample_path_is_null_when_unset(seeded_client):
 
 def test_load_unknown_sample_returns_404(seeded_client):
     assert seeded_client.get("/toml/sample/load/nope").status_code == 404
+
+
+# ── Fresh on-disk read at load + OCC baseline (source disk vs catalog) ───────
+
+
+def test_load_sample_reads_live_disk_file(seeded_client, tmp_path):
+    # When the live sample.toml is readable under the data root, load returns its
+    # parsed fields + exact text as baseline (source='disk'), not the DB row —
+    # the file's description wins over the catalog's.
+    from sqlalchemy.orm import sessionmaker
+
+    seeded_client.app.state.data_root_resolved = tmp_path.resolve()
+    sample_dir = tmp_path / "Experimental" / "S99"
+    sample_dir.mkdir(parents=True)
+    text = '[sample]\nproject = "chromatin"\ndescription = "from_disk"\n'
+    (sample_dir / "sample.toml").write_text(text)
+
+    Session = sessionmaker(
+        bind=seeded_client.app.state.engine, future=True, expire_on_commit=False
+    )
+    s = Session()
+    try:
+        s.add(
+            orm.SampleORM(
+                sample_id="S99",
+                data_source=DataSource.experimental,
+                project=Project.chromatin,
+                description="from_db",
+                path=str(sample_dir),
+            )
+        )
+        s.commit()
+    finally:
+        s.close()
+
+    body = seeded_client.get("/toml/sample/load/S99").json()
+    assert body["source"] == "disk"
+    assert body["baseline"] == text
+    # Fields come from the FILE (description from_disk), not the DB row (from_db).
+    assert body["fields"]["sample"]["description"] == "from_disk"
+    assert body["fields"]["sample"]["project"] == "chromatin"
+    assert body["path"] == str(sample_dir)
+
+
+def test_load_sample_falls_back_to_catalog_without_data_root(seeded_client):
+    # No data_root_resolved configured → the guarded disk read raises and load
+    # falls back to the DB reconstruction, flagged source='catalog', no baseline.
+    body = seeded_client.get("/toml/sample/load/samp1").json()
+    assert body["source"] == "catalog"
+    assert body["baseline"] is None
+    assert body["fields"]["sample"]["project"] == "chromatin"
+    assert body["fields"]["chromatin"] == {"buffer": "2mM MgCl2", "linker_pattern": [20, 50]}

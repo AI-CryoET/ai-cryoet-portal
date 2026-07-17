@@ -89,6 +89,14 @@ export class ForbiddenError extends FileglancerError {
   }
 }
 
+/** Thrown when an If-Match / If-Unmodified-Since precondition fails (file changed). */
+export class ConflictError extends FileglancerError {
+  constructor(message = 'Precondition failed') {
+    super(message, 412);
+    this.name = 'ConflictError';
+  }
+}
+
 export type WriteData = Blob | ArrayBuffer | ArrayBufferView | string;
 
 export class FileglancerClient {
@@ -238,15 +246,28 @@ export class FileglancerClient {
   /**
    * Write (create or overwrite) a file's contents as the authenticated user.
    * The parent directory must already exist — use createDirectory() first.
+   *
+   * Optimistic concurrency: pass `ifMatch` (an ETag from a prior read's
+   * `response.headers.get('etag')`) or `ifUnmodifiedSince` (a Last-Modified
+   * value) to fail with a 412 ConflictError if the file changed since. Use
+   * `'*'` for ifMatch to require the file already exist.
    */
   async writeFile(
     fsp: string,
     subpath: string,
-    data: WriteData
+    data: WriteData,
+    options: { ifMatch?: string; ifUnmodifiedSince?: string } = {}
   ): Promise<{ bytes_written: number }> {
+    const headers: Record<string, string> = {};
+    if (options.ifMatch) {
+      headers['If-Match'] = options.ifMatch;
+    }
+    if (options.ifUnmodifiedSince) {
+      headers['If-Unmodified-Since'] = options.ifUnmodifiedSince;
+    }
     const res = await this.request(
       this.filesUrl('/api/content/', fsp, subpath),
-      { method: 'PUT', body: data as BodyInit }
+      { method: 'PUT', body: data as BodyInit, headers }
     );
     await this.assertOk(res);
     return (await res.json()) as { bytes_written: number };
@@ -404,6 +425,9 @@ export class FileglancerClient {
     }
     if (res.status === 403) {
       return new ForbiddenError(detail || 'Forbidden');
+    }
+    if (res.status === 412) {
+      return new ConflictError(detail || 'Precondition failed');
     }
     return new FileglancerError(detail || `Request failed (${res.status})`, res.status);
   }
