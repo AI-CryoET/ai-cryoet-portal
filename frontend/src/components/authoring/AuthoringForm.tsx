@@ -183,7 +183,7 @@ function SectionedAuthoringForm({ form, initialId, initialSampleId }: Props) {
   React.useEffect(() => {
     if (!initialId) return
     loadToml(form, initialId, initialSampleId)
-      .then((seeded) => seed(seeded, true))
+      .then((result) => seed(result.fields, true))
       .catch((err) =>
         setSeedError(err instanceof Error ? err.message : String(err)),
       )
@@ -214,7 +214,8 @@ function SectionedAuthoringForm({ form, initialId, initialSampleId }: Props) {
     const id = loadId.trim()
     if (!id) return
     try {
-      seed(await loadToml(form, id, sampleId.trim() || undefined), true)
+      const result = await loadToml(form, id, sampleId.trim() || undefined)
+      seed(result.fields, true)
     } catch (err) {
       setSeedError(toErrorMessage(err))
     }
@@ -1017,7 +1018,8 @@ function CompositeAuthoringForm({
     const trimmed = id.trim()
     if (!trimmed) return
     try {
-      seed(await loadToml(form, trimmed), true)
+      const result = await loadToml(form, trimmed)
+      seed(result.fields, true)
     } catch (err) {
       setSeedError(toErrorMessage(err))
     }

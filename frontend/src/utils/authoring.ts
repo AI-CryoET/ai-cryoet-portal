@@ -148,19 +148,25 @@ export async function parseToml(
 
 // Seed mode: pull-from-API. Load an existing record's authored fields by id.
 // Acquisition identity is composite, so a sampleId is passed through as a query
-// param (mirrors the acquisition detail route's sampleId search param).
+// param (mirrors the acquisition detail route's sampleId search param). `path`
+// is the on-disk directory holding the record's TOML (null if unknown) — used
+// by the "save to file share" action to know where to write it back.
 export async function loadToml(
   form: FormKind,
   id: string,
   sampleId?: string,
-): Promise<Record<string, unknown>> {
+): Promise<{ fields: Record<string, unknown>; path: string | null }> {
   const qs = sampleId ? `?sample_id=${encodeURIComponent(sampleId)}` : ''
   const res = await fetch(
     `/api/toml/${form}/load/${encodeURIComponent(id)}${qs}`,
   )
   if (res.status === 404) throw new Error(`No ${form} found with id "${id}"`)
   if (!res.ok) throw new Error(`load failed: ${res.status}`)
-  return ((await res.json()) as { fields: Record<string, unknown> }).fields
+  const json = (await res.json()) as {
+    fields: Record<string, unknown>
+    path?: string | null
+  }
+  return { fields: json.fields, path: json.path ?? null }
 }
 
 export async function postToml(

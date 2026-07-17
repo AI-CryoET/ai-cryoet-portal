@@ -39,12 +39,16 @@ def seeded_client(tmp_path):
                 sample_id="samp1",
                 data_source=DataSource.simulation,
                 project=Project.chromatin,
+                path="/data/samp1",
             )
         )
         s.add(orm.MdRunORM(sample_id="samp1", md_run_id="run01", seed=42, timestep=2.0))
         s.add(
             orm.AcquisitionORM(
-                sample_id="samp1", acquisition_id="Position_1", resolution=3.4
+                sample_id="samp1",
+                acquisition_id="Position_1",
+                resolution=3.4,
+                path="/data/samp1/Position_1",
             )
         )
         s.add(
@@ -200,6 +204,39 @@ def test_load_by_id_returns_fields(seeded_client):
     assert resp.json()["fields"] == {"md_run_id": "run01", "seed": 42, "timestep": 2.0}
 
 
+def test_load_md_run_returns_directory_path(seeded_client):
+    # md_run has no path column of its own: the directory is derived from the
+    # owning sample's path + the MdRuns/{id} convention.
+    resp = seeded_client.get("/toml/md_run/load/run01")
+    assert resp.status_code == 200
+    assert resp.json()["path"] == "/data/samp1/MdRuns/run01"
+
+
+def test_load_md_run_path_is_null_when_sample_has_no_path(seeded_client):
+    from sqlalchemy.orm import sessionmaker
+
+    Session = sessionmaker(
+        bind=seeded_client.app.state.engine, future=True, expire_on_commit=False
+    )
+    s = Session()
+    try:
+        s.add(
+            orm.SampleORM(
+                sample_id="samp_nopath",
+                data_source=DataSource.simulation,
+                project=Project.chromatin,
+            )
+        )
+        s.add(orm.MdRunORM(sample_id="samp_nopath", md_run_id="run02", seed=1))
+        s.commit()
+    finally:
+        s.close()
+
+    resp = seeded_client.get("/toml/md_run/load/run02")
+    assert resp.status_code == 200
+    assert resp.json()["path"] is None
+
+
 def test_load_unknown_id_returns_404(seeded_client):
     assert seeded_client.get("/toml/md_run/load/nope").status_code == 404
 
@@ -304,11 +341,31 @@ def test_acquisition_load_requires_sample_id(seeded_client):
 def test_acquisition_load_by_composite_id(seeded_client):
     resp = seeded_client.get("/toml/acquisition/load/Position_1?sample_id=samp1")
     assert resp.status_code == 200
-    fields = resp.json()["fields"]
+    body = resp.json()
+    fields = body["fields"]
     assert fields["acquisition"]["acquisition_id"] == "Position_1"
     assert fields["acquisition"]["resolution"] == 3.4
     assert fields["md_source"]["md_run_id"] == "run01"
     assert [ts["tilt_series_id"] for ts in fields["tilt_series"]] == ["ts_raw"]
+    assert body["path"] == "/data/samp1/Position_1"
+
+
+def test_acquisition_load_path_is_null_when_unset(seeded_client):
+    from sqlalchemy.orm import sessionmaker
+
+    Session = sessionmaker(
+        bind=seeded_client.app.state.engine, future=True, expire_on_commit=False
+    )
+    s = Session()
+    try:
+        s.add(orm.AcquisitionORM(sample_id="samp1", acquisition_id="Position_2"))
+        s.commit()
+    finally:
+        s.close()
+
+    resp = seeded_client.get("/toml/acquisition/load/Position_2?sample_id=samp1")
+    assert resp.status_code == 200
+    assert resp.json()["path"] is None
 
 
 # ── Issue 06: processing log (tomograms, annotations, cross-refs) ───────────

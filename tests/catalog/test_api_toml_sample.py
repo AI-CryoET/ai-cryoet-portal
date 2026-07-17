@@ -43,6 +43,7 @@ def seeded_client(tmp_path):
                 project=Project.chromatin,
                 lab_name=None,
                 description="a sample",
+                path="/data/samp1",
             )
         )
         s.add(orm.ChromatinORM(sample_id="samp1", buffer="2mM MgCl2", linker_pattern=[20, 50]))
@@ -175,12 +176,38 @@ def test_section_extra_preserved(client):
 def test_load_sample_by_id_returns_nested_fields(seeded_client):
     resp = seeded_client.get("/toml/sample/load/samp1")
     assert resp.status_code == 200
-    fields = resp.json()["fields"]
+    body = resp.json()
+    fields = body["fields"]
     assert fields["sample"]["project"] == "chromatin"
     assert fields["sample"]["data_source"] == "experimental"  # for arm lock
     assert fields["sample"]["sample_id"] == "samp1"  # placement hint
     assert fields["chromatin"] == {"buffer": "2mM MgCl2", "linker_pattern": [20, 50]}
     assert [lbl["label_target"] for lbl in fields["label"]] == ["AMPAR", "NMDAR"]
+    assert body["path"] == "/data/samp1"
+
+
+def test_load_sample_path_is_null_when_unset(seeded_client):
+    from sqlalchemy.orm import sessionmaker
+
+    Session = sessionmaker(
+        bind=seeded_client.app.state.engine, future=True, expire_on_commit=False
+    )
+    s = Session()
+    try:
+        s.add(
+            orm.SampleORM(
+                sample_id="samp_nopath",
+                data_source=DataSource.experimental,
+                project=Project.chromatin,
+            )
+        )
+        s.commit()
+    finally:
+        s.close()
+
+    resp = seeded_client.get("/toml/sample/load/samp_nopath")
+    assert resp.status_code == 200
+    assert resp.json()["path"] is None
 
 
 def test_load_unknown_sample_returns_404(seeded_client):

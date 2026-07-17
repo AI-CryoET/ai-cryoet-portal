@@ -224,7 +224,7 @@ def _row_fields(row, names: list[str]) -> dict:
     return out
 
 
-def _load_md_run(record_id: str, session: Session) -> dict:
+def _load_md_run(record_id: str, session: Session) -> tuple[dict, str | None]:
     row = (
         session.execute(
             select(orm.MdRunORM).where(orm.MdRunORM.md_run_id == record_id)
@@ -234,14 +234,23 @@ def _load_md_run(record_id: str, session: Session) -> dict:
     )
     if row is None:
         raise HTTPException(404, f"no md_run with id {record_id!r}")
-    return {
+    fields = {
         name: getattr(row, name)
         for name in MdRunOut.model_fields
         if getattr(row, name, None) is not None
     }
+    # md_run has no path column of its own: the on-disk directory is the
+    # owning sample's directory + the MdRuns/{id} convention (mirrors the
+    # scanner's layout). No relationship() exists on the ORM, so look the
+    # sample up explicitly; a missing sample or unset sample.path -> null.
+    sample = session.get(orm.SampleORM, row.sample_id)
+    path = f"{sample.path}/MdRuns/{record_id}" if sample and sample.path else None
+    return fields, path
 
 
-def _load_acquisition(record_id: str, sample_id: str | None, session: Session) -> dict:
+def _load_acquisition(
+    record_id: str, sample_id: str | None, session: Session
+) -> tuple[dict, str | None]:
     """Reconstruct an acquisition's authored fields, shaped per-section like a
     parsed acquisition.toml, for the deep-link editor (ADR-0004). Composite
     identity is (sample_id, acquisition_id), so the edit link / route carries
@@ -322,10 +331,10 @@ def _load_acquisition(record_id: str, sample_id: str | None, session: Session) -
     annotations = [_row_fields(an, an_authored) for an in an_rows]
     if annotations:
         fields["annotation"] = annotations
-    return fields
+    return fields, acq.path
 
 
-def _load_sample(record_id: str, session: Session) -> dict:
+def _load_sample(record_id: str, session: Session) -> tuple[dict, str | None]:
     """Reconstruct a sample's authored fields, shaped per-section like a parsed
     sample.toml, for the deep-link editor (ADR-0004). data_source is returned so
     the form locks the arm from the record; the directory-derived sample_id
@@ -367,7 +376,7 @@ def _load_sample(record_id: str, session: Session) -> dict:
     if labels:
         fields["label"] = labels
 
-    return fields
+    return fields, sample.path
 
 
 @router.get("/{kind}/load/{record_id}")
@@ -379,11 +388,15 @@ def load_toml(
 ):
     """Seed mode: pull-from-API (ADR-0004). Load an existing record's authored
     fields by id from the catalog DB. The data may lag the on-disk file — the
-    renderer surfaces a staleness warning for this mode."""
+    renderer surfaces a staleness warning for this mode. ``path`` is the
+    on-disk directory holding the record's TOML (null if unknown), so a later
+    "save to file share" action knows where to write it back."""
     if kind == "md_run":
-        return {"fields": _load_md_run(record_id, session)}
-    if kind == "acquisition":
-        return {"fields": _load_acquisition(record_id, sample_id, session)}
-    if kind == "sample":
-        return {"fields": _load_sample(record_id, session)}
-    raise HTTPException(404, f"load not supported for toml kind {kind!r}")
+        fields, path = _load_md_run(record_id, session)
+    elif kind == "acquisition":
+        fields, path = _load_acquisition(record_id, sample_id, session)
+    elif kind == "sample":
+        fields, path = _load_sample(record_id, session)
+    else:
+        raise HTTPException(404, f"load not supported for toml kind {kind!r}")
+    return {"fields": fields, "path": path}
