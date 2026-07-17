@@ -125,6 +125,8 @@ Scanner records absolute dirs: `SampleORM.path`, `AcquisitionORM.path` (both nul
 
 ### Task 5: New-record destinations + directory creation
 
+> **DEFERRED (2026-07-17, decision by rokickik@janelia.hhmi.org).** During implementation it emerged that every new-record destination needs the record's own leaf id (`sample_id` / `acquisition_id`), but those `isId` fields are deliberately not rendered as form inputs (the id is directory-derived by the scanner, not authored — filtered out in `ScalarSection` / composite `renderFields`). Supplying that id would require either a new Save-dialog input or reversing the "ids are directory-derived, not authored" decision. Rather than do either, new-record Save is **deferred**: from-scratch records stay Download-only (already the Task 4 behavior — Save is hidden when `recordPath` is null), and none of the sections below were implemented (`DATA_ROOT`, `ensureDirectory`, overwrite guard, dataset-type select). Portal-loaded (edit) records get full Save via Task 4. The steps below are retained as the original spec for a future revisit.
+
 **Files:**
 - Modify: `frontend/src/utils/fileglancer.ts` (add `DATA_ROOT` constant), `fileglancerSave.ts`, `AuthoringForm.tsx`
 - Modify: tests from Task 4
@@ -168,3 +170,4 @@ Scanner records absolute dirs: `SampleORM.path`, `AcquisitionORM.path` (both nul
 - New **md_run** files are out of scope (no sample context in that form); portal-loaded md_runs do get Save via the derived `MdRuns/` path.
 - `DATA_ROOT` / mount / share stay hardcoded frontend constants (existing `fileglancer.ts` pattern) rather than a new config endpoint.
 - No scanner/DB write-back on save — the catalog still updates via the normal scan cycle; the success message says so.
+- **New-record Save deferred** (2026-07-17): only portal-loaded (edit) records get Save; from-scratch records stay Download-only, because the record's own id (needed to name the destination folder) isn't a form input. See the DEFERRED note on Task 5. The plan's end-to-end verification item about creating a new acquisition's directory is therefore out of scope for this pass.
