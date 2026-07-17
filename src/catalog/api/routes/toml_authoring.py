@@ -397,9 +397,13 @@ def _read_disk_toml(
         return None
     try:
         resolved = validate_under_data_root(request, Path(path) / f"{kind}.toml")
-        text = resolved.read_text()
+        # Decode raw bytes as UTF-8 (no universal-newline translation) so the
+        # baseline matches Fileglancer's Response.text() byte-for-byte on save;
+        # read_text() would rewrite CRLF->LF and use the locale encoding, which
+        # would false-positive the save-time byte-compare as "changed".
+        text = resolved.read_bytes().decode("utf-8")
         return tomllib.loads(text), text
-    except (HTTPException, OSError, tomllib.TOMLDecodeError):
+    except (HTTPException, OSError, UnicodeDecodeError, tomllib.TOMLDecodeError):
         return None
 
 

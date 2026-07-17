@@ -256,6 +256,43 @@ def test_load_sample_reads_live_disk_file(seeded_client, tmp_path):
     assert body["path"] == str(sample_dir)
 
 
+def test_load_sample_baseline_preserves_crlf(seeded_client, tmp_path):
+    # The baseline must be the file's raw bytes decoded as UTF-8 (no CRLF->LF
+    # translation), so it matches Fileglancer's Response.text() byte-for-byte on
+    # save and the OCC byte-compare doesn't false-positive for CRLF files.
+    from sqlalchemy.orm import sessionmaker
+
+    seeded_client.app.state.data_root_resolved = tmp_path.resolve()
+    sample_dir = tmp_path / "Experimental" / "S_CRLF"
+    sample_dir.mkdir(parents=True)
+    raw = b'[sample]\r\nproject = "chromatin"\r\ndescription = "crlf"\r\n'
+    (sample_dir / "sample.toml").write_bytes(raw)
+
+    Session = sessionmaker(
+        bind=seeded_client.app.state.engine, future=True, expire_on_commit=False
+    )
+    s = Session()
+    try:
+        s.add(
+            orm.SampleORM(
+                sample_id="S_CRLF",
+                data_source=DataSource.experimental,
+                project=Project.chromatin,
+                description="from_db",
+                path=str(sample_dir),
+            )
+        )
+        s.commit()
+    finally:
+        s.close()
+
+    body = seeded_client.get("/toml/sample/load/S_CRLF").json()
+    assert body["source"] == "disk"
+    # Exact bytes preserved — CRLF intact, no newline translation.
+    assert body["baseline"] == raw.decode("utf-8")
+    assert "\r\n" in body["baseline"]
+
+
 def test_load_sample_falls_back_to_catalog_without_data_root(seeded_client):
     # No data_root_resolved configured → the guarded disk read raises and load
     # falls back to the DB reconstruction, flagged source='catalog', no baseline.
