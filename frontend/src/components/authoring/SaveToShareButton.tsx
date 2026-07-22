@@ -43,7 +43,16 @@ export function SaveToShareButton({
 }) {
   // The validated blob awaiting confirmation; non-null ⇒ the dialog is open.
   const [pending, setPending] = React.useState<Blob | null>(null)
-  const [saving, setSaving] = React.useState(false)
+  // 'connecting' = waiting on the Fileglancer login/session — cancellable, since
+  // the popup may never resolve; 'writing' = the save is in flight (a mutation),
+  // not cancellable.
+  const [phase, setPhase] = React.useState<'idle' | 'connecting' | 'writing'>(
+    'idle',
+  )
+  // Monotonic token: a cancel (or a fresh confirm) bumps it, so an abandoned
+  // in-flight connect() sees a changed id after its await and bails out instead
+  // of writing.
+  const runIdRef = React.useRef(0)
   const [result, setResult] = React.useState<
     { ok: true } | { ok: false; message: string } | null
   >(null)
@@ -62,22 +71,36 @@ export function SaveToShareButton({
     setPending(r.blob)
   }
 
+  function handleCancel() {
+    // Abandon any in-flight connect() (invalidate its run) and close the dialog,
+    // so a login popup that never resolves can't trap the user.
+    runIdRef.current += 1
+    setPhase('idle')
+    setPending(null)
+  }
+
   async function handleConfirm() {
     // Reserve the login popup synchronously to preserve the user gesture: call
     // connect() BEFORE any await, then await its promise.
     const fg = getFileglancerClient()
     const connectPromise = fg.connect()
     const blob = pending
-    setSaving(true)
+    const runId = (runIdRef.current += 1)
+    setPhase('connecting')
     try {
       await connectPromise
+      if (runIdRef.current !== runId) return // cancelled while authenticating
+      setPhase('writing')
       if (blob) await saveTomlToShare({ dirPath, filename, blob, baseline })
+      if (runIdRef.current !== runId) return
       setResult({ ok: true })
-    } catch (err) {
-      setResult({ ok: false, message: describeSaveError(err) })
-    } finally {
-      setSaving(false)
       setPending(null)
+    } catch (err) {
+      if (runIdRef.current !== runId) return // cancelled → ignore its failure
+      setResult({ ok: false, message: describeSaveError(err) })
+      setPending(null)
+    } finally {
+      if (runIdRef.current === runId) setPhase('idle')
     }
   }
 
@@ -87,21 +110,38 @@ export function SaveToShareButton({
         Save to file share
       </Button>
 
-      <Dialog open={pending !== null} onClose={() => !saving && setPending(null)}>
+      <Dialog
+        open={pending !== null}
+        onClose={() => phase !== 'writing' && handleCancel()}
+      >
         <DialogTitle>Save to file share?</DialogTitle>
         <DialogContent>
           <DialogContentText component="div">
             Write the validated file to:
             <br />
             <code>{destination}</code>
+            {phase === 'connecting' && (
+              <>
+                <br />
+                <br />
+                Waiting for Fileglancer sign-in — complete it in the popup
+                window, or Cancel.
+              </>
+            )}
           </DialogContentText>
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setPending(null)} disabled={saving}>
+          {/* Cancel stays live through sign-in so a missing/blocked popup can't
+              trap the user; it's disabled only once the write is in flight. */}
+          <Button onClick={handleCancel} disabled={phase === 'writing'}>
             Cancel
           </Button>
-          <Button variant="contained" onClick={handleConfirm} disabled={saving}>
-            {saving ? 'Saving…' : 'Save'}
+          <Button
+            variant="contained"
+            onClick={handleConfirm}
+            disabled={phase !== 'idle'}
+          >
+            {phase === 'idle' ? 'Save' : 'Saving…'}
           </Button>
         </DialogActions>
       </Dialog>

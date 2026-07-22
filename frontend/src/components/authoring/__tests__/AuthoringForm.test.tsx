@@ -359,6 +359,38 @@ describe('AuthoringForm (sectioned) save to file share', () => {
     )
   })
 
+  it('lets the user cancel while waiting for Fileglancer sign-in', async () => {
+    routeFetch({ load: inMount })
+    // connect() hangs (e.g. a login popup that never resolves) so the dialog
+    // stays in the "connecting" phase.
+    let releaseConnect: () => void = () => {}
+    fg.connect.mockReset().mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          releaseConnect = () => resolve({ authenticated: true })
+        }),
+    )
+    await loadRun()
+    await userEvent.click(screen.getByRole('button', { name: /Save to file share/ }))
+    await screen.findByRole('dialog')
+    await userEvent.click(screen.getByRole('button', { name: /^Save$/ }))
+    // Connecting: Cancel must stay enabled so a stuck popup can't trap the user,
+    // and nothing has been written yet.
+    const cancel = screen.getByRole('button', { name: /Cancel/ })
+    expect(cancel).toBeEnabled()
+    expect(fg.writeFile).not.toHaveBeenCalled()
+    // Cancel closes the dialog...
+    await userEvent.click(cancel)
+    await waitFor(() =>
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument(),
+    )
+    // ...and even if the abandoned connect() later resolves, no write happens.
+    releaseConnect()
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(fg.writeFile).not.toHaveBeenCalled()
+  })
+
   it('keeps the inline 422 error and does NOT open the dialog on Save', async () => {
     routeFetch({
       load: inMount,
