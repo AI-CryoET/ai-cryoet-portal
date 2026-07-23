@@ -26,8 +26,8 @@ FIXTURES = Path(__file__).parent / "fixtures"
 def test_iter_samples_finds_chromatin_and_simulation():
     samples = sorted(iter_samples(FIXTURES), key=lambda s: s.sample_id)
     assert [s.sample_id for s in samples] == [
+        "SingleMolecule_sample_simulation",
         "sample_chromatin",
-        "sample_simulation",
     ]
     chrom = samples[0]
     assert chrom.sample_toml.exists()
@@ -39,9 +39,22 @@ def test_iter_samples_assigns_arm_from_directory():
     chrom = samples["sample_chromatin"]
     assert chrom.data_source == DataSource.experimental
     assert chrom.dataset_type is None
-    sim = samples["sample_simulation"]
+    sim = samples["SingleMolecule_sample_simulation"]
     assert sim.data_source == DataSource.simulation
     assert sim.dataset_type == DatasetType.single_molecule
+
+
+def test_iter_samples_namespaces_simulation_ids_by_subdir(tmp_path):
+    """Same folder name under two MdSimulation subdirs gets distinct ids —
+    the bare folder name is not unique across Bulk/SingleMolecule/Slab."""
+    for sub in ("Bulk", "Slab"):
+        d = tmp_path / "MdSimulation" / sub / "12mer_26_0.080"
+        d.mkdir(parents=True)
+        (d / "sample.toml").write_text(
+            '[sample]\ndata_source = "simulation"\nproject = "chromatin"\n'
+        )
+    ids = {s.sample_id for s in iter_samples(tmp_path)}
+    assert ids == {"Bulk_12mer_26_0.080", "Slab_12mer_26_0.080"}
 
 
 def test_iter_samples_skips_unknown_mdsimulation_subdir(tmp_path):
@@ -58,7 +71,7 @@ def test_iter_samples_skips_unknown_mdsimulation_subdir(tmp_path):
         '[sample]\ndata_source = "simulation"\nproject = "chromatin"\n'
     )
     found = list(iter_samples(tmp_path))
-    assert {s.sample_id for s in found} == {"s2"}
+    assert {s.sample_id for s in found} == {"Bulk_s2"}
     assert found[0].dataset_type == DatasetType.bulk
 
 
@@ -146,7 +159,7 @@ def test_iter_samples_skips_dirs_without_sample_toml(tmp_path):
 
 def test_iter_md_runs_finds_md_run_tomls():
     sim = next(
-        s for s in iter_samples(FIXTURES) if s.sample_id == "sample_simulation"
+        s for s in iter_samples(FIXTURES) if s.sample_id == "SingleMolecule_sample_simulation"
     )
     runs = list(iter_md_runs(sim))
     assert [r.md_run_id for r in runs] == ["run_001"]
@@ -179,7 +192,7 @@ def test_iter_acquisitions_simulation_nested_under_synthetic():
     """Simulation acquisitions live under SyntheticCryoET/<acq>/ (one level
     deeper than experimental); the simulation-aware walk finds them."""
     sim = next(
-        s for s in iter_samples(FIXTURES) if s.sample_id == "sample_simulation"
+        s for s in iter_samples(FIXTURES) if s.sample_id == "SingleMolecule_sample_simulation"
     )
     acqs = list(iter_acquisitions(sim))
     assert [a.acquisition_id for a in acqs] == ["sim_acq_01"]
@@ -247,7 +260,7 @@ def test_parse_targets_for_sample_includes_all_categories():
 
 def test_parse_targets_for_sample_includes_md_run_toml():
     sim = next(
-        s for s in iter_samples(FIXTURES) if s.sample_id == "sample_simulation"
+        s for s in iter_samples(FIXTURES) if s.sample_id == "SingleMolecule_sample_simulation"
     )
     targets = parse_targets_for_sample(sim)
     target_strs = {str(t) for t in targets}

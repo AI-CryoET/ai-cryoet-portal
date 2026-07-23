@@ -54,7 +54,7 @@ def test_scan_fixture_root_happy_path(engine):
         sample_ids = {
             row[0] for row in s.execute(select(orm.SampleORM.sample_id)).all()
         }
-        assert sample_ids == {"sample_chromatin", "sample_simulation"}
+        assert sample_ids == {"sample_chromatin", "SingleMolecule_sample_simulation"}
 
         # Position_86 + Position_87 acquisitions present
         acqs = (
