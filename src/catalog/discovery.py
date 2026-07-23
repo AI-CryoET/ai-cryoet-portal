@@ -18,6 +18,7 @@ from schema.layout import (
     TOP_LEVEL_EXPERIMENTAL,
     TOP_LEVEL_MD_SIMULATION,
     infer_arm,
+    sample_id_for,
 )
 
 ANNOTATION_FILE_EXTENSIONS = frozenset(
@@ -128,7 +129,7 @@ def _sample_location(sample_dir: Path) -> SampleLocation | None:
         return None
     return SampleLocation(
         path=sample_dir,
-        sample_id=sample_dir.name,
+        sample_id=sample_id_for(sample_dir),
         sample_toml=sample_toml,
         data_source=data_source,
         dataset_type=dataset_type,

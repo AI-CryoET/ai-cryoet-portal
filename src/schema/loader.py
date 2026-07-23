@@ -36,7 +36,7 @@ from schema import (
     Sample,
     SampleRecord,
 )
-from schema.layout import infer_arm
+from schema.layout import infer_arm, sample_id_for
 
 
 _PLACEHOLDER = "<FILL IN>"
@@ -495,9 +495,11 @@ def load_sample_record(
     # Strip <FILL IN> placeholders from sample.toml before pydantic runs.
     _strip_placeholders(sample_data, "", result.warnings)
 
-    # Inject sample_id from the directory name (preserve _minimal_sample
-    # behaviour from the old script).
-    sample_data.setdefault("sample", {})["sample_id"] = sample_dir.name
+    # Inject sample_id from the directory (subdir-namespaced for simulation
+    # samples so ids stay unique across MdSimulation/{Bulk,SingleMolecule,Slab};
+    # see layout.sample_id_for). Must match discovery's sample_loc.sample_id so
+    # the persisted sample row lines up with scan_state/issue rows.
+    sample_data.setdefault("sample", {})["sample_id"] = sample_id_for(sample_dir)
 
     # data_source resolution: the directory is the source of truth and is no
     # longer authored in sample.toml. When the path is under a recognized arm,

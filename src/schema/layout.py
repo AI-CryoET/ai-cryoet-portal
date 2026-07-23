@@ -58,9 +58,27 @@ def infer_arm(
     return None, None
 
 
+def sample_id_for(sample_dir: Path) -> str:
+    """Return the catalog ``sample_id`` for a sample directory.
+
+    Simulation samples are namespaced by their dataset-type subdir
+    (e.g. ``Slab_12mer_26_0.080``) because the bare folder name is NOT unique
+    across ``MdSimulation/{Bulk,SingleMolecule,Slab}`` — two runs with the same
+    trajectory name under different subdirs would otherwise collide on one id.
+    Experimental samples keep the bare folder name. The simulation prefix
+    deliberately matches the OVITO preview-cache filename prefix
+    (``{SubDir}_{name}``), so preview lookups resolve off the id directly.
+    """
+    data_source, _ = infer_arm(sample_dir)
+    if data_source is DataSource.simulation:
+        return f"{sample_dir.parent.name}_{sample_dir.name}"
+    return sample_dir.name
+
+
 __all__ = [
     "DATASET_TYPE_BY_DIR",
     "TOP_LEVEL_EXPERIMENTAL",
     "TOP_LEVEL_MD_SIMULATION",
     "infer_arm",
+    "sample_id_for",
 ]
