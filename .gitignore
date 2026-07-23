@@ -20,6 +20,7 @@ data_old_organizations
 # Claude, except for plans
 .claude/*
 !.claude/plans/
+!.claude/skills/
 **/TODO.md
 .worktrees
 
