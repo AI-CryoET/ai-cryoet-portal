@@ -7,6 +7,7 @@ walks parse targets through ``is_file_changed`` in Python.
 
 from __future__ import annotations
 
+import hashlib
 import time
 from pathlib import Path
 from typing import Any
@@ -23,40 +24,80 @@ from catalog.orm import (
 )
 
 
-def load_sample_state(session: Session, sample_id: str) -> dict[Path, float]:
-    """Return ``{Path: mtime}`` for every scan_state row for this sample.
+# Files at or below this size are content-hashed as a fallback to the mtime
+# gate; larger files stay mtime-only. Hand-authored metadata (.toml/.mdoc/
+# .zattrs) sits far below this; derived binaries (mrc, raw frames) sit far
+# above. Those binaries are written once and never get same-mtime edits, so
+# hashing them every scan would cost a lot for no benefit.
+HASH_MAX_BYTES = 1 << 20  # 1 MiB
+
+
+def _content_hash(path: Path) -> str | None:
+    """SHA-256 hex digest of ``path``'s bytes, or None if too large to hash.
+
+    This backstops the mtime gate: a rewrite that preserves mtime (an
+    mtime-preserving sync/restore like ``rsync -t``/``cp -p``, or an editor
+    that resets the timestamp) is invisible to mtime comparison. Returns None
+    for oversized/unreadable files so those fall back to mtime-only gating.
+    """
+    try:
+        if path.stat().st_size > HASH_MAX_BYTES:
+            return None
+        with path.open("rb") as f:
+            return hashlib.file_digest(f, "sha256").hexdigest()
+    except OSError:
+        return None
+
+
+def load_sample_state(
+    session: Session, sample_id: str
+) -> dict[Path, tuple[float, str | None]]:
+    """Return ``{Path: (mtime, content_hash)}`` for this sample's scan_state.
 
     Implemented as one indexed SELECT (sample_id is indexed in the ORM).
+    ``content_hash`` is None for files too large to hash (see ``_content_hash``)
+    or rows written before content hashing was populated.
     """
     rows = session.execute(
-        select(ScanStateORM.path, ScanStateORM.mtime).where(
-            ScanStateORM.sample_id == sample_id
-        )
+        select(
+            ScanStateORM.path, ScanStateORM.mtime, ScanStateORM.content_hash
+        ).where(ScanStateORM.sample_id == sample_id)
     ).all()
-    return {Path(p): m for p, m in rows}
+    return {Path(p): (m, h) for p, m, h in rows}
 
 
-def is_file_changed(state: dict[Path, float], path: Path) -> bool:
-    """Stat ``path`` and compare its mtime to ``state.get(path)``.
+def is_file_changed(
+    state: dict[Path, tuple[float, str | None]], path: Path
+) -> bool:
+    """Decide whether ``path`` changed since its recorded scan_state.
 
-    Returns True if the path is missing from state (first-seen) or its mtime
-    differs from the recorded value. A missing file on disk also counts as
-    "changed" — the orchestrator will re-assemble and pruning will drop the
-    stale row.
+    Returns True if the path is missing from state (first-seen), missing on
+    disk (orchestrator will re-assemble; pruning drops the stale row), or its
+    mtime differs. When mtime matches but a content hash was recorded, the
+    file is re-hashed and compared — so a same-mtime rewrite is still caught.
     """
     try:
         current = path.stat().st_mtime
     except FileNotFoundError:
         return True
     prev = state.get(path)
-    return prev is None or prev != current
+    if prev is None:
+        return True
+    prev_mtime, prev_hash = prev
+    if prev_mtime != current:
+        return True
+    # mtime unchanged: verify content for files we recorded a hash for.
+    if prev_hash is not None:
+        return _content_hash(path) != prev_hash
+    return False
 
 
 def record_file_scan(
     session: Session, path: Path, sample_id: str, mtime: float
 ) -> None:
-    """Upsert ``scan_state(path, sample_id, mtime, last_scanned=now)``."""
+    """Upsert ``scan_state(path, sample_id, mtime, content_hash, last_scanned)``."""
     now = time.time()
+    content_hash = _content_hash(path)
     existing = session.get(ScanStateORM, str(path))
     if existing is None:
         session.add(
@@ -65,17 +106,18 @@ def record_file_scan(
                 sample_id=sample_id,
                 mtime=mtime,
                 last_scanned=now,
-                content_hash=None,
+                content_hash=content_hash,
             )
         )
     else:
         existing.mtime = mtime
         existing.last_scanned = now
         existing.sample_id = sample_id  # in case of moves
+        existing.content_hash = content_hash
 
 
 def parse_target_set_changed(
-    state: dict[Path, float], parse_targets: list[Path]
+    state: dict[Path, tuple[float, str | None]], parse_targets: list[Path]
 ) -> bool:
     """True iff ``set(parse_targets) != set(state.keys())``.
 
