@@ -75,6 +75,45 @@ def test_soft_delete_sets_deleted_at(session):
     assert c.deleted_at is not None and c.deleted_at > 0
 
 
+def _add_issue(session, sample_id: str, fingerprint: str) -> None:
+    session.add(
+        orm.IssueORM(
+            fingerprint=fingerprint,
+            severity="warning",
+            scope="sample",
+            sample_id=sample_id,
+            file_kind="sample_toml",
+            file_path=f"/data/{sample_id}/sample.toml",
+            location="chromatin",
+            category="extra_field",
+            message="extra field 'salt_mM' at 'chromatin' (not in schema)",
+            first_seen_at=_NOW,
+            first_seen_run_id="seed",
+            last_seen_at=_NOW,
+            last_seen_run_id="seed",
+        )
+    )
+
+
+def test_soft_delete_resolves_outstanding_issues(session):
+    _seed(session, ["a", "b"])
+    _add_issue(session, "a", "fp-a")
+    _add_issue(session, "b", "fp-b")
+    session.commit()
+    # 'b' disappears from disk → soft-deleted; its issue must resolve.
+    soft_delete_missing_samples(
+        session, fs_sample_ids={"a"}, run_id="run-1", now=_NOW, safety_floor=1.0
+    )
+    session.commit()
+    issues = {
+        i.sample_id: i
+        for i in session.execute(select(orm.IssueORM)).scalars().all()
+    }
+    assert issues["a"].resolved_at is None  # live sample keeps its warning
+    assert issues["b"].resolved_at == _NOW  # tombstoned sample's warning resolved
+    assert issues["b"].resolved_run_id == "run-1"
+
+
 def test_soft_delete_logs_one_deletion_event_per_sample(session):
     _seed(session, ["a", "b", "c"])
     soft_delete_missing_samples(
