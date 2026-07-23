@@ -45,8 +45,8 @@ patches:
 # the leading `v`, so git tag `v1.0.0` publishes image tag `1.0.0` (no `v`).
 images:
   - name: ghcr.io/janeliascicomp/ai-cryoet-api
-    newTag: "1.2.0"
+    newTag: "1.2.1"
   - name: ghcr.io/janeliascicomp/ai-cryoet-frontend
-    newTag: "1.2.0"
+    newTag: "1.2.1"
   - name: ghcr.io/janeliascicomp/ai-cryoet-scanner
-    newTag: "1.2.0"
+    newTag: "1.2.1"
