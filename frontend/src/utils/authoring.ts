@@ -333,6 +333,7 @@ export function buildSectionedPayload(
   fieldsFor: (section: string) => FormField[],
   state: SectionsState,
   dataSource: DataSource,
+  form: FormKind,
 ): Record<string, unknown> {
   const out: Record<string, unknown> = {}
   for (const s of sections) {
@@ -348,7 +349,11 @@ export function buildSectionedPayload(
       const st = (state[s.section] as SectionState | undefined) ?? emptySection()
       const obj = buildPayload(fields, st.values, st.customFields, st.passthrough)
       if (s.root) Object.assign(out, obj)
-      else if (Object.keys(obj).length) out[s.section] = obj
+      // The form's self-named section is its required top-level table in the
+      // backend model (e.g. acquisition.toml's [acquisition]); emit it even when
+      // empty ({} validates) so an unfilled record doesn't 422 with "acquisition
+      // required". Optional sub-sections are still dropped when empty.
+      else if (s.section === form || Object.keys(obj).length) out[s.section] = obj
     }
   }
   return out

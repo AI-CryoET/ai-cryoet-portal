@@ -74,15 +74,25 @@ describe('buildSectionedPayload (acquisition)', () => {
     }
     // Experimental: md_source omitted even though it has a value.
     expect(
-      buildSectionedPayload(acqSections, acqFields, state, 'experimental'),
+      buildSectionedPayload(acqSections, acqFields, state, 'experimental', 'acquisition'),
     ).toEqual({
       acquisition: { acquisition_id: 'Pos1', resolution: 3.4 },
       tilt_series: [{ tilt_series_id: 'ts_raw', derived_from: 'Frames' }],
     })
     // Simulation: md_source included.
     expect(
-      buildSectionedPayload(acqSections, acqFields, state, 'simulation').md_source,
+      buildSectionedPayload(acqSections, acqFields, state, 'simulation', 'acquisition')
+        .md_source,
     ).toEqual({ md_run_id: 'run01' })
+  })
+
+  it('keeps the required top-level section even when empty', () => {
+    // An unfilled acquisition.toml loads with an empty [acquisition]; the backend
+    // still requires that key ({} validates, but omitting it 422s with
+    // "acquisition required"), so the payload must include it rather than drop it.
+    expect(
+      buildSectionedPayload(acqSections, acqFields, {}, 'experimental', 'acquisition'),
+    ).toEqual({ acquisition: {} })
   })
 
   it('coerces booleans client-side; selects pass through (backend coerces)', () => {
@@ -99,6 +109,7 @@ describe('buildSectionedPayload (acquisition)', () => {
       acqFields,
       state,
       'experimental',
+      'acquisition',
     ).acquisition as Record<string, unknown>
     expect(out.phase_plate).toBe(true)
     // Quality is a string-valued select; pydantic coerces '4' → int 4 + enforces 1–5.

@@ -325,6 +325,7 @@ function SectionedAuthoringForm({ form, initialId, initialSampleId }: Props) {
       sectionFields,
       state,
       dataSource,
+      form,
     )
     // The directory-identity id is no longer a form field (it IS the folder
     // name), but a flat form's model still requires it (md_run). Inject a
