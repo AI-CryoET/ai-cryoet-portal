@@ -86,6 +86,7 @@ GROUPS: list[Group] = [
             Field("linker_pattern", "Linker pattern", "sample", "chromatin", "text", "chromatin", "linker_pattern"),
             Field("linker_distribution", "Linker distribution", "sample", "chromatin", "text", "chromatin", "linker_distribution"),
             Field("buffer", "Buffer", "sample", "chromatin", "text", "chromatin", "buffer"),
+            Field("salt_mM", "Salt (mM)", "sample", "chromatin", "text", "chromatin", "salt_mM"),
             Field("ptm", "PTM", "sample", "chromatin", "text", "chromatin", "ptm"),
             Field("histone_variants", "Histone variants", "sample", "chromatin", "text", "chromatin", "histone_variants"),
             Field("transcription_factors", "Transcription factors", "sample", "chromatin", "text", "chromatin", "transcription_factors"),

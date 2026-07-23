@@ -58,6 +58,7 @@ project         = "<FILL IN>"   # enum: synapse | chromatin | nanogold
 # linker_pattern        = "<FILL IN>"   # list[int], patterned linker lengths, e.g. [20, 50, 20, 50]
 # linker_distribution   = "<FILL IN>"   # text, free-text for non-homogenous, non-patterned linkers
 # buffer                = "<FILL IN>"   # text, e.g. "2.0 mM MgCl2, 150 mM KCl"
+# salt_mM               = "<FILL IN>"   # text, for md simulations
 # ptm                   = "<FILL IN>"   # text, e.g. none | H3K9me3 | H3K27me3 | H3K27Ac | H4K16Ac
 # histone_variants      = "<FILL IN>"   # text, e.g. canonical | macroH2A | H2A.Z
 # transcription_factors = "<FILL IN>"   # text, e.g. none | HP1a | Brd4

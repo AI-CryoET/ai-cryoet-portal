@@ -55,6 +55,7 @@ export const GROUPS: Group[] = [
       { key: 'linker_pattern', label: 'Linker pattern', entity: 'sample', group: 'chromatin', kind: 'text', table: 'chromatin', column: 'linker_pattern' },
       { key: 'linker_distribution', label: 'Linker distribution', entity: 'sample', group: 'chromatin', kind: 'text', table: 'chromatin', column: 'linker_distribution' },
       { key: 'buffer', label: 'Buffer', entity: 'sample', group: 'chromatin', kind: 'text', table: 'chromatin', column: 'buffer' },
+      { key: 'salt_mM', label: 'Salt (mM)', entity: 'sample', group: 'chromatin', kind: 'text', table: 'chromatin', column: 'salt_mM' },
       { key: 'ptm', label: 'PTM', entity: 'sample', group: 'chromatin', kind: 'text', table: 'chromatin', column: 'ptm' },
       { key: 'histone_variants', label: 'Histone variants', entity: 'sample', group: 'chromatin', kind: 'text', table: 'chromatin', column: 'histone_variants' },
       { key: 'transcription_factors', label: 'Transcription factors', entity: 'sample', group: 'chromatin', kind: 'text', table: 'chromatin', column: 'transcription_factors' },

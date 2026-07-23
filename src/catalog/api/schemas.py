@@ -41,6 +41,7 @@ class ChromatinOut(BaseModel):
     linker_pattern: list[int] | None = None
     linker_distribution: str | None = None
     buffer: str | None = None
+    salt_mM: str | None = None
     ptm: str | None = None
     histone_variants: str | None = None
     transcription_factors: str | None = None

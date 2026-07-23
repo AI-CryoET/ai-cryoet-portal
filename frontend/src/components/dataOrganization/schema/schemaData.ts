@@ -50,6 +50,7 @@ export const SCHEMA: SchemaEntity[] = [
         { field: 'linker_pattern', type: 'list[int]', source: 'sample.toml [chromatin]', kind: 'authored', notes: 'Patterned linker lengths.' },
         { field: 'linker_distribution', type: 'text', source: 'sample.toml [chromatin]', kind: 'authored', notes: 'Free-text distribution description.' },
         { field: 'buffer', type: 'text', source: 'sample.toml [chromatin]', kind: 'authored', notes: 'Monovalent/divalent species + conc + additives.' },
+        { field: 'salt_mM', type: 'text', source: 'sample.toml [chromatin]', kind: 'authored', notes: 'Free text, e.g. for md simulations.' },
         { field: 'ptm', type: 'text', source: 'sample.toml [chromatin]', kind: 'authored', notes: '' },
         { field: 'histone_variants', type: 'text', source: 'sample.toml [chromatin]', kind: 'authored', notes: '' },
         { field: 'transcription_factors', type: 'text', source: 'sample.toml [chromatin]', kind: 'authored', notes: '' },

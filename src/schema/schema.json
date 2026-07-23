@@ -215,6 +215,10 @@
           "title": "Buffer",
           "type": "string"
         },
+        "salt_mM": {
+          "title": "Salt Mm",
+          "type": "string"
+        },
         "ptm": {
           "title": "Ptm",
           "type": "string"

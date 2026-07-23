@@ -69,6 +69,7 @@ export function sampleMetadataSections(
       rows: [
         { label: 'Substrate', value: c?.substrate },
         { label: 'Buffer', value: c?.buffer },
+        { label: 'Salt (mM)', value: c?.salt_mM },
         { label: 'Linker length', value: num(c?.linker_length_bp, 'bp') },
         { label: 'Linker pattern', value: numList(c?.linker_pattern) },
         { label: 'Linker distribution', value: c?.linker_distribution },

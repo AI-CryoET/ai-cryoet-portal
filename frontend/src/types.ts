@@ -28,6 +28,7 @@ export type ChromatinOut = {
   linker_pattern: number[] | null
   linker_distribution: string | null
   buffer: string | null
+  salt_mM: string | null
   ptm: string | null
   histone_variants: string | null
   transcription_factors: string | null
