@@ -143,14 +143,17 @@ def read_mrc_volume(mrc_path: Path | str) -> tuple[np.ndarray, tuple[float, floa
 
     Returns ``(data, voxel_size_in_array_order, axis_order_string)``.
     Voxel size is reordered to match the array axes (slowest → fastest), so
-    callers can feed it directly into ``view_neuroglancer``.
+    callers can feed it directly into ``view_neuroglancer``. 
+    Voxel size is returned in ``nm``
     """
     mrc_path = Path(mrc_path)
     with mrcfile.open(str(mrc_path), mode="r", permissive=True) as mrc:
         data = mrc.data.copy()
-        vx = float(mrc.voxel_size.x)
-        vy = float(mrc.voxel_size.y)
-        vz = float(mrc.voxel_size.z)
+
+        # mrc files are in Angstrom, convert to nm
+        vx = float(mrc.voxel_size.x) / 10.
+        vy = float(mrc.voxel_size.y) / 10.
+        vz = float(mrc.voxel_size.z) / 10.
         mapc = int(mrc.header.mapc)
         mapr = int(mrc.header.mapr)
         maps = int(mrc.header.maps)
