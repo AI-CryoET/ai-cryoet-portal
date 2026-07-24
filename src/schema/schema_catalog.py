@@ -105,6 +105,8 @@ CATALOG: list[CatalogEntity] = [
                          "Free-text distribution description."),
             CatalogField("buffer", "text", "sample.toml [chromatin]",
                          "Monovalent/divalent species + conc + additives."),
+            CatalogField("salt_mM", "text", "sample.toml [chromatin]",
+                         "Free text, e.g. for md simulations."),
             CatalogField("ptm", "text", "sample.toml [chromatin]"),
             CatalogField("histone_variants", "text", "sample.toml [chromatin]"),
             CatalogField("transcription_factors", "text", "sample.toml [chromatin]"),

@@ -454,6 +454,8 @@ FORM_FIELDS: list[FormField] = [
               help="Free-text for non-homogenous, non-patterned linkers."),
     FormField("sample", "chromatin", "buffer", "Buffer", "text",
               help='e.g. "2.0 mM MgCl2, 150 mM KCl"'),
+    FormField("sample", "chromatin", "salt_mM", "Salt (mM)", "text",
+              help="Free text, e.g. for md simulations."),
     FormField("sample", "chromatin", "ptm", "PTM", "text",
               help="e.g. none | H3K9me3 | H3K27me3 | H3K27Ac | H4K16Ac"),
     FormField("sample", "chromatin", "histone_variants", "Histone variants", "text",

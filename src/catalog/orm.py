@@ -73,6 +73,7 @@ class ChromatinORM(Base):
     linker_pattern: Mapped[list | None] = mapped_column(JSON, nullable=True)
     linker_distribution: Mapped[str | None] = mapped_column(String, nullable=True)
     buffer: Mapped[str | None] = mapped_column(String, nullable=True)
+    salt_mM: Mapped[str | None] = mapped_column(String, nullable=True)
     ptm: Mapped[str | None] = mapped_column(String, nullable=True)
     histone_variants: Mapped[str | None] = mapped_column(String, nullable=True)
     transcription_factors: Mapped[str | None] = mapped_column(String, nullable=True)

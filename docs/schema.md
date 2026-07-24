@@ -46,6 +46,7 @@ _one per sample_
 | `linker_pattern` | list[int] | `sample.toml [chromatin]` | researcher authored | Patterned linker lengths. |
 | `linker_distribution` | text | `sample.toml [chromatin]` | researcher authored | Free-text distribution description. |
 | `buffer` | text | `sample.toml [chromatin]` | researcher authored | Monovalent/divalent species + conc + additives. |
+| `salt_mM` | text | `sample.toml [chromatin]` | researcher authored | Free text, e.g. for md simulations. |
 | `ptm` | text | `sample.toml [chromatin]` | researcher authored |  |
 | `histone_variants` | text | `sample.toml [chromatin]` | researcher authored |  |
 | `transcription_factors` | text | `sample.toml [chromatin]` | researcher authored |  |
