@@ -7,6 +7,7 @@ to actually spin up a server — leaving the real-server smoke check for
 the ``slow`` marker.
 
 Coverage:
+    - ``read_mrc_volume`` returns voxel size in nm, in array-axis order
     - 404 on unknown tomogram / tilt_series id
     - LRU eviction at capacity (oldest entry dropped, new one inserted)
     - Re-launching an already-registered key moves it to the end (no eviction)
@@ -49,6 +50,26 @@ def _write_synthetic_mrc(path: Path) -> None:
     with mrcfile.new(path, overwrite=True) as mrc:
         mrc.set_data(data)
         mrc.voxel_size = (10.0, 10.0, 10.0)
+
+
+def test_read_mrc_volume_returns_nm_in_array_order(tmp_path):
+    """Voxel size comes back in nm (header is Angstrom), reordered to the array axes.
+
+    The viewer declares ``CoordinateSpace(units="nm")``, so a raw Angstrom
+    spacing renders the volume 10x oversized against nm-authored annotations.
+    Anisotropic spacing here so the x/y/z -> array-axis reorder is covered too.
+    """
+    from catalog.imaging._mrc import read_mrc_volume
+
+    path = tmp_path / "aniso.mrc"
+    with mrcfile.new(path, overwrite=True) as mrc:
+        mrc.set_data(np.zeros((4, 8, 8), dtype=np.float32))
+        mrc.voxel_size = (10.0, 20.0, 30.0)  # (x, y, z) Angstrom
+
+    _, voxel_size, axis_order = read_mrc_volume(path)
+
+    assert axis_order == "zyx"
+    assert voxel_size == pytest.approx((3.0, 2.0, 1.0))
 
 
 @pytest.fixture

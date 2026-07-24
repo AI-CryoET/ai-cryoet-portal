@@ -143,17 +143,24 @@ def read_mrc_volume(mrc_path: Path | str) -> tuple[np.ndarray, tuple[float, floa
 
     Returns ``(data, voxel_size_in_array_order, axis_order_string)``.
     Voxel size is reordered to match the array axes (slowest → fastest), so
-    callers can feed it directly into ``view_neuroglancer``. 
-    Voxel size is returned in ``nm``
+    callers can feed it directly into ``view_neuroglancer``.
+
+    Voxel size is returned in **nm**, unlike the rest of the codebase which
+    carries MRC spacings in Angstrom (``voxel_spacing_angstrom``,
+    ``schema.py`` ``voxel_size``). Don't "fix" this back for consistency:
+    ``view_neuroglancer`` builds a ``CoordinateSpace(units="nm")``, and
+    Neuroglancer only accepts an SI base unit with a standard prefix —
+    ``"angstrom"`` and ``"Å"`` both raise. nm is the nearest unit that can
+    express an MRC spacing at all.
     """
     mrc_path = Path(mrc_path)
     with mrcfile.open(str(mrc_path), mode="r", permissive=True) as mrc:
         data = mrc.data.copy()
 
-        # mrc files are in Angstrom, convert to nm
-        vx = float(mrc.voxel_size.x) / 10.
-        vy = float(mrc.voxel_size.y) / 10.
-        vz = float(mrc.voxel_size.z) / 10.
+        # MRC headers store spacing in Angstrom; Neuroglancer is told nm.
+        vx = float(mrc.voxel_size.x) / 10.0
+        vy = float(mrc.voxel_size.y) / 10.0
+        vz = float(mrc.voxel_size.z) / 10.0
         mapc = int(mrc.header.mapc)
         mapr = int(mrc.header.mapr)
         maps = int(mrc.header.maps)
