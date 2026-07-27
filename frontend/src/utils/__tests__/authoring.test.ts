@@ -49,14 +49,16 @@ describe('buildPayload custom fields', () => {
   })
 
   it('splits a comma-joined multiselect cross-ref into a list', () => {
-    const rawFields = fieldsForSection('acquisition', 'raw_tomogram')
-    const out = buildPayload(rawFields, {
+    // post_processed_tomogram.derived_from is the multiselect (a tomogram may
+    // derive from several); raw_tomogram.derived_from is a single tilt series.
+    const ppFields = fieldsForSection('acquisition', 'post_processed_tomogram')
+    const out = buildPayload(ppFields, {
       tomogram_id: 'tomo1',
       derived_from: 'a, b',
     })
     expect(out.derived_from).toEqual(['a', 'b'])
     // An empty multiselect is omitted (no `derived_from = []` litter).
-    const empty = buildPayload(rawFields, { tomogram_id: 'tomo1', derived_from: '' })
+    const empty = buildPayload(ppFields, { tomogram_id: 'tomo1', derived_from: '' })
     expect('derived_from' in empty).toBe(false)
   })
 })
@@ -130,19 +132,20 @@ describe('hydrateSections + inferSectionedDataSource (acquisition)', () => {
     const state = hydrateSections(acqSections, acqFields, {
       acquisition: { acquisition_id: 'Pos1' },
       tilt_series: [{ id: 'ts_raw' }],
-      raw_tomogram: { id: 'tomo_raw' },
+      raw_tomogram: [{ id: 'tomo_raw' }],
       annotation: [{ id: 'ann1' }],
     })
     // Immutable-on-load sections present in the file are read-only…
     expect((state.tilt_series as SectionState[])[0].locked).toBe(true)
-    expect((state.raw_tomogram as SectionState).locked).toBe(true)
+    expect((state.raw_tomogram as SectionState[])[0].locked).toBe(true)
     expect((state.annotation as SectionState[])[0].locked).toBe(true)
-    // …but [acquisition] stays editable, and an absent raw_tomogram would too.
+    // …but [acquisition] stays editable, and an absent raw_tomogram
+    // contributes no locked entry at all.
     expect((state.acquisition as SectionState).locked).toBeFalsy()
     const blank = hydrateSections(acqSections, acqFields, {
       acquisition: { acquisition_id: 'Pos1' },
     })
-    expect((blank.raw_tomogram as SectionState).locked).toBeFalsy()
+    expect(blank.raw_tomogram as SectionState[]).toEqual([])
   })
 })
 

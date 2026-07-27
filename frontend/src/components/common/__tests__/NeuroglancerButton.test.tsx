@@ -73,6 +73,7 @@ describe('NeuroglancerButton — kind:launch', () => {
     entity: 'tomogram' as const,
     sampleId: 'sample_a',
     acquisitionId: 'acq1',
+    groupId: 'align1',
     entityId: 't1',
   }
 
@@ -91,7 +92,7 @@ describe('NeuroglancerButton — kind:launch', () => {
     // apiFetch called with the correct launch URL.
     await waitFor(() => {
       expect(mockApiFetch).toHaveBeenCalledWith(
-        '/tomograms/sample_a/acq1/t1/neuroglancer',
+        '/tomograms/sample_a/acq1/align1/t1/neuroglancer',
         { method: 'POST' },
       )
     })

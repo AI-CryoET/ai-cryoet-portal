@@ -89,15 +89,18 @@ def client(tmp_path):
         s.add(orm.AcquisitionORM(sample_id="sample_a", acquisition_id="acq1"))
         # Legit row — used to confirm a positive case works in same fixture
         s.add(orm.PostProcessedTomogramORM(
-            sample_id="sample_a", acquisition_id="acq1", tomogram_id="ok",
+            sample_id="sample_a", acquisition_id="acq1",
+            reconstruction_alignment_id="align1", tomogram_id="ok",
             mrc_path=str(inside_mrc),
         ))
         s.add(orm.PostProcessedTomogramORM(
-            sample_id="sample_a", acquisition_id="acq1", tomogram_id="outside",
+            sample_id="sample_a", acquisition_id="acq1",
+            reconstruction_alignment_id="align1", tomogram_id="outside",
             mrc_path=str(outside_mrc),
         ))
         s.add(orm.PostProcessedTomogramORM(
-            sample_id="sample_a", acquisition_id="acq1", tomogram_id="symlink",
+            sample_id="sample_a", acquisition_id="acq1",
+            reconstruction_alignment_id="align1", tomogram_id="symlink",
             mrc_path=str(symlink_inside),
         ))
         s.add(orm.TiltSeriesORM(
@@ -117,28 +120,28 @@ def client(tmp_path):
 
 def test_tomogram_preview_inside_data_root_ok(client):
     """Sanity check — the legitimate row still works in this fixture."""
-    r = client.get("/tomograms/sample_a/acq1/ok/preview.png")
+    r = client.get("/tomograms/sample_a/acq1/align1/ok/preview.png")
     assert r.status_code == 200
 
 
 def test_tomogram_preview_path_outside_data_root_404(client):
-    r = client.get("/tomograms/sample_a/acq1/outside/preview.png")
+    r = client.get("/tomograms/sample_a/acq1/align1/outside/preview.png")
     assert r.status_code == 404
 
 
 def test_tomogram_preview_symlink_escape_404(client):
     """Symlink that resolves outside the root is rejected via Path.resolve()."""
-    r = client.get("/tomograms/sample_a/acq1/symlink/preview.png")
+    r = client.get("/tomograms/sample_a/acq1/align1/symlink/preview.png")
     assert r.status_code == 404
 
 
 def test_tomogram_neuroglancer_path_outside_data_root_404(client):
-    r = client.post("/tomograms/sample_a/acq1/outside/neuroglancer")
+    r = client.post("/tomograms/sample_a/acq1/align1/outside/neuroglancer")
     assert r.status_code == 404
 
 
 def test_tomogram_neuroglancer_symlink_escape_404(client):
-    r = client.post("/tomograms/sample_a/acq1/symlink/neuroglancer")
+    r = client.post("/tomograms/sample_a/acq1/align1/symlink/neuroglancer")
     assert r.status_code == 404
 
 

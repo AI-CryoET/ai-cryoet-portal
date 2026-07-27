@@ -1,7 +1,8 @@
 """Annotation preview endpoint.
 
-Annotations are composite-PK children of an acquisition
-(``sample_id, acquisition_id, annotation_id``) whose artifacts live in the
+Annotations are composite-PK children of an alignment group
+(``sample_id, acquisition_id, reconstruction_alignment_id, annotation_id``)
+whose artifacts live in the
 ``files`` JSON list (an ``.mrc`` volume plus, typically, a ``.zarr`` and
 sometimes a pre-rendered ``.png``/``.star``). This route renders the center-XY
 slice of the annotation's ``.mrc`` as a PNG — the same render path the
@@ -31,14 +32,24 @@ router = APIRouter()
 
 
 def _lookup_annotation(
-    session: Session, sample_id: str, acquisition_id: str, annotation_id: str
+    session: Session,
+    sample_id: str,
+    acquisition_id: str,
+    *,
+    reconstruction_alignment_id: str,
+    annotation_id: str,
 ) -> orm.AnnotationORM:
-    """Return the annotation row or raise 404 (incl. soft-deleted parent samples)."""
+    """Return the annotation row or raise 404 (incl. soft-deleted parent samples).
+
+    The group and leaf args are keyword-only: four same-typed positionals made
+    a transposition a silent 404.
+    """
     sample = session.get(orm.SampleORM, sample_id)
     if sample is None or sample.deleted_at is not None:
         raise HTTPException(status_code=404, detail="sample not found")
     row = session.get(
-        orm.AnnotationORM, (sample_id, acquisition_id, annotation_id)
+        orm.AnnotationORM,
+        (sample_id, acquisition_id, reconstruction_alignment_id, annotation_id),
     )
     if row is None:
         raise HTTPException(status_code=404, detail="annotation not found")
@@ -64,10 +75,14 @@ def _cached_preview_png(mrc_path: str, mtime: float) -> bytes:
     return render_center_xy_slice_png(mrc_path, width=1200)
 
 
-@router.get("/{sample_id}/{acquisition_id}/{annotation_id}/preview.png")
+@router.get(
+    "/{sample_id}/{acquisition_id}/{reconstruction_alignment_id}"
+    "/{annotation_id}/preview.png"
+)
 async def annotation_preview(
     sample_id: str,
     acquisition_id: str,
+    reconstruction_alignment_id: str,
     annotation_id: str,
     request: Request,
     session: Session = Depends(get_session),
@@ -77,7 +92,13 @@ async def annotation_preview(
     Returns 404 for a missing row or path-outside-root, 422 for an annotation
     with no ``.mrc`` artifact.
     """
-    row = _lookup_annotation(session, sample_id, acquisition_id, annotation_id)
+    row = _lookup_annotation(
+        session,
+        sample_id,
+        acquisition_id,
+        reconstruction_alignment_id=reconstruction_alignment_id,
+        annotation_id=annotation_id,
+    )
     mrc_path = _annotation_mrc_path(row.files)
     if not mrc_path:
         raise HTTPException(status_code=422, detail="annotation has no mrc file")
@@ -105,12 +126,14 @@ async def annotation_preview(
 
 
 @router.post(
-    "/{sample_id}/{acquisition_id}/{annotation_id}/neuroglancer",
+    "/{sample_id}/{acquisition_id}/{reconstruction_alignment_id}"
+    "/{annotation_id}/neuroglancer",
     response_model=ViewerLaunchOut,
 )
 async def annotation_neuroglancer(
     sample_id: str,
     acquisition_id: str,
+    reconstruction_alignment_id: str,
     annotation_id: str,
     request: Request,
     session: Session = Depends(get_session),
@@ -120,7 +143,13 @@ async def annotation_neuroglancer(
     Mirrors the tomogram launch route — same registry, same dev-side hostname
     rewrite on the frontend. 422 for an annotation with no ``.mrc`` artifact.
     """
-    row = _lookup_annotation(session, sample_id, acquisition_id, annotation_id)
+    row = _lookup_annotation(
+        session,
+        sample_id,
+        acquisition_id,
+        reconstruction_alignment_id=reconstruction_alignment_id,
+        annotation_id=annotation_id,
+    )
     mrc_path = _annotation_mrc_path(row.files)
     if not mrc_path:
         raise HTTPException(status_code=422, detail="annotation has no mrc file")
@@ -142,6 +171,14 @@ async def annotation_neuroglancer(
         )
 
     url = await launch_viewer_in_registry(
-        request, ("annotation", sample_id, acquisition_id, annotation_id), launch
+        request,
+        (
+            "annotation",
+            sample_id,
+            acquisition_id,
+            reconstruction_alignment_id,
+            annotation_id,
+        ),
+        launch,
     )
     return ViewerLaunchOut(url=url)

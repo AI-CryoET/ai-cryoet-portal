@@ -48,12 +48,12 @@ function existenceOk(acq: AcquisitionOut, predicate: string): boolean {
     case 'has_tilt_series_zarr':
       return acq.tilt_series.some((t) => t.zarr_path != null)
     case 'has_raw_tomogram':
-      return acq.raw_tomogram != null
+      return acq.raw_tomograms.length > 0
     case 'has_post_processed_tomogram':
       return acq.post_processed_tomograms.length > 0
     case 'has_tomogram_zarr':
       return (
-        acq.raw_tomogram?.zarr_path != null ||
+        acq.raw_tomograms.some((t) => t.zarr_path != null) ||
         acq.post_processed_tomograms.some((t) => t.zarr_path != null)
       )
     default:

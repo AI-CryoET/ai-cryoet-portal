@@ -71,7 +71,8 @@ def client(tmp_path):
         s.add(orm.AcquisitionORM(sample_id="sample_a", acquisition_id="acq1"))
         # Annotation with an .mrc (plus sibling artifacts that must be ignored)
         s.add(orm.AnnotationORM(
-            sample_id="sample_a", acquisition_id="acq1", annotation_id="ann1",
+            sample_id="sample_a", acquisition_id="acq1",
+            reconstruction_alignment_id="align1", annotation_id="ann1",
             type="membrane_segmentation",
             files=[
                 str(mrc_path.with_suffix(".zarr")),
@@ -81,12 +82,14 @@ def client(tmp_path):
         ))
         # Annotation with no .mrc artifact
         s.add(orm.AnnotationORM(
-            sample_id="sample_a", acquisition_id="acq1", annotation_id="ann_nomrc",
+            sample_id="sample_a", acquisition_id="acq1",
+            reconstruction_alignment_id="align1", annotation_id="ann_nomrc",
             files=[str(mrc_path.with_suffix(".star"))],
         ))
         # Annotation whose .mrc doesn't exist on disk
         s.add(orm.AnnotationORM(
-            sample_id="sample_a", acquisition_id="acq1", annotation_id="ann_missing",
+            sample_id="sample_a", acquisition_id="acq1",
+            reconstruction_alignment_id="align1", annotation_id="ann_missing",
             files=[str(data_root / "sample_a" / "acq1" / "ann_missing" / "gone.mrc")],
         ))
         # Soft-deleted sample
@@ -99,7 +102,8 @@ def client(tmp_path):
         ))
         s.add(orm.AcquisitionORM(sample_id="sample_dead", acquisition_id="acq1"))
         s.add(orm.AnnotationORM(
-            sample_id="sample_dead", acquisition_id="acq1", annotation_id="ann1",
+            sample_id="sample_dead", acquisition_id="acq1",
+            reconstruction_alignment_id="align1", annotation_id="ann1",
             files=[str(mrc_path)],
         ))
         s.commit()
@@ -110,7 +114,7 @@ def client(tmp_path):
 
 
 def test_preview_returns_png(client):
-    r = client.get("/annotations/sample_a/acq1/ann1/preview.png")
+    r = client.get("/annotations/sample_a/acq1/align1/ann1/preview.png")
     assert r.status_code == 200, r.text
     assert r.headers["content-type"] == "image/png"
     assert r.content[:8] == b"\x89PNG\r\n\x1a\n"
@@ -119,10 +123,10 @@ def test_preview_returns_png(client):
 
 
 def test_preview_etag_roundtrip_returns_304(client):
-    r1 = client.get("/annotations/sample_a/acq1/ann1/preview.png")
+    r1 = client.get("/annotations/sample_a/acq1/align1/ann1/preview.png")
     etag = r1.headers["etag"]
     r2 = client.get(
-        "/annotations/sample_a/acq1/ann1/preview.png",
+        "/annotations/sample_a/acq1/align1/ann1/preview.png",
         headers={"If-None-Match": etag},
     )
     assert r2.status_code == 304
@@ -130,36 +134,36 @@ def test_preview_etag_roundtrip_returns_304(client):
 
 
 def test_preview_unknown_annotation_404(client):
-    r = client.get("/annotations/sample_a/acq1/nope/preview.png")
+    r = client.get("/annotations/sample_a/acq1/align1/nope/preview.png")
     assert r.status_code == 404
 
 
 def test_preview_soft_deleted_sample_404(client):
-    r = client.get("/annotations/sample_dead/acq1/ann1/preview.png")
+    r = client.get("/annotations/sample_dead/acq1/align1/ann1/preview.png")
     assert r.status_code == 404
 
 
 def test_preview_no_mrc_artifact_422(client):
-    r = client.get("/annotations/sample_a/acq1/ann_nomrc/preview.png")
+    r = client.get("/annotations/sample_a/acq1/align1/ann_nomrc/preview.png")
     assert r.status_code == 422
 
 
 def test_preview_missing_file_404_via_path_validation(client):
     """``Path.resolve(strict=True)`` raises FileNotFoundError, surfaced as 404."""
-    r = client.get("/annotations/sample_a/acq1/ann_missing/preview.png")
+    r = client.get("/annotations/sample_a/acq1/align1/ann_missing/preview.png")
     assert r.status_code == 404
 
 
 def test_neuroglancer_no_mrc_artifact_422(client):
-    r = client.post("/annotations/sample_a/acq1/ann_nomrc/neuroglancer")
+    r = client.post("/annotations/sample_a/acq1/align1/ann_nomrc/neuroglancer")
     assert r.status_code == 422
 
 
 def test_neuroglancer_unknown_annotation_404(client):
-    r = client.post("/annotations/sample_a/acq1/nope/neuroglancer")
+    r = client.post("/annotations/sample_a/acq1/align1/nope/neuroglancer")
     assert r.status_code == 404
 
 
 def test_neuroglancer_soft_deleted_sample_404(client):
-    r = client.post("/annotations/sample_dead/acq1/ann1/neuroglancer")
+    r = client.post("/annotations/sample_dead/acq1/align1/ann1/neuroglancer")
     assert r.status_code == 404

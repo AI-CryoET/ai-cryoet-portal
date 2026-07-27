@@ -1,6 +1,6 @@
 """Tests for ``POST /toml/{kind}`` (backend-authoritative TOML generation).
 
-Asserts the endpoint seam (ADR-0001): valid -> 200 clean value-only TOML +
+Asserts the endpoint seam: valid -> 200 clean value-only TOML +
 Content-Disposition; invalid -> 422 field errors; empties omitted; extras
 preserved; unknown kind -> 404; id omitted from md_run output.
 """
@@ -58,6 +58,14 @@ def seeded_client(tmp_path):
                 acquisition_id="Position_1",
                 tilt_series_id="ts_raw",
                 derived_from="Frames",
+            )
+        )
+        s.add(
+            orm.TiltSeriesORM(
+                sample_id="samp1",
+                acquisition_id="Position_1",
+                tilt_series_id="ts_aligned",
+                derived_from="ts_raw",
             )
         )
         s.commit()
@@ -134,7 +142,7 @@ def test_extra_fields_preserved(client):
 
 def test_non_toml_serializable_extra_returns_422_not_500(client):
     # extra="allow" lets a nested null through validation; it must not crash
-    # tomli_w into a 500 (ADR-0001: endpoint is status-discriminated).
+    # tomli_w into a 500 (endpoint is status-discriminated).
     resp = client.post(
         "/toml/md_run",
         json={"md_run_id": "run01", "weird": {"k": None}},
@@ -297,6 +305,18 @@ def test_md_run_id_suggestions(seeded_client):
     assert resp.json()["ids"] == ["run01"]
 
 
+def test_tilt_series_ids_for_an_acquisition(seeded_client):
+    resp = seeded_client.get("/toml/tilt-series-ids/samp1/Position_1")
+    assert resp.status_code == 200
+    assert resp.json()["ids"] == ["ts_aligned", "ts_raw"]
+
+
+def test_tilt_series_ids_empty_for_unknown_acquisition(seeded_client):
+    resp = seeded_client.get("/toml/tilt-series-ids/samp1/nope")
+    assert resp.status_code == 200
+    assert resp.json()["ids"] == []
+
+
 def test_acquisition_load_requires_sample_id(seeded_client):
     assert seeded_client.get("/toml/acquisition/load/Position_1").status_code == 422
 
@@ -308,62 +328,68 @@ def test_acquisition_load_by_composite_id(seeded_client):
     assert fields["acquisition"]["acquisition_id"] == "Position_1"
     assert fields["acquisition"]["resolution"] == 3.4
     assert fields["md_source"]["md_run_id"] == "run01"
-    assert [ts["tilt_series_id"] for ts in fields["tilt_series"]] == ["ts_raw"]
+    assert [ts["tilt_series_id"] for ts in fields["tilt_series"]] == [
+        "ts_aligned",
+        "ts_raw",
+    ]
 
 
 # ── Issue 06: processing log (tomograms, annotations, cross-refs) ───────────
 
 
 def test_acquisition_processing_log_round_trips(client):
-    # [raw_tomogram], [[post_processed_tomogram]], [[annotation]] all serialize
+    # [[raw_tomogram]], [[post_processed_tomogram]], [[annotation]] all serialize
     # with cross-refs that resolve (AC: cross-references resolve at the seam).
     resp = client.post(
         "/toml/acquisition",
         json={
             "acquisition": {"acquisition_id": "Position_1"},
             "tilt_series": [{"tilt_series_id": "ts_raw", "derived_from": "Frames"}],
-            "raw_tomogram": {
-                "tomogram_id": "tomo_raw",
-                "tilt_series_id": "ts_raw",
-                "software": "AreTomo",
-            },
+            "raw_tomogram": [
+                {
+                    "tomogram_id": "tomo_raw",
+                    "derived_from": "ts_raw",
+                    "software": "AreTomo",
+                }
+            ],
             "post_processed_tomogram": [
                 {
                     "tomogram_id": "tomo_denoised",
-                    "tilt_series_id": "ts_raw",
                     "derived_from": ["tomo_raw"],
                     "denoising_software": "cryoCARE",
                 }
             ],
-            "annotation": [{"annotation_id": "ann1", "target_tomogram": "tomo_denoised"}],
+            "annotation": [{"annotation_id": "ann1"}],
         },
     )
     assert resp.status_code == 200
     parsed = tomllib.loads(resp.text)
-    assert parsed["raw_tomogram"]["id"] == "tomo_raw"
+    assert parsed["raw_tomogram"][0]["id"] == "tomo_raw"
     assert parsed["post_processed_tomogram"][0]["derived_from"] == ["tomo_raw"]
-    assert parsed["annotation"][0]["target_tomogram"] == "tomo_denoised"
+    assert parsed["annotation"][0]["id"] == "ann1"
 
 
-def test_dangling_tomogram_target_returns_422(client):
-    # An annotation pointing at a non-existent tomogram is rejected at the seam.
+def test_dangling_raw_tomogram_derived_from_returns_422(client):
+    # A raw_tomogram derived_from an unknown tilt series is rejected.
     resp = client.post(
         "/toml/acquisition",
         json={
             "acquisition": {"acquisition_id": "Position_1"},
-            "annotation": [{"annotation_id": "ann1", "target_tomogram": "ghost"}],
+            "raw_tomogram": [{"tomogram_id": "tomo_raw", "derived_from": "ghost"}],
         },
     )
     assert resp.status_code == 422
 
 
 def test_dangling_derived_from_returns_422(client):
-    # A tomogram derived_from an unknown tomogram id is rejected.
+    # A post-processed tomogram derived_from an unknown tomogram id is rejected.
     resp = client.post(
         "/toml/acquisition",
         json={
             "acquisition": {"acquisition_id": "Position_1"},
-            "raw_tomogram": {"tomogram_id": "tomo_raw", "derived_from": ["nope"]},
+            "post_processed_tomogram": [
+                {"tomogram_id": "tomo1", "derived_from": ["nope"]}
+            ],
         },
     )
     assert resp.status_code == 422
@@ -371,7 +397,7 @@ def test_dangling_derived_from_returns_422(client):
 
 def test_acquisition_load_includes_processing_log(seeded_client):
     # Seed a tomogram + annotation, then load: the form receives them to render
-    # read-only (ADR-0004 immutability is enforced client-side on these).
+    # editable; the client warns if a loaded id is renamed.
     from sqlalchemy.orm import sessionmaker
 
     Session = sessionmaker(
@@ -383,16 +409,17 @@ def test_acquisition_load_includes_processing_log(seeded_client):
             orm.RawTomogramORM(
                 sample_id="samp1",
                 acquisition_id="Position_1",
+                reconstruction_alignment_id="align1",
                 tomogram_id="tomo_raw",
-                tilt_series_id="ts_raw",
+                derived_from="ts_raw",
             )
         )
         s.add(
             orm.AnnotationORM(
                 sample_id="samp1",
                 acquisition_id="Position_1",
+                reconstruction_alignment_id="align1",
                 annotation_id="ann1",
-                target_tomogram="tomo_raw",
             )
         )
         s.commit()
@@ -402,5 +429,309 @@ def test_acquisition_load_includes_processing_log(seeded_client):
     fields = seeded_client.get(
         "/toml/acquisition/load/Position_1?sample_id=samp1"
     ).json()["fields"]
-    assert fields["raw_tomogram"]["tomogram_id"] == "tomo_raw"
-    assert fields["annotation"][0]["target_tomogram"] == "tomo_raw"
+    assert fields["raw_tomogram"][0]["tomogram_id"] == "tomo_raw"
+    assert fields["annotation"][0]["annotation_id"] == "ann1"
+
+
+def test_acquisition_load_dedupes_stems_shared_across_alignment_groups(seeded_client):
+    """Two alignment groups may each hold a ``denoised.mrc``; the flat form
+    cannot express that (``reconstruction_alignment_id`` is not authored, so the
+    field that distinguishes the blocks is unrenderable). Load must therefore
+    collapse them to one block per leaf id — and the proof is that the loaded
+    payload POSTs back cleanly, since two identical blocks land in the same
+    ``None`` group bucket and trip the duplicate-id validator.
+    """
+    from sqlalchemy.orm import sessionmaker
+
+    Session = sessionmaker(
+        bind=seeded_client.app.state.engine, future=True, expire_on_commit=False
+    )
+    s = Session()
+    try:
+        for group in ("align_a", "align_b"):
+            s.add(
+                orm.RawTomogramORM(
+                    sample_id="samp1",
+                    acquisition_id="Position_1",
+                    reconstruction_alignment_id=group,
+                    tomogram_id="dup",
+                    derived_from="ts_raw",
+                )
+            )
+            s.add(
+                orm.AnnotationORM(
+                    sample_id="samp1",
+                    acquisition_id="Position_1",
+                    reconstruction_alignment_id=group,
+                    annotation_id="dup_ann",
+                )
+            )
+        # Same stem as a post-processed tomogram in a third group: raw and
+        # post-processed share one id namespace in the validator, so the dedupe
+        # has to span both sections.
+        s.add(
+            orm.PostProcessedTomogramORM(
+                sample_id="samp1",
+                acquisition_id="Position_1",
+                reconstruction_alignment_id="align_c",
+                tomogram_id="dup",
+            )
+        )
+        s.commit()
+    finally:
+        s.close()
+
+    fields = seeded_client.get(
+        "/toml/acquisition/load/Position_1?sample_id=samp1"
+    ).json()["fields"]
+
+    ids = [t["tomogram_id"] for t in fields.get("raw_tomogram", [])]
+    ids += [t["tomogram_id"] for t in fields.get("post_processed_tomogram", [])]
+    assert ids == ["dup"], ids
+    assert [a["annotation_id"] for a in fields.get("annotation", [])] == ["dup_ann"]
+    # First group wins, deterministically (queries order by group then id).
+    assert fields["raw_tomogram"][0]["derived_from"] == "ts_raw"
+    assert "reconstruction_alignment_id" not in fields["raw_tomogram"][0]
+
+    # The round trip is the actual guarantee: the deduped load must be a payload
+    # the generator accepts.
+    resp = seeded_client.post("/toml/acquisition", json=fields)
+    assert resp.status_code == 200, resp.text
+    parsed = tomllib.loads(resp.text)
+    assert [t["id"] for t in parsed["raw_tomogram"]] == ["dup"]
+
+
+def test_acquisition_load_dedupes_stems_differing_only_in_case(seeded_client):
+    """The duplicate-id validator casefolds, so ``denoised`` in one group and
+    ``Denoised`` in another collide on generate. The dedupe must key
+    case-insensitively — while still emitting the original id, not a
+    lowercased one.
+    """
+    from sqlalchemy.orm import sessionmaker
+
+    Session = sessionmaker(
+        bind=seeded_client.app.state.engine, future=True, expire_on_commit=False
+    )
+    s = Session()
+    try:
+        for group, stem in (("align_a", "denoised"), ("align_b", "Denoised")):
+            s.add(
+                orm.RawTomogramORM(
+                    sample_id="samp1",
+                    acquisition_id="Position_1",
+                    reconstruction_alignment_id=group,
+                    tomogram_id=stem,
+                    derived_from="ts_raw",
+                )
+            )
+        s.add(
+            orm.AnnotationORM(
+                sample_id="samp1",
+                acquisition_id="Position_1",
+                reconstruction_alignment_id="align_a",
+                annotation_id="ann_x",
+            )
+        )
+        s.add(
+            orm.AnnotationORM(
+                sample_id="samp1",
+                acquisition_id="Position_1",
+                reconstruction_alignment_id="align_b",
+                annotation_id="ANN_X",
+            )
+        )
+        s.commit()
+    finally:
+        s.close()
+
+    fields = seeded_client.get(
+        "/toml/acquisition/load/Position_1?sample_id=samp1"
+    ).json()["fields"]
+
+    # Original casing preserved, one block only.
+    assert [t["tomogram_id"] for t in fields["raw_tomogram"]] == ["denoised"]
+    assert [a["annotation_id"] for a in fields["annotation"]] == ["ann_x"]
+
+    resp = seeded_client.post("/toml/acquisition", json=fields)
+    assert resp.status_code == 200, resp.text
+
+
+def test_author_acquisition_drops_hand_authored_group_id(client):
+    """A legacy acquisition.toml can carry a hand-authored
+    ``reconstruction_alignment_id`` on a tomogram block; ``/parse`` returns
+    unknown keys verbatim, so re-emitting it would produce a file the authoring
+    validator accepts but the scanner rejects. The generator applies the same
+    scrub the loader does, which also means two blocks that only differ by that
+    key collide as the duplicate they are.
+    """
+    toml = (
+        '[acquisition]\nresolution = 3.4\n\n'
+        '[[raw_tomogram]]\nid = "dup"\nreconstruction_alignment_id = "align_a"\n'
+    )
+    parsed = client.post("/toml/acquisition/parse", json={"toml": toml}).json()["fields"]
+    assert parsed["raw_tomogram"][0]["reconstruction_alignment_id"] == "align_a"
+
+    out = client.post("/toml/acquisition", json=parsed)
+    assert out.status_code == 200, out.text
+    assert "reconstruction_alignment_id" not in tomllib.loads(out.text)["raw_tomogram"][0]
+
+    two = {
+        "acquisition": {"acquisition_id": "Position_1"},
+        "raw_tomogram": [
+            {"id": "dup", "reconstruction_alignment_id": "align_a"},
+            {"id": "dup", "reconstruction_alignment_id": "align_b"},
+        ]
+    }
+    assert client.post("/toml/acquisition", json=two).status_code == 422
+
+
+def test_valid_reconstruction_downloads_nested_toml(client):
+    resp = client.post(
+        "/toml/reconstruction",
+        json={
+            "reconstruction_alignment": {
+                "reconstruction_alignment_id": "recon_1",
+                "alignment_software": "IMOD 4.12",
+                "alignment_method": "patch_tracking",
+            },
+            "raw_tomogram": [
+                {"tomogram_id": "bp_3dctf_bin4", "derived_from": "ts_aligned"}
+            ],
+            "post_processed_tomogram": [
+                {
+                    "tomogram_id": "bp_3dctf_bin4_ddw",
+                    "derived_from": ["bp_3dctf_bin4"],
+                }
+            ],
+            "annotation": [
+                {"annotation_id": "membrain_seg_v10", "type": "membrane_segmentation"}
+            ],
+        },
+    )
+    assert resp.status_code == 200
+    assert resp.headers["content-disposition"] == (
+        'attachment; filename="reconstruction.toml"'
+    )
+    parsed = tomllib.loads(resp.text)
+    # The folder-derived group id is dropped — the folder name carries it.
+    assert "id" not in parsed["reconstruction_alignment"]
+    assert parsed["reconstruction_alignment"]["alignment_software"] == "IMOD 4.12"
+    assert [t["id"] for t in parsed["raw_tomogram"]] == ["bp_3dctf_bin4"]
+    assert parsed["post_processed_tomogram"][0]["derived_from"] == ["bp_3dctf_bin4"]
+    assert parsed["annotation"][0]["id"] == "membrain_seg_v10"
+
+
+def test_reconstruction_parse_round_trips(client):
+    body = "\n".join(
+        [
+            "[reconstruction_alignment]",
+            'alignment_software = "IMOD 4.12"',
+            "",
+            "[[raw_tomogram]]",
+            'id = "bp_3dctf_bin4"',
+        ]
+    )
+    resp = client.post("/toml/reconstruction/parse", json={"toml": body})
+    assert resp.status_code == 200
+    fields = resp.json()["fields"]
+    assert fields["reconstruction_alignment"]["alignment_software"] == "IMOD 4.12"
+    assert fields["raw_tomogram"][0]["id"] == "bp_3dctf_bin4"
+
+
+def test_unknown_reconstruction_field_is_preserved(client):
+    """extra="allow" means an unrecognised key survives into the output."""
+    resp = client.post(
+        "/toml/reconstruction",
+        json={"reconstruction_alignment": {"tilt_axis_refinement": "per_tilt"}},
+    )
+    assert resp.status_code == 200
+    parsed = tomllib.loads(resp.text)
+    assert parsed["reconstruction_alignment"]["tilt_axis_refinement"] == "per_tilt"
+
+
+# ── Reconstruction form: pull-from-API load, scoped to one group ────────────
+
+
+def test_reconstruction_load_is_scoped_to_the_group(seeded_client):
+    """Two groups may hold the same stem; a load returns only one group's rows."""
+    Session = sessionmaker(
+        bind=seeded_client.app.state.engine, future=True, expire_on_commit=False
+    )
+    s = Session()
+    try:
+        for group, software in (("grp_a", "IMOD 4.12"), ("grp_b", "RELION")):
+            s.add(
+                orm.ReconstructionAlignmentORM(
+                    sample_id="samp1",
+                    acquisition_id="Position_1",
+                    reconstruction_alignment_id=group,
+                    alignment_software=software,
+                )
+            )
+            s.add(
+                orm.RawTomogramORM(
+                    sample_id="samp1",
+                    acquisition_id="Position_1",
+                    reconstruction_alignment_id=group,
+                    tomogram_id="dup",
+                    derived_from="ts_raw",
+                )
+            )
+        s.commit()
+    finally:
+        s.close()
+
+    fields = seeded_client.get(
+        "/toml/reconstruction/load/grp_a?sample_id=samp1&acquisition_id=Position_1"
+    ).json()["fields"]
+    assert fields["reconstruction_alignment"]["alignment_software"] == "IMOD 4.12"
+    assert [t["tomogram_id"] for t in fields["raw_tomogram"]] == ["dup"]
+    # grp_b's identically-named tomogram is not included.
+    assert len(fields["raw_tomogram"]) == 1
+
+
+def test_reconstruction_load_requires_acquisition_id(seeded_client):
+    resp = seeded_client.get("/toml/reconstruction/load/grp_a?sample_id=samp1")
+    assert resp.status_code == 422
+
+
+def test_reconstruction_load_unknown_group_404s(seeded_client):
+    resp = seeded_client.get(
+        "/toml/reconstruction/load/nope?sample_id=samp1&acquisition_id=Position_1"
+    )
+    assert resp.status_code == 404
+
+
+def test_reconstruction_group_ids_for_an_acquisition(seeded_client):
+    """The group selector's list: every Reconstructions/ folder in one
+    acquisition, sorted, and nothing from a sibling acquisition."""
+    Session = sessionmaker(
+        bind=seeded_client.app.state.engine, future=True, expire_on_commit=False
+    )
+    s = Session()
+    try:
+        for acq, group in (
+            ("Position_1", "grp_b"),
+            ("Position_1", "grp_a"),
+            ("Position_2", "grp_elsewhere"),
+        ):
+            s.add(
+                orm.ReconstructionAlignmentORM(
+                    sample_id="samp1",
+                    acquisition_id=acq,
+                    reconstruction_alignment_id=group,
+                )
+            )
+        s.commit()
+    finally:
+        s.close()
+
+    resp = seeded_client.get("/toml/reconstruction-group-ids/samp1/Position_1")
+    assert resp.status_code == 200
+    assert resp.json()["ids"] == ["grp_a", "grp_b"]
+
+
+def test_reconstruction_group_ids_empty_for_unknown_acquisition(seeded_client):
+    resp = seeded_client.get("/toml/reconstruction-group-ids/samp1/nope")
+    assert resp.status_code == 200
+    assert resp.json()["ids"] == []

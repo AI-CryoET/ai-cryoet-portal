@@ -1,8 +1,10 @@
 """Tomogram preview + Neuroglancer endpoints (plan §7.4).
 
-URL design uses composite keys (sample_id, acquisition_id, tomogram_id)
-to mirror the table's primary key — self-describing, no server-side hash
-table to maintain (decision §11.8).
+URL design uses composite keys (sample_id, acquisition_id,
+reconstruction_alignment_id, tomogram_id) to mirror the table's primary
+key — self-describing, no server-side hash table to maintain
+(decision §11.8). The tomogram id is a file stem, unique only within its
+Reconstructions/{group}/ directory, so the group must appear in the URL.
 
 Heavy work (MRC decode, matplotlib render, Neuroglancer launch) runs on
 ``fastapi.concurrency.run_in_threadpool`` so the event loop stays free.
@@ -32,20 +34,29 @@ router = APIRouter()
 
 
 def _lookup_tomogram(
-    session: Session, sample_id: str, acquisition_id: str, tomogram_id: str
+    session: Session,
+    sample_id: str,
+    acquisition_id: str,
+    *,
+    reconstruction_alignment_id: str,
+    tomogram_id: str,
 ) -> orm.RawTomogramORM | orm.PostProcessedTomogramORM:
     """Return the tomogram row or raise 404 (incl. soft-deleted parent samples).
 
     Raw and post-processed tomograms share one id namespace within an
-    acquisition (the assembler ensures no collision), so at most one of the
-    two tables holds a row for any (sample_id, acquisition_id, tomogram_id)
-    triple. Post-processed is checked first because preview/Neuroglancer
-    requests target denoised tomograms far more often than raw.
+    alignment group (the assembler ensures no collision), so at most one of
+    the two tables holds a row for any (sample_id, acquisition_id,
+    reconstruction_alignment_id, tomogram_id) tuple. Post-processed is
+    checked first because preview/Neuroglancer requests target denoised
+    tomograms far more often than raw.
+
+    The group and leaf args are keyword-only: four same-typed positionals made
+    a transposition a silent 404.
     """
     sample = session.get(orm.SampleORM, sample_id)
     if sample is None or sample.deleted_at is not None:
         raise HTTPException(status_code=404, detail="sample not found")
-    pk = (sample_id, acquisition_id, tomogram_id)
+    pk = (sample_id, acquisition_id, reconstruction_alignment_id, tomogram_id)
     row = session.get(orm.PostProcessedTomogramORM, pk)
     if row is None:
         row = session.get(orm.RawTomogramORM, pk)
@@ -69,10 +80,14 @@ def _cached_preview_png(mrc_path: str, mtime: float) -> bytes:
     return render_center_xy_slice_png(mrc_path, width=1200)
 
 
-@router.get("/{sample_id}/{acquisition_id}/{tomogram_id}/preview.png")
+@router.get(
+    "/{sample_id}/{acquisition_id}/{reconstruction_alignment_id}"
+    "/{tomogram_id}/preview.png"
+)
 async def tomogram_preview(
     sample_id: str,
     acquisition_id: str,
+    reconstruction_alignment_id: str,
     tomogram_id: str,
     request: Request,
     session: Session = Depends(get_session),
@@ -82,7 +97,13 @@ async def tomogram_preview(
     Returns 404 for missing row or path-outside-root, 422 for an existing
     row whose ``mrc_path`` is missing on disk.
     """
-    row = _lookup_tomogram(session, sample_id, acquisition_id, tomogram_id)
+    row = _lookup_tomogram(
+        session,
+        sample_id,
+        acquisition_id,
+        reconstruction_alignment_id=reconstruction_alignment_id,
+        tomogram_id=tomogram_id,
+    )
     if not row.mrc_path:
         raise HTTPException(status_code=422, detail="tomogram has no mrc_path")
 
@@ -150,12 +171,14 @@ def _load_volume_for_viewer(mrc_path: str):
 
 
 @router.post(
-    "/{sample_id}/{acquisition_id}/{tomogram_id}/neuroglancer",
+    "/{sample_id}/{acquisition_id}/{reconstruction_alignment_id}"
+    "/{tomogram_id}/neuroglancer",
     response_model=ViewerLaunchOut,
 )
 async def tomogram_neuroglancer(
     sample_id: str,
     acquisition_id: str,
+    reconstruction_alignment_id: str,
     tomogram_id: str,
     request: Request,
     session: Session = Depends(get_session),
@@ -166,7 +189,13 @@ async def tomogram_neuroglancer(
     before opening — Neuroglancer reports the API host's FQDN which may
     not be reachable from the browser.
     """
-    row = _lookup_tomogram(session, sample_id, acquisition_id, tomogram_id)
+    row = _lookup_tomogram(
+        session,
+        sample_id,
+        acquisition_id,
+        reconstruction_alignment_id=reconstruction_alignment_id,
+        tomogram_id=tomogram_id,
+    )
     if not row.mrc_path:
         raise HTTPException(status_code=422, detail="tomogram has no mrc_path")
 
@@ -186,6 +215,14 @@ async def tomogram_neuroglancer(
         )
 
     url = await launch_viewer_in_registry(
-        request, ("tomogram", sample_id, acquisition_id, tomogram_id), launch
+        request,
+        (
+            "tomogram",
+            sample_id,
+            acquisition_id,
+            reconstruction_alignment_id,
+            tomogram_id,
+        ),
+        launch,
     )
     return ViewerLaunchOut(url=url)

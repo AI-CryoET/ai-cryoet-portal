@@ -451,7 +451,7 @@ def _check_reconstruction_files(
     return warnings
 
 
-def _drop_authored_group_ids(acq_data: dict) -> None:
+def drop_authored_group_ids(acq_data: dict) -> None:
     """Discard any hand-authored ``reconstruction_alignment_id`` on a flat
     acquisition.toml tomogram/annotation block, before validation.
 
@@ -845,7 +845,7 @@ def load_sample_record(
         _strip_placeholders(
             acq_data, f"acquisitions.{acq_name}", result.warnings
         )
-        _drop_authored_group_ids(acq_data)
+        drop_authored_group_ids(acq_data)
         acq_data.setdefault("acquisition", {})["acquisition_id"] = acq_name
 
         with _warnings.catch_warnings(record=True) as caught:

@@ -46,8 +46,12 @@ def client(tmp_path):
     s = Session()
     try:
         # sample_a — full with everything
-        tomo = PostProcessedTomogram(id="t1", voxel_size=11.72)
-        ann = Annotation(id="a1", target_tomogram="t1", files=["x.mrc"])
+        tomo = PostProcessedTomogram(
+            id="t1", voxel_size=11.72, reconstruction_alignment_id="align1"
+        )
+        ann = Annotation(
+            id="a1", files=["x.mrc"], reconstruction_alignment_id="align1"
+        )
         acq = AcquisitionFile(
             acquisition=Acquisition(acquisition_id="acq1"),
             post_processed_tomogram=[tomo],
@@ -102,7 +106,7 @@ def client(tmp_path):
         ))
 
         # sample_b — minimal (nanogold has no data_source constraint, so it can
-        # be a simulation sample, unlike synapse — see ADR-0003)
+        # be a simulation sample, unlike synapse)
         rec_b = SampleRecord(
             sample=Sample(
                 sample_id="sample_b",
@@ -212,7 +216,7 @@ def test_get_sample_detail(client):
     assert len(body["acquisitions"]) == 1
     acq = body["acquisitions"][0]
     assert acq["acquisition_id"] == "acq1"
-    assert acq["raw_tomogram"] is None
+    assert acq["raw_tomograms"] == []
     assert len(acq["post_processed_tomograms"]) == 1
     assert acq["post_processed_tomograms"][0]["voxel_size"] == pytest.approx(11.72)
 

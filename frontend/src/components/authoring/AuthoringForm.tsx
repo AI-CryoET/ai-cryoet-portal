@@ -29,6 +29,7 @@ import {
   type FormSection,
 } from '~/utils/formFields'
 import { PROJECT_REQUIRES_DATA_SOURCE } from '~/utils/filterFields'
+import { GroupSelector } from '~/components/authoring/GroupSelector'
 import {
   NotSavedToDiskWarning,
   SectionDivider,
@@ -42,6 +43,8 @@ import {
   errorsByField,
   errorsByPath,
   fetchMdRunIds,
+  fetchReconstructionGroupIds,
+  fetchTiltSeriesIds,
   hydrateComposite,
   hydrateSections,
   inferDataSource,
@@ -63,6 +66,12 @@ type Props = {
   // composite-keyed acquisition, initialSampleId resolves the record.
   initialId?: string
   initialSampleId?: string
+  // Reconstruction identity is a triple: the group folder name (initialId) is
+  // unique only within (initialSampleId, initialAcquisitionId).
+  initialAcquisitionId?: string
+  // Reports the id the form's current content was actually loaded by, so a
+  // parent record picker can follow a load the child initiated.
+  onLoadedId?: (id: string) => void
 }
 
 // Sample is a composite form with project-gated sections (requiresProject) and
@@ -74,15 +83,72 @@ function isProjectGated(form: FormKind): boolean {
 
 // Dispatch to the renderer matching the form's shape. Both consume the same
 // authored-field registry (ADR-0002); they differ only in section semantics.
-export function AuthoringForm({ form, initialId, initialSampleId }: Props) {
-  return isProjectGated(form) ? (
-    <CompositeAuthoringForm form={form} autoLoadId={initialId} />
-  ) : (
-    <SectionedAuthoringForm
-      form={form}
-      initialId={initialId}
-      initialSampleId={initialSampleId}
-    />
+export function AuthoringForm(props: Props) {
+  if (isProjectGated(props.form)) {
+    return <CompositeAuthoringForm form={props.form} autoLoadId={props.initialId} />
+  }
+  // One reconstruction.toml per Reconstructions/<group>/ folder, so this form
+  // needs a record picker on top of the generic renderer.
+  if (props.form === 'reconstruction') return <GroupedAuthoringForm {...props} />
+  return <SectionedAuthoringForm {...props} />
+}
+
+// The generic renderer plus a group picker. Picking a group in the selector
+// remounts the form, so switching groups resets every field — including the
+// repeatable rows — rather than merging two groups' values.
+function GroupedAuthoringForm({
+  form,
+  initialId,
+  initialSampleId,
+  initialAcquisitionId,
+}: Props) {
+  const [group, setGroup] = React.useState(initialId ?? '')
+  // Remount counter, deliberately NOT `group`. The form's Sample/Acquisition
+  // id fields are editable, and a remount re-initialises them from the route
+  // props — so remounting on every group change would throw away hand-typed
+  // context and re-fetch with the route's (or with nothing, from a bare author
+  // tab, which is a 422). Only the selector bumps this; a load-by-id moves
+  // `group` alone, which the selector reads and the mounted form ignores
+  // (`initialId` is a mount-time seed).
+  const [mount, setMount] = React.useState(0)
+  const [groups, setGroups] = React.useState<string[]>([])
+
+  // ponytail: the list follows the ids the route supplied, not the form's
+  // editable Sample/Acquisition id fields — the entry link always carries
+  // both, and a hand-typed acquisition can still author a new group.
+  React.useEffect(() => {
+    if (!initialSampleId || !initialAcquisitionId) return
+    fetchReconstructionGroupIds(initialSampleId, initialAcquisitionId)
+      .then(setGroups)
+      .catch(() => setGroups([]))
+  }, [initialSampleId, initialAcquisitionId])
+
+  return (
+    <Stack spacing={2}>
+      <GroupSelector
+        groups={groups}
+        value={group}
+        onChange={(g) => {
+          setGroup(g)
+          setMount((n) => n + 1)
+        }}
+      />
+      <SectionedAuthoringForm
+        key={mount}
+        form={form}
+        // "Load from portal by id" inside the form is a group switch too, so
+        // the selector has to follow it — otherwise it keeps reading the old
+        // group and MUI's `value !== newValue` guard swallows a click on that
+        // group, leaving no way back. This only moves the selector: no
+        // remount, no refetch, and the context the user loaded with survives.
+        onLoadedId={setGroup}
+        // Empty group = a new folder: nothing to load, so the placement hint
+        // shows the folder name the researcher must create.
+        initialId={group || undefined}
+        initialSampleId={initialSampleId}
+        initialAcquisitionId={initialAcquisitionId}
+      />
+    </Stack>
   )
 }
 
@@ -116,7 +182,13 @@ function crossRefOptionsFor(
 // compose acquisition.toml's [acquisition] / [md_source] / [[tilt_series]] /
 // processing log. Required + IdStr structural checks happen here; all schema
 // rules on submit (backend-authoritative, ADR-0001).
-function SectionedAuthoringForm({ form, initialId, initialSampleId }: Props) {
+function SectionedAuthoringForm({
+  form,
+  initialId,
+  initialSampleId,
+  initialAcquisitionId,
+  onLoadedId,
+}: Props) {
   const meta = FORM_META[form]
   const sections = sectionsFor(form)
   const idField = fieldsFor(form).find((f) => f.isId)
@@ -125,7 +197,11 @@ function SectionedAuthoringForm({ form, initialId, initialSampleId }: Props) {
     : undefined
   const gated = sections.some((s) => s.requiresDataSource)
   const needsSampleId = meta.placement.includes('{sample_id}')
+  const needsAcquisitionId = meta.placement.includes('{acquisition_id}')
   const wantsMdRunIds = fieldsFor(form).some((f) => f.apiSuggest === 'md_run')
+  const wantsTiltSeriesIds = fieldsFor(form).some(
+    (f) => f.apiSuggest === 'tilt_series',
+  )
   const sectionFields = React.useCallback(
     (section: string) => fieldsForSection(form, section),
     [form],
@@ -136,7 +212,12 @@ function SectionedAuthoringForm({ form, initialId, initialSampleId }: Props) {
   )
   const [dataSource, setDataSource] = React.useState<DataSource>('experimental')
   const [sampleId, setSampleId] = React.useState(initialSampleId ?? '')
-  const [mdRunIds, setMdRunIds] = React.useState<string[]>([])
+  const [acquisitionId, setAcquisitionId] = React.useState(
+    initialAcquisitionId ?? '',
+  )
+  const [suggestions, setSuggestions] = React.useState<Record<string, string[]>>(
+    {},
+  )
   const [errors, setErrors] = React.useState<Record<string, string>>({})
   const [recordErrors, setRecordErrors] = React.useState<string[]>([])
   const [done, setDone] = React.useState(false)
@@ -146,6 +227,8 @@ function SectionedAuthoringForm({ form, initialId, initialSampleId }: Props) {
   // the "not saved to disk" banner. Cleared to empty resets it.
   const [loaded, setLoaded] = React.useState(false)
   const [seedError, setSeedError] = React.useState<string | undefined>()
+  // The id the current content was loaded by (see `seed`).
+  const [loadedId, setLoadedId] = React.useState('')
 
   // In-form id namespaces feeding cross-ref dropdowns: each section's
   // required-id field contributes to its namespace ("tomogram" pools raw +
@@ -167,8 +250,16 @@ function SectionedAuthoringForm({ form, initialId, initialSampleId }: Props) {
     return ns
   }, [sections, sectionFields, state])
 
-  // Replace form state from a seeded source (upload / API load).
-  const seed = (seeded: Record<string, unknown>, fromApi: boolean) => {
+  // Replace form state from a seeded source (upload / API load). `id` is the
+  // record id the content was loaded by — the placement hint falls back to it
+  // for a form whose id lives only in the folder name (reconstruction), so it
+  // must track the CURRENT content, not the mount-time id.
+  const seed = (
+    seeded: Record<string, unknown>,
+    fromApi: boolean,
+    id = '',
+  ) => {
+    setLoadedId(id)
     setState(hydrateSections(sections, sectionFields, seeded))
     setDataSource(inferSectionedDataSource(sections, seeded))
     setErrors({})
@@ -177,13 +268,16 @@ function SectionedAuthoringForm({ form, initialId, initialSampleId }: Props) {
     setSeedError(undefined)
     setStale(fromApi)
     setLoaded(Object.keys(seeded).length > 0)
+    // Only a real id is worth reporting: an upload / clear seeds with no id
+    // and must not drag a parent picker back to "new record".
+    if (id) onLoadedId?.(id)
   }
 
   // Auto-load once on mount when the route supplies an id (edit links).
   React.useEffect(() => {
     if (!initialId) return
-    loadToml(form, initialId, initialSampleId)
-      .then((seeded) => seed(seeded, true))
+    loadToml(form, initialId, initialSampleId, initialAcquisitionId)
+      .then((seeded) => seed(seeded, true, initialId))
       .catch((err) =>
         setSeedError(err instanceof Error ? err.message : String(err)),
       )
@@ -194,9 +288,19 @@ function SectionedAuthoringForm({ form, initialId, initialSampleId }: Props) {
   React.useEffect(() => {
     if (!wantsMdRunIds || !sampleId.trim()) return
     fetchMdRunIds(sampleId.trim())
-      .then(setMdRunIds)
-      .catch(() => setMdRunIds([]))
+      .then((ids) => setSuggestions((prev) => ({ ...prev, md_run: ids })))
+      .catch(() => setSuggestions((prev) => ({ ...prev, md_run: [] })))
   }, [wantsMdRunIds, sampleId])
+
+  // tilt_series_id suggestions (raw_tomogram.derived_from): the reference
+  // lives in the acquisition's own acquisition.toml, so both a sample and an
+  // acquisition context must be known before firing the request.
+  React.useEffect(() => {
+    if (!wantsTiltSeriesIds || !sampleId.trim() || !acquisitionId.trim()) return
+    fetchTiltSeriesIds(sampleId.trim(), acquisitionId.trim())
+      .then((ids) => setSuggestions((prev) => ({ ...prev, tilt_series: ids })))
+      .catch(() => setSuggestions((prev) => ({ ...prev, tilt_series: [] })))
+  }, [wantsTiltSeriesIds, sampleId, acquisitionId])
 
   async function handleUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
@@ -214,7 +318,16 @@ function SectionedAuthoringForm({ form, initialId, initialSampleId }: Props) {
     const id = loadId.trim()
     if (!id) return
     try {
-      seed(await loadToml(form, id, sampleId.trim() || undefined), true)
+      seed(
+        await loadToml(
+          form,
+          id,
+          sampleId.trim() || undefined,
+          acquisitionId.trim() || undefined,
+        ),
+        true,
+        id,
+      )
     } catch (err) {
       setSeedError(toErrorMessage(err))
     }
@@ -224,6 +337,7 @@ function SectionedAuthoringForm({ form, initialId, initialSampleId }: Props) {
   const handleClear = () => {
     seed({}, false)
     setSampleId('')
+    setAcquisitionId('')
     setLoadId('')
   }
 
@@ -270,11 +384,15 @@ function SectionedAuthoringForm({ form, initialId, initialSampleId }: Props) {
     }))
   }
 
+  // The loaded record's own id, falling back to the id the current content was
+  // loaded by: the reconstruction group id is a folder name, never a column,
+  // so the payload can't supply it.
   const idValue =
     (idSection &&
       (state[idSection.section] as SectionState | undefined)?.values[
         idField!.field
       ]?.trim()) ||
+    loadedId.trim() ||
     ''
 
   async function handleSubmit(e: React.FormEvent) {
@@ -308,13 +426,19 @@ function SectionedAuthoringForm({ form, initialId, initialSampleId }: Props) {
 
   // Loaded from the portal → concrete path with the known id; new file →
   // template showing the id the user must assign as the folder name.
+  // Context ids are substituted BEFORE {id}: on the acquisition form the id
+  // field IS acquisition_id, so substituting {id} first would synthesise a
+  // literal "{acquisition_id}" that the next replace would then overwrite with
+  // the acquisition context — turning the id placeholder into the id itself.
   const placement = stale
     ? meta.placement
-        .replace('{id}', idValue || '<id>')
         .replace('{sample_id}', sampleId.trim() || '<sample_id>')
+        .replace('{acquisition_id}', acquisitionId.trim() || '<acquisition_id>')
+        .replace('{id}', idValue || '<id>')
     : meta.placement
-        .replace('{id}', idField ? `{${idField.field}}` : '<id>')
         .replace('{sample_id}', sampleId.trim() || '{sample_id}')
+        .replace('{acquisition_id}', acquisitionId.trim() || '{acquisition_id}')
+        .replace('{id}', idField ? `{${idField.field}}` : '<id>')
 
   return (
     <Box component="form" onSubmit={handleSubmit} noValidate>
@@ -327,17 +451,36 @@ function SectionedAuthoringForm({ form, initialId, initialSampleId }: Props) {
           onLoadIdChange={setLoadId}
           onLoad={handleLoad}
           // md_run has no portal load path — nothing loaded, nothing to clear.
-          onClear={form === 'md_run' ? undefined : handleClear}
+          // reconstruction clears by picking "New group" in the selector,
+          // which also keeps the selector honest about which group the form
+          // is on.
+          onClear={
+            form === 'md_run' || form === 'reconstruction'
+              ? undefined
+              : handleClear
+          }
           // md_run has no portal load-by-id path yet.
           showLoadById={form !== 'md_run'}
           extra={
-            needsSampleId && (
-              <TextField
-                label="Sample id"
-                value={sampleId}
-                onChange={(e) => setSampleId(e.target.value)}
-                size="small"
-              />
+            (needsSampleId || needsAcquisitionId) && (
+              <>
+                {needsSampleId && (
+                  <TextField
+                    label="Sample id"
+                    value={sampleId}
+                    onChange={(e) => setSampleId(e.target.value)}
+                    size="small"
+                  />
+                )}
+                {needsAcquisitionId && (
+                  <TextField
+                    label="Acquisition id"
+                    value={acquisitionId}
+                    onChange={(e) => setAcquisitionId(e.target.value)}
+                    size="small"
+                  />
+                )}
+              </>
             )
           }
         />
@@ -359,6 +502,7 @@ function SectionedAuthoringForm({ form, initialId, initialSampleId }: Props) {
               fields={sectionFields(s.section)}
               entries={(state[s.section] as SectionState[]) ?? []}
               errors={errors}
+              suggestions={suggestions}
               namespaces={namespaces}
               onAdd={() => addEntry(s.section)}
               onRemove={(i) => removeEntry(s.section, i)}
@@ -372,7 +516,7 @@ function SectionedAuthoringForm({ form, initialId, initialSampleId }: Props) {
               fields={sectionFields(s.section)}
               state={(state[s.section] as SectionState) ?? emptySection()}
               errors={errors}
-              mdRunIds={mdRunIds}
+              suggestions={suggestions}
               namespaces={namespaces}
               apiLoaded={stale}
               onChange={(field, v) => setValue(s.section, field, v)}
@@ -419,7 +563,7 @@ function ScalarSection({
   fields,
   state,
   errors,
-  mdRunIds,
+  suggestions,
   namespaces,
   apiLoaded,
   onChange,
@@ -430,7 +574,7 @@ function ScalarSection({
   fields: FormField[]
   state: SectionState
   errors: Record<string, string>
-  mdRunIds: string[]
+  suggestions: Record<string, string[]>
   namespaces: Record<string, string[]>
   apiLoaded: boolean
   onChange: (field: string, v: string) => void
@@ -459,7 +603,7 @@ function ScalarSection({
             field={f}
             value={state.values[f.field] ?? ''}
             error={errors[pathFor(section, f.field)]}
-            mdRunIds={mdRunIds}
+            suggestions={suggestions}
             // The intended-id field is pre-filled read-only once pulled from
             // the API (ADR-0004): its value drives identity, not editable content.
             disabled={locked || (f.isId && apiLoaded)}
@@ -494,6 +638,7 @@ function RepeatableSection({
   fields,
   entries,
   errors,
+  suggestions,
   namespaces,
   onAdd,
   onRemove,
@@ -503,6 +648,7 @@ function RepeatableSection({
   fields: FormField[]
   entries: SectionState[]
   errors: Record<string, string>
+  suggestions: Record<string, string[]>
   namespaces: Record<string, string[]>
   onAdd: () => void
   onRemove: (index: number) => void
@@ -548,6 +694,7 @@ function RepeatableSection({
                     value={entry.values[f.field] ?? ''}
                     error={errors[pathFor(section, f.field, i)]}
                     disabled={locked}
+                    suggestions={suggestions}
                     crossRefOptions={
                       f.crossRef
                         ? crossRefOptionsFor(f, section, namespaces, ownId)
@@ -573,7 +720,7 @@ function Field({
   value,
   error,
   onChange,
-  mdRunIds = [],
+  suggestions = {},
   crossRefOptions,
   disabled = false,
 }: {
@@ -581,19 +728,20 @@ function Field({
   value: string
   error?: string
   onChange: (v: string) => void
-  mdRunIds?: string[]
+  suggestions?: Record<string, string[]>
   crossRefOptions?: string[]
   disabled?: boolean
 }) {
   const help = error ?? field.help
 
-  // API-assisted free text (md_run_id): suggestions + free entry.
+  // API-assisted free text (md_run_id, tilt_series_id, ...): suggestions +
+  // free entry, keyed by the field's apiSuggest namespace.
   if (field.apiSuggest) {
     return (
       <Autocomplete
         freeSolo
         disabled={disabled}
-        options={mdRunIds}
+        options={suggestions[field.apiSuggest] ?? []}
         value={value}
         onInputChange={(_, v) => onChange(v)}
         renderInput={(params) => (

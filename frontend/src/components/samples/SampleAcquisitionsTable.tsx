@@ -12,7 +12,7 @@ import { QualityBadge } from '~/components/common/QualityBadge'
 
 // Mirrors the API's `n_tomograms` semantics: raw + post-processed combined.
 function tomogramCount(a: AcquisitionOut): number {
-  return (a.raw_tomogram ? 1 : 0) + a.post_processed_tomograms.length
+  return a.raw_tomograms.length + a.post_processed_tomograms.length
 }
 
 export function SampleAcquisitionsTable(props: {

@@ -2,8 +2,8 @@
 
 Covers the composite-form seam: nested per-section TOML, clean value-only
 output with directory-derived keys (sample_id / data_source) dropped, native
-list + date serialization, the synapse invariants enforced at the model level
-(ADR-0003), extras preserved, and pull-from-API load shaped per-section.
+list + date serialization, the synapse invariants enforced at the model level,
+extras preserved, and pull-from-API load shaped per-section.
 """
 
 from __future__ import annotations
@@ -151,7 +151,7 @@ def test_synapse_with_chromatin_block_rejected(client):
 
 
 def test_synapse_with_simulation_block_rejected(client):
-    # ADR-0003: synapse data is never simulation-derived.
+    # synapse data is never simulation-derived.
     resp = client.post(
         "/toml/sample",
         json={"sample": {"project": "synapse"}, "simulation": {"dataset_type": "bulk"}},

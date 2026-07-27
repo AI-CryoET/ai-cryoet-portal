@@ -24,6 +24,7 @@ from catalog.api.schemas import (
     MillingOut,
     PostProcessedTomogramOut,
     RawTomogramOut,
+    ReconstructionAlignmentOut,
     SampleDetail,
     SampleSummary,
     SimulationOut,
@@ -387,10 +388,11 @@ def _row_to_out(row, out_cls: type):
 _ACQ_CHILD_FIELDS = frozenset(
     {
         "md_source",
-        "raw_tomogram",
+        "raw_tomograms",
         "post_processed_tomograms",
         "annotations",
         "tilt_series",
+        "reconstruction_alignment",
         # Populated separately from acquisition_scan_status (LEFT JOIN), so it
         # must not be bulk-copied off the AcquisitionORM row.
         "scan_status",
@@ -449,15 +451,19 @@ def get_sample(sample_id: str, session: Session = Depends(get_session)):
     )
     acq_out: list[AcquisitionOut] = []
     for a in acqs:
-        # At-most-one raw tomogram per acquisition (enforced by
-        # AcquisitionFile.raw_tomogram in the schema). Query rather than
-        # session.get since the PK is composite and tomogram_id varies.
-        raw_row = session.execute(
-            select(orm.RawTomogramORM)
-            .where(orm.RawTomogramORM.sample_id == sample_id)
-            .where(orm.RawTomogramORM.acquisition_id == a.acquisition_id)
-            .limit(1)
-        ).scalar_one_or_none()
+        raw_rows = (
+            session.execute(
+                select(orm.RawTomogramORM)
+                .where(orm.RawTomogramORM.sample_id == sample_id)
+                .where(orm.RawTomogramORM.acquisition_id == a.acquisition_id)
+                .order_by(
+                    orm.RawTomogramORM.reconstruction_alignment_id,
+                    orm.RawTomogramORM.tomogram_id,
+                )
+            )
+            .scalars()
+            .all()
+        )
 
         post_rows = (
             session.execute(
@@ -466,7 +472,10 @@ def get_sample(sample_id: str, session: Session = Depends(get_session)):
                 .where(
                     orm.PostProcessedTomogramORM.acquisition_id == a.acquisition_id
                 )
-                .order_by(orm.PostProcessedTomogramORM.tomogram_id)
+                .order_by(
+                    orm.PostProcessedTomogramORM.reconstruction_alignment_id,
+                    orm.PostProcessedTomogramORM.tomogram_id,
+                )
             )
             .scalars()
             .all()
@@ -477,7 +486,10 @@ def get_sample(sample_id: str, session: Session = Depends(get_session)):
                 select(orm.AnnotationORM)
                 .where(orm.AnnotationORM.sample_id == sample_id)
                 .where(orm.AnnotationORM.acquisition_id == a.acquisition_id)
-                .order_by(orm.AnnotationORM.annotation_id)
+                .order_by(
+                    orm.AnnotationORM.reconstruction_alignment_id,
+                    orm.AnnotationORM.annotation_id,
+                )
             )
             .scalars()
             .all()
@@ -488,6 +500,18 @@ def get_sample(sample_id: str, session: Session = Depends(get_session)):
                 .where(orm.TiltSeriesORM.sample_id == sample_id)
                 .where(orm.TiltSeriesORM.acquisition_id == a.acquisition_id)
                 .order_by(orm.TiltSeriesORM.tilt_series_id)
+            )
+            .scalars()
+            .all()
+        )
+        ra_rows = (
+            session.execute(
+                select(orm.ReconstructionAlignmentORM)
+                .where(orm.ReconstructionAlignmentORM.sample_id == sample_id)
+                .where(
+                    orm.ReconstructionAlignmentORM.acquisition_id == a.acquisition_id
+                )
+                .order_by(orm.ReconstructionAlignmentORM.reconstruction_alignment_id)
             )
             .scalars()
             .all()
@@ -529,20 +553,23 @@ def get_sample(sample_id: str, session: Session = Depends(get_session)):
             AcquisitionOut(
                 **acq_scalars,
                 md_source=_build_sub_entity(md_source_row, MdSourceOut),
-                raw_tomogram=_row_to_out(raw_row, RawTomogramOut) if raw_row else None,
+                raw_tomograms=[_row_to_out(r, RawTomogramOut) for r in raw_rows],
                 post_processed_tomograms=[
                     _row_to_out(t, PostProcessedTomogramOut) for t in post_rows
                 ],
                 annotations=[
                     AnnotationOut(
                         annotation_id=ann.annotation_id,
+                        reconstruction_alignment_id=ann.reconstruction_alignment_id,
                         type=ann.type,
-                        target_tomogram=ann.target_tomogram,
                         files=ann.files or [],
                     )
                     for ann in anns
                 ],
                 tilt_series=[_row_to_out(ts, TiltSeriesOut) for ts in ts_rows],
+                reconstruction_alignment=[
+                    _row_to_out(ra, ReconstructionAlignmentOut) for ra in ra_rows
+                ],
                 scan_status=acq_status,
             )
         )

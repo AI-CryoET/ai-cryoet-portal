@@ -113,33 +113,33 @@ def client(tmp_path):
         s.add_all([
             orm.PostProcessedTomogramORM(
                 sample_id="sample_alpha", acquisition_id="acq1",
-                tomogram_id="t1", derived_from=[], voxel_size=10.0,
+                reconstruction_alignment_id="align1", tomogram_id="t1", derived_from=[], voxel_size=10.0,
             ),
             orm.PostProcessedTomogramORM(
                 sample_id="sample_beta", acquisition_id="acq1",
-                tomogram_id="t1", derived_from=[], voxel_size=20.0,
+                reconstruction_alignment_id="align1", tomogram_id="t1", derived_from=[], voxel_size=20.0,
             ),
             # gamma: two tomograms, both NULL voxel — exercises NULL-tolerance
             orm.PostProcessedTomogramORM(
                 sample_id="sample_gamma", acquisition_id="acq1",
-                tomogram_id="t1", derived_from=[], voxel_size=None,
+                reconstruction_alignment_id="align1", tomogram_id="t1", derived_from=[], voxel_size=None,
             ),
             orm.PostProcessedTomogramORM(
                 sample_id="sample_gamma", acquisition_id="acq1",
-                tomogram_id="t2", derived_from=[], voxel_size=None,
+                reconstruction_alignment_id="align1", tomogram_id="t2", derived_from=[], voxel_size=None,
             ),
             # epsilon: three tomograms, varying voxel spacings — count-independence
             orm.PostProcessedTomogramORM(
                 sample_id="sample_epsilon", acquisition_id="acq1",
-                tomogram_id="t1", derived_from=[], voxel_size=5.0,
+                reconstruction_alignment_id="align1", tomogram_id="t1", derived_from=[], voxel_size=5.0,
             ),
             orm.PostProcessedTomogramORM(
                 sample_id="sample_epsilon", acquisition_id="acq1",
-                tomogram_id="t2", derived_from=[], voxel_size=15.0,
+                reconstruction_alignment_id="align1", tomogram_id="t2", derived_from=[], voxel_size=15.0,
             ),
             orm.PostProcessedTomogramORM(
                 sample_id="sample_epsilon", acquisition_id="acq1",
-                tomogram_id="t3", derived_from=[], voxel_size=25.0,
+                reconstruction_alignment_id="align1", tomogram_id="t3", derived_from=[], voxel_size=25.0,
             ),
         ])
 

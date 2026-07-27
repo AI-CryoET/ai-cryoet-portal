@@ -167,13 +167,18 @@ describe('AuthoringForm (acquisition)', () => {
     )
   })
 
-  it("annotation target_tomogram offers in-form tomogram ids", async () => {
+  it("post_processed_tomogram derived_from offers in-form tomogram ids", async () => {
     render(<AuthoringForm form="acquisition" />)
-    // Author a raw tomogram id, then add an annotation.
-    await userEvent.type(screen.getByLabelText(/Tomogram id/), 'tomo_raw')
-    await userEvent.click(screen.getByRole('button', { name: /Add annotations/i }))
-    // The annotation's target dropdown is sourced from the tomogram namespace.
-    await userEvent.click(screen.getByLabelText(/Target tomogram/))
+    // Author a raw tomogram id, then add a post-processed tomogram.
+    await userEvent.click(screen.getByRole('button', { name: /Add raw tomograms/i }))
+    await userEvent.type(screen.getAllByLabelText(/Tomogram id/)[0], 'tomo_raw')
+    await userEvent.click(
+      screen.getByRole('button', { name: /Add post-processed tomograms/i }),
+    )
+    // Its Derived from dropdown is sourced from the shared tomogram namespace;
+    // the raw tomogram's own Derived from is the tilt-series one before it.
+    const derivedFrom = screen.getAllByLabelText(/Derived from/)
+    await userEvent.click(derivedFrom[derivedFrom.length - 1])
     expect(
       screen.getByRole('option', { name: 'tomo_raw' }),
     ).toBeInTheDocument()
@@ -185,7 +190,7 @@ describe('AuthoringForm (acquisition)', () => {
         fields: {
           acquisition: { acquisition_id: 'Pos1' },
           tilt_series: [{ id: 'ts_raw', derived_from: 'Frames' }],
-          raw_tomogram: { id: 'tomo_raw', software: 'AreTomo' },
+          raw_tomogram: [{ id: 'tomo_raw', software: 'AreTomo' }],
         },
       }),
     )
