@@ -238,10 +238,19 @@ several tilt series has no such id, so each `{id}/` folder becomes its own group
 instead. A tomogram and an annotation sharing a name always split into their own
 group: that pairing is itself evidence of a distinct reconstruction attempt.
 
+A `{id}/` folder normally collapses onto its own name — every file in it is one
+entity's artifacts, so `recon.mrc` + `recon.ome.zarr` become `{id}.mrc` +
+`{id}.ome.zarr`. When two files share an extension that is impossible (one name,
+two files), so the folder's contents are treated as **separate entities keeping
+their own filenames**, and each stem becomes an id. The authored block for `{id}`
+is rewritten into one block per resulting stem either way, so no declaration is
+left dangling. Every such split is reported to stderr naming the ids it produced
+— review them, because the ids change from the folder name to the file stems.
+
 Dry-run by default; `--apply` performs the moves and writes the files. Re-running
-after an apply is a no-op. Anything ambiguous (two files with the same extension
-in one `{id}/` folder, a destination-name collision, a loose file directly under
-`Tomograms/`) is reported to stderr and left in place.
+after an apply is a no-op. What is still reported and left in place: a
+destination-name collision, and a loose file directly under `Tomograms/` or
+`Annotations/` (no `{id}/` folder says which group it belongs to).
 
 ```bash
 ./utils/migrate_reconstruction_groups.py --root /groups/cryoet/cryoet/data

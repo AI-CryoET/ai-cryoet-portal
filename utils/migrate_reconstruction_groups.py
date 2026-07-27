@@ -125,6 +125,13 @@ def _ext_of(entry: Path) -> str:
     return entry.suffix
 
 
+def _stem_of(path: Path) -> str:
+    """Entity id for a filename — the name minus its (possibly multi-suffix)
+    extension. Mirrors schema.layout.entity_id_from_path."""
+    ext = _ext_of(path)
+    return path.name[: -len(ext)] if ext else path.name
+
+
 def _is_leaf(entry: Path, allowed_exts: set[str]) -> bool:
     """True if entry is an entity file: an allowed-extension file or a
     .zarr/.ome.zarr store. Plain subdirs (e.g. ctf/even/odd) and stray files
@@ -151,8 +158,8 @@ def _entity_files(id_dir: Path, allowed_exts: set[str]):
 
 def _expand_entity_folder(id_dir: Path, allowed_exts: set[str], dest_dir: Path):
     """Return (moves, warnings) flattening one Tomograms/{id}/ or
-    Annotations/{id}/ folder into dest_dir, treating {id} as a reconstruction
-    group whose contents are its entities:
+    Annotations/{id}/ folder into dest_dir, treating the folder's contents as
+    separate entities rather than as one entity's artifacts:
 
       - a single leaf, no nested subfolders -> collapse to {id_dir.name}{ext}
         (folder name becomes the entity id, as in the normal per-folder path)
@@ -290,6 +297,15 @@ def plan_reconstructions(recon_dir: Path, group_id: str | None, exclude_ids: fro
     ``group_id`` may be None (acquisition's tilt series is ambiguous/missing) —
     in that case nothing can be moved safely, so every remaining id_dir is
     left in place and warned about instead.
+
+    A ``{id}/`` folder normally collapses onto its own name: every file in it is
+    one entity's artifact, so ``recon.mrc`` + ``recon.ome.zarr`` become
+    ``{id}.mrc`` + ``{id}.ome.zarr``. When two files share an extension that is
+    impossible — one name, two files — so the folder's contents are treated as
+    *separate* entities keeping their own filenames, the same policy
+    :func:`_plan_folder_as_group` applies. Either way the authored block for
+    ``{id}`` is rewritten to match by :func:`_expand_blocks`, so no declaration
+    is left dangling.
     """
     moves = []
     mkdirs = []
@@ -310,9 +326,22 @@ def plan_reconstructions(recon_dir: Path, group_id: str | None, exclude_ids: fro
                     "missing tilt series) — leaving in place"
                 )
                 continue
-            by_ext, warning = _entity_files(id_dir, allowed_exts)
-            if warning:
-                warnings.append(warning)
+            by_ext, _collision = _entity_files(id_dir, allowed_exts)
+            if by_ext is None:
+                # Two files share an extension: they cannot both take the
+                # folder's name, so they are separate entities. Keep each
+                # filename and let its stem be the id.
+                expanded, expand_warnings = _expand_entity_folder(
+                    id_dir, allowed_exts, group_dir / kind
+                )
+                moves += expanded
+                warnings += expand_warnings
+                stems = sorted({_stem_of(dest) for _src, dest in expanded})
+                warnings.append(
+                    f"{id_dir}: contents do not collapse onto '{entity_id}' "
+                    f"(two files share an extension) — keeping filenames, so "
+                    f"this becomes {len(stems)} entities: " + ", ".join(stems)
+                )
                 continue
             for ext, entry in by_ext.items():
                 dest = group_dir / kind / f"{entity_id}{ext}"
@@ -585,8 +614,7 @@ def main():
                 continue
             kind, old_folder = rel.parts[0], rel.parts[1]
             dest_group = dest.relative_to(recon_dir).parts[0]
-            ext = _ext_of(dest)
-            new_id = dest.name[: -len(ext)] if ext else dest.name
+            new_id = _stem_of(dest)
             renames = group_tomo_renames if kind == "Tomograms" else group_ann_renames
             ids = renames.setdefault(dest_group, {}).setdefault(old_folder, [])
             if new_id not in ids:  # same entity can collapse to 2+ moves (.mrc + .zarr) -> same id twice

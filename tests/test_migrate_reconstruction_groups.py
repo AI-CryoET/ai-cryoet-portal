@@ -192,18 +192,36 @@ def test_loose_file_is_warned_and_left_in_place(tmp_path, capsys):
     assert loose.is_file()
 
 
-def test_ambiguous_extension_collision_is_skipped(tmp_path, capsys):
-    """Two .mrc files in one {id}/ folder can't collapse to one stem."""
+def test_extension_collision_keeps_filenames_as_separate_entities(tmp_path, capsys):
+    """Two .mrc in one {id}/ folder can't both take the folder's name, so they
+    are separate entities keeping their own filenames — the same policy the
+    folder-named-group path uses. The authored block is expanded to match so no
+    declaration is left dangling."""
     acq = _make_acq(tmp_path)
     extra = acq / "Reconstructions" / "Tomograms" / "denoised" / "other.mrc"
     extra.write_bytes(b"other")
     _run(tmp_path, apply=True)
-    assert "multiple '.mrc' entries" in capsys.readouterr().err
-    # Left untouched; the unambiguous sibling still migrated.
-    assert extra.is_file()
-    assert (
-        acq / "Reconstructions" / "ts_1" / "Tomograms" / "bp_3dctf_bin4.mrc"
-    ).is_file()
+    err = capsys.readouterr().err
+    assert "do not collapse onto 'denoised'" in err
+    assert "2 entities: other, out" in err
+
+    tomos = acq / "Reconstructions" / "ts_1" / "Tomograms"
+    # Filenames survive; the id is each stem, not the folder name.
+    assert (tomos / "out.mrc").read_bytes() == b"denoised"
+    assert (tomos / "other.mrc").read_bytes() == b"other"
+    assert not (tomos / "denoised.mrc").exists()
+    # The unambiguous sibling still collapses onto its folder name.
+    assert (tomos / "bp_3dctf_bin4.mrc").is_file()
+    # Nothing is left behind, so the flat dir goes.
+    assert not (acq / "Reconstructions" / "Tomograms").exists()
+
+    # The single authored [[post_processed_tomogram]] id = "denoised" became one
+    # block per resulting stem, other fields copied verbatim.
+    recon = (acq / "Reconstructions" / "ts_1" / "reconstruction.toml").read_text()
+    assert 'id = "out"' in recon
+    assert 'id = "other"' in recon
+    assert 'id = "denoised"' not in recon
+    assert recon.count("cryoCARE") == 2
 
 
 @pytest.mark.parametrize(
