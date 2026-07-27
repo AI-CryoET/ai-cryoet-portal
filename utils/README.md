@@ -8,6 +8,8 @@ Utilities for the ai-cryoet portal:
 - **Data migration** — `migrate_reconstruction_groups.py` moves an existing
   data root from the flat `Reconstructions/{Tomograms,Annotations}/{id}/`
   layout to the 3D-alignment-grouped one.
+- **Local dev testing** — `repopulate_test_data.sh` refreshes the
+  `scratch/data/` test tree from the real data root.
 - **Frontend icons** — `icon/` regenerates the snowflake app icon, navbar logo,
   and favicons used by the frontend.
 
@@ -256,3 +258,20 @@ destination-name collision, and a loose file directly under `Tomograms/` or
 ./utils/migrate_reconstruction_groups.py --root /groups/cryoet/cryoet/data
 ./utils/migrate_reconstruction_groups.py --root /groups/cryoet/cryoet/data --apply
 ```
+
+## `repopulate_test_data.sh`
+
+Resets the local `scratch/data/` test tree to a fresh copy of a handful of
+samples from the real data root — the fastest way to re-run the migration from a
+clean slate. Hardlinks where the NFS allows it (so it costs almost no disk), but
+gives every `.toml` its own inode, since the migration rewrites those in place
+and a shared inode would corrupt the source data. Edit the `SAMPLES` array to
+change the test set; `SRC`/`DEST` are hardcoded to the real data root and
+`scratch/data/`.
+
+```bash
+./utils/repopulate_test_data.sh
+```
+
+Files owned by other users can't be deleted by `--delete`, so stale foreign
+files may survive a reset — the script warns and keeps going.
