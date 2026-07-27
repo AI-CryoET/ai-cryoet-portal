@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from textwrap import dedent
+from types import SimpleNamespace
 
 import mrcfile
 import numpy as np
@@ -127,23 +128,25 @@ def test_happy_path_chromatin_fixture():
 
     # Raw tomogram populated from MRC + zarr parsers
     raw = acqs["Position_86"].raw_tomogram
-    assert raw is not None
-    assert raw.tomogram_id == "bp_3dctf_bin4"
-    assert raw.image_size_x == 4
+    assert raw
+    assert raw[0].tomogram_id == "bp_3dctf_bin4"
+    # derived_from is authored in the TOML — the tilt series it was reconstructed from.
+    assert raw[0].derived_from == "ts_1"
+    assert raw[0].image_size_x == 4
     # voxel_size is derived from the MRC header (not authored in the TOML)
-    assert raw.voxel_size == pytest.approx(11.7197, rel=1e-4)
-    assert raw.mrc_path is not None
-    assert raw.zarr_path is not None
-    assert raw.zarr_axes == "zyx"
-    assert raw.zarr_scale == [11.72, 11.72, 11.72]
+    assert raw[0].voxel_size == pytest.approx(11.7197, rel=1e-4)
+    assert raw[0].mrc_path is not None
+    assert raw[0].zarr_path is not None
+    assert raw[0].zarr_axes == "zyx"
+    assert raw[0].zarr_scale == [11.72, 11.72, 11.72]
 
     # Annotation files populated
     anns = {a.annotation_id: a for a in acqs["Position_86"].annotation}
     assert "membrain_seg_v10" in anns
     files = anns["membrain_seg_v10"].files
     assert files, "annotation files should be populated from disk"
-    assert any(f.endswith("segmentation.mrc") for f in files)
-    assert any(f.endswith("metadata.json") for f in files)
+    assert any(f.endswith("membrain_seg_v10.mrc") for f in files)
+    assert any(f.endswith("membrain_seg_v10.json") for f in files)
     assert files == sorted(files)
 
 
@@ -281,22 +284,24 @@ def test_unparseable_acquisition_toml_isolated(tmp_path):
         [acquisition]
         microscope = "Krios"
 
-        [raw_tomogram]
+        [[raw_tomogram]]
         id = "tomo_good"
         """,
     )
-    (sample_dir / "Good" / "Reconstructions" / "Tomograms" / "tomo_good").mkdir(parents=True)
-    # Bad acquisition: target_tomogram references unknown tomogram
+    _make_mrc(
+        sample_dir / "Good" / "Reconstructions" / "ts_good" / "Tomograms"
+        / "tomo_good.mrc"
+    )
+    # Bad acquisition: post_processed_tomogram.derived_from references unknown tomogram
     _write(
         sample_dir / "Bad" / "acquisition.toml",
         """
         [acquisition]
         microscope = "Krios"
 
-        [[annotation]]
-        id = "ann1"
-        type = "membrane_segmentation"
-        target_tomogram = "ghost"
+        [[post_processed_tomogram]]
+        id = "tomo1"
+        derived_from = ["ghost"]
         """,
     )
 
@@ -318,10 +323,10 @@ def test_unparseable_acquisition_toml_isolated(tmp_path):
     assert "Bad" in acqs
     # Good is fully validated and contains its raw tomogram declaration.
     good_raw = acqs["Good"].raw_tomogram
-    assert good_raw is not None and good_raw.tomogram_id == "tomo_good"
+    assert good_raw and good_raw[0].tomogram_id == "tomo_good"
     assert acqs["Good"].post_processed_tomogram == []
     # Bad is a synthesized placeholder (empty)
-    assert acqs["Bad"].raw_tomogram is None
+    assert acqs["Bad"].raw_tomogram == []
     assert acqs["Bad"].post_processed_tomogram == []
     assert acqs["Bad"].annotation == []
 
@@ -358,7 +363,8 @@ def test_unfilled_placeholder_warning_categorized(tmp_path):
 
 
 def test_undeclared_tomogram_folder_warns(tmp_path):
-    """Folder under Reconstructions/Tomograms with no tomogram block warns."""
+    """A tomogram file under Reconstructions/{ts_id}/Tomograms with no tomogram
+    block warns."""
     sample_dir = tmp_path / "sample_test"
     _write_minimal_sample_toml(sample_dir)
     _write(
@@ -368,10 +374,10 @@ def test_undeclared_tomogram_folder_warns(tmp_path):
         microscope = "Krios"
         """,
     )
-    # Folder exists on disk but is not declared in the TOML.
-    (sample_dir / "acq1" / "Reconstructions" / "Tomograms" / "stray_tomo").mkdir(
-        parents=True
-    )
+    # File exists on disk but is not declared in the TOML.
+    tomos = sample_dir / "acq1" / "Reconstructions" / "ts_1" / "Tomograms"
+    tomos.mkdir(parents=True)
+    (tomos / "stray_tomo.mrc").write_bytes(b"")
 
     loc = _sample_loc(sample_dir)
     result = assemble_sample(loc)
@@ -394,9 +400,9 @@ def test_undeclared_annotation_folder_warns(tmp_path):
         microscope = "Krios"
         """,
     )
-    (sample_dir / "acq1" / "Reconstructions" / "Annotations" / "stray_ann").mkdir(
-        parents=True
-    )
+    anns = sample_dir / "acq1" / "Reconstructions" / "ts_1" / "Annotations"
+    anns.mkdir(parents=True)
+    (anns / "stray_ann.mrc").write_bytes(b"")
 
     loc = _sample_loc(sample_dir)
     result = assemble_sample(loc)
@@ -409,9 +415,9 @@ def test_undeclared_annotation_folder_warns(tmp_path):
     assert "stray_ann" in undeclared[0].message
 
 
-def test_annotation_without_target_tomogram_warns(tmp_path):
-    """A declared annotation with no target_tomogram warns (the field is
-    optional in the schema, so this is a warning rather than an error)."""
+def test_reconstruction_alignment_enriched_from_folder(tmp_path):
+    """A declared [[reconstruction_alignment]] whose folder exists on disk is
+    enriched with alignment_files/mtime and no undeclared warning fires."""
     sample_dir = tmp_path / "sample_test"
     _write_minimal_sample_toml(sample_dir)
     _write(
@@ -420,69 +426,410 @@ def test_annotation_without_target_tomogram_warns(tmp_path):
         [acquisition]
         microscope = "Krios"
 
-        [[annotation]]
-        id = "membrane"
-        type = "segmentation"
-        """,
-    )
-    # A declared annotation id must match a folder on disk (loader rule).
-    (sample_dir / "acq1" / "Reconstructions" / "Annotations" / "membrane").mkdir(
-        parents=True
-    )
+        [[reconstruction_alignment]]
+        id = "grp1"
 
-    loc = _sample_loc(sample_dir)
-    result = assemble_sample(loc)
-
-    orphans = [
-        w
-        for w in result.warnings
-        if w.category == "annotation_without_target_tomogram"
-    ]
-    assert len(orphans) == 1
-    assert "membrane" in orphans[0].location
-    assert "membrane" in orphans[0].message
-    # The annotation is still kept — this is a warning, not an error.
-    assert result.record is not None
-
-
-def test_annotation_with_target_tomogram_does_not_warn(tmp_path):
-    """An annotation that names an existing target_tomogram produces no
-    annotation_without_target_tomogram warning."""
-    sample_dir = tmp_path / "sample_test"
-    _write_minimal_sample_toml(sample_dir)
-    _write(
-        sample_dir / "acq1" / "acquisition.toml",
-        """
-        [acquisition]
-        microscope = "Krios"
-
-        [raw_tomogram]
+        [[raw_tomogram]]
         id = "tomo1"
-
-        [[annotation]]
-        id = "membrane"
-        type = "segmentation"
-        target_tomogram = "tomo1"
         """,
     )
-    # Declared tomogram/annotation ids must match folders on disk (loader rule).
-    (sample_dir / "acq1" / "Reconstructions" / "Tomograms" / "tomo1").mkdir(
-        parents=True
-    )
-    (sample_dir / "acq1" / "Reconstructions" / "Annotations" / "membrane").mkdir(
-        parents=True
+    tomos = sample_dir / "acq1" / "Reconstructions" / "grp1" / "Tomograms"
+    _make_mrc(tomos / "tomo1.mrc")
+    align_dir = sample_dir / "acq1" / "Reconstructions" / "grp1" / "Alignment"
+    align_dir.mkdir(parents=True)
+    (align_dir / "alignment.json").write_text("{}")
+
+    result = assemble_sample(_sample_loc(sample_dir))
+    assert result.record is not None
+    ra = result.record.acquisitions["acq1"].reconstruction_alignment
+    assert len(ra) == 1
+    assert ra[0].reconstruction_alignment_id == "grp1"
+    assert ra[0].alignment_files and "alignment.json" in ra[0].alignment_files[0]
+    assert not any(
+        w.category == "undeclared_reconstruction_alignment_folder"
+        for w in result.warnings
     )
 
-    loc = _sample_loc(sample_dir)
-    result = assemble_sample(loc)
 
-    orphans = [
+def test_migrated_layout_reconstruction_toml_no_undeclared_warning(tmp_path):
+    """TRUE migrated layout: acquisition.toml holds only [acquisition]/
+    [[tilt_series]] and each group's [reconstruction_alignment] lives in its
+    Reconstructions/{group}/reconstruction.toml. The assembler must fold those
+    groups into the reconciliation so NO undeclared_reconstruction_alignment_folder
+    warning fires (regression: it previously told researchers to re-add the
+    deprecated acquisition.toml block)."""
+    sample_dir = tmp_path / "sample_test"
+    _write_minimal_sample_toml(sample_dir)
+    _write(
+        sample_dir / "acq1" / "acquisition.toml",
+        """
+        [acquisition]
+        microscope = "Krios"
+
+        [[tilt_series]]
+        id = "ts_1"
+        """,
+    )
+    _write(
+        sample_dir / "acq1" / "Reconstructions" / "grp1" / "reconstruction.toml",
+        """
+        [reconstruction_alignment]
+
+        [[raw_tomogram]]
+        id = "tomo1"
+        """,
+    )
+    _make_mrc(
+        sample_dir / "acq1" / "Reconstructions" / "grp1" / "Tomograms" / "tomo1.mrc"
+    )
+
+    result = assemble_sample(_sample_loc(sample_dir))
+    assert result.record is not None
+    assert not any(
+        w.category == "undeclared_reconstruction_alignment_folder"
+        for w in result.warnings
+    )
+    # The per-group reconstruction_alignment is enriched in place (alignment_files
+    # would be empty here, but the group is matched — no warning is the assertion).
+    assert "grp1" in result.record.reconstructions.get("acq1", {})
+
+
+def test_undeclared_reconstruction_alignment_folder_warns(tmp_path):
+    """A Reconstructions/{id}/ folder with no matching [[reconstruction_alignment]]
+    warns but does not fail the sample."""
+    sample_dir = tmp_path / "sample_test"
+    _write_minimal_sample_toml(sample_dir)
+    _write(
+        sample_dir / "acq1" / "acquisition.toml",
+        """
+        [acquisition]
+        microscope = "Krios"
+
+        [[raw_tomogram]]
+        id = "tomo1"
+        """,
+    )
+    tomos = sample_dir / "acq1" / "Reconstructions" / "grp_ghost" / "Tomograms"
+    _make_mrc(tomos / "tomo1.mrc")
+
+    result = assemble_sample(_sample_loc(sample_dir))
+    assert result.record is not None
+    assert result.record.acquisitions["acq1"].reconstruction_alignment == []
+    warned = [
         w
         for w in result.warnings
-        if w.category == "annotation_without_target_tomogram"
+        if w.category == "undeclared_reconstruction_alignment_folder"
     ]
-    assert orphans == []
+    assert len(warned) == 1
+    assert "grp_ghost" in warned[0].message
+
+
+def test_same_tomogram_stem_in_two_groups_yields_two_entries(tmp_path):
+    """The same stem under two Reconstructions/{id}/ groups is legal: each is a
+    distinct tomogram, keyed by its group. No warning, no overwrite."""
+    sample_dir = tmp_path / "sample_test"
+    _write_minimal_sample_toml(sample_dir)
+    _write(
+        sample_dir / "acq1" / "acquisition.toml",
+        """
+        [acquisition]
+        microscope = "Krios"
+
+        [[reconstruction_alignment]]
+        id = "grp_a"
+
+        [[reconstruction_alignment]]
+        id = "grp_b"
+
+        [[raw_tomogram]]
+        id = "dup"
+        """,
+    )
+    for grp in ("grp_a", "grp_b"):
+        _make_mrc(
+            sample_dir / "acq1" / "Reconstructions" / grp / "Tomograms" / "dup.mrc"
+        )
+
+    result = assemble_sample(_sample_loc(sample_dir))
     assert result.record is not None
+    assert not [w for w in result.warnings if w.category == "duplicate_tomogram_id"]
+    raw = result.record.acquisitions["acq1"].raw_tomogram
+    # Two distinct entries, one per group, each pointing at its own file.
+    assert len(raw) == 2
+    by_group = {t.reconstruction_alignment_id: t for t in raw}
+    assert set(by_group) == {"grp_a", "grp_b"}
+    assert "grp_a" in by_group["grp_a"].mrc_path
+    assert "grp_b" in by_group["grp_b"].mrc_path
+    # Distinct objects — not one aliased model stamped twice.
+    assert by_group["grp_a"] is not by_group["grp_b"]
+
+
+def test_hand_authored_group_id_cannot_split_the_uniqueness_check(tmp_path):
+    """Id uniqueness is per alignment group, so a hand-authored
+    reconstruction_alignment_id on a flat acquisition.toml block could otherwise
+    put two same-id blocks in different buckets — and the assembler, keying on
+    the id alone, would stamp one block's metadata onto both folders. The loader
+    drops the authored value, so the file stays rejected as a duplicate."""
+    sample_dir = tmp_path / "sample_test"
+    _write_minimal_sample_toml(sample_dir)
+    _write(
+        sample_dir / "acq1" / "acquisition.toml",
+        """
+        [acquisition]
+        microscope = "Krios"
+
+        [[reconstruction_alignment]]
+        id = "grp_a"
+
+        [[reconstruction_alignment]]
+        id = "grp_b"
+
+        [[raw_tomogram]]
+        id = "dup"
+        reconstruction_alignment_id = "grp_a"
+        pipeline = "pA"
+
+        [[raw_tomogram]]
+        id = "dup"
+        reconstruction_alignment_id = "grp_b"
+        pipeline = "pB"
+        """,
+    )
+    for grp in ("grp_a", "grp_b"):
+        _make_mrc(
+            sample_dir / "acq1" / "Reconstructions" / grp / "Tomograms" / "dup.mrc"
+        )
+
+    result = assemble_sample(_sample_loc(sample_dir))
+    bad = [
+        w for w in result.warnings if w.category == "unparseable_acquisition_toml"
+    ]
+    assert len(bad) == 1
+    assert "duplicate tomogram id 'dup'" in bad[0].message
+    # Nothing survives from the rejected file — no pA/pB cross-contamination.
+    assert result.record is not None
+    assert result.record.acquisitions["acq1"].raw_tomogram == []
+
+
+def test_same_post_processed_stem_in_two_groups_stays_post_processed(tmp_path):
+    """The per-group copies of a legacy [[post_processed_tomogram]] block land
+    in post_processed_tomogram, not raw_tomogram."""
+    sample_dir = tmp_path / "sample_test"
+    _write_minimal_sample_toml(sample_dir)
+    _write(
+        sample_dir / "acq1" / "acquisition.toml",
+        """
+        [acquisition]
+        microscope = "Krios"
+
+        [[reconstruction_alignment]]
+        id = "grp_a"
+
+        [[reconstruction_alignment]]
+        id = "grp_b"
+
+        [[post_processed_tomogram]]
+        id = "dup"
+        """,
+    )
+    for grp in ("grp_a", "grp_b"):
+        _make_mrc(
+            sample_dir / "acq1" / "Reconstructions" / grp / "Tomograms" / "dup.mrc"
+        )
+
+    result = assemble_sample(_sample_loc(sample_dir))
+    assert result.record is not None
+    acq = result.record.acquisitions["acq1"]
+    assert acq.raw_tomogram == []
+    post = {t.reconstruction_alignment_id: t for t in acq.post_processed_tomogram}
+    assert set(post) == {"grp_a", "grp_b"}
+    assert "grp_a" in post["grp_a"].mrc_path
+    assert "grp_b" in post["grp_b"].mrc_path
+
+
+def test_same_annotation_stem_in_two_groups_yields_two_entries(tmp_path):
+    """Annotation stems are scoped to their group, same as tomograms."""
+    sample_dir = tmp_path / "sample_test"
+    _write_minimal_sample_toml(sample_dir)
+    _write(
+        sample_dir / "acq1" / "acquisition.toml",
+        """
+        [acquisition]
+        microscope = "Krios"
+
+        [[reconstruction_alignment]]
+        id = "grp_a"
+
+        [[reconstruction_alignment]]
+        id = "grp_b"
+
+        [[annotation]]
+        id = "seg"
+        """,
+    )
+    for grp in ("grp_a", "grp_b"):
+        p = sample_dir / "acq1" / "Reconstructions" / grp / "Annotations" / "seg.star"
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text("")
+
+    result = assemble_sample(_sample_loc(sample_dir))
+    assert result.record is not None
+    assert not [w for w in result.warnings if w.category == "duplicate_annotation_id"]
+    anns = result.record.acquisitions["acq1"].annotation
+    assert len(anns) == 2
+    by_group = {a.reconstruction_alignment_id: a for a in anns}
+    assert set(by_group) == {"grp_a", "grp_b"}
+    assert any("grp_a" in f for f in by_group["grp_a"].files)
+    assert any("grp_b" in f for f in by_group["grp_b"].files)
+    assert by_group["grp_a"] is not by_group["grp_b"]
+
+
+@pytest.fixture
+def assembled_sample_factory(tmp_path):
+    """Stage a sample whose Reconstructions/{group}/ each carry a
+    reconstruction.toml (per-group metadata), then assemble it.
+
+    ``groups`` maps group_id -> {"raw_tomogram": [{"id": ..., "pipeline": ...}]}.
+    Returns a namespace with ``warnings`` + ``record_tomograms()`` (flattened
+    per-group tomograms carrying their reconstruction_alignment_id).
+    """
+
+    def _factory(*, groups):
+        sample_dir = tmp_path / "sample_test"
+        _write_minimal_sample_toml(sample_dir)
+        ra_blocks = "".join(
+            f'[[reconstruction_alignment]]\nid = "{g}"\n\n' for g in groups
+        )
+        _write(
+            sample_dir / "acq1" / "acquisition.toml",
+            f"""
+            [acquisition]
+            microscope = "Krios"
+
+            {ra_blocks}""",
+        )
+        for group, blocks in groups.items():
+            lines: list[str] = []
+            for tomo in blocks.get("raw_tomogram", []):
+                lines.append("[[raw_tomogram]]")
+                lines.extend(f'{k} = "{v}"' for k, v in tomo.items())
+                lines.append("")
+            _write(
+                sample_dir
+                / "acq1"
+                / "Reconstructions"
+                / group
+                / "reconstruction.toml",
+                "\n".join(lines),
+            )
+            for tomo in blocks.get("raw_tomogram", []):
+                _make_mrc(
+                    sample_dir
+                    / "acq1"
+                    / "Reconstructions"
+                    / group
+                    / "Tomograms"
+                    / f"{tomo['id']}.mrc"
+                )
+        result = assemble_sample(_sample_loc(sample_dir))
+
+        def record_tomograms():
+            out = []
+            for group, rf in (result.record.reconstructions.get("acq1", {})).items():
+                for t in (*rf.raw_tomogram, *rf.post_processed_tomogram):
+                    out.append(
+                        SimpleNamespace(
+                            reconstruction_alignment_id=group,
+                            tomogram_id=t.tomogram_id,
+                            pipeline=t.pipeline,
+                            mrc_path=t.mrc_path,
+                        )
+                    )
+            return out
+
+        return SimpleNamespace(
+            warnings=result.warnings,
+            record=result.record,
+            record_tomograms=record_tomograms,
+        )
+
+    return _factory
+
+
+def test_two_groups_sharing_a_stem_bind_per_group(assembled_sample_factory):
+    """Two Reconstructions/ groups sharing a tomogram stem ``denoised``, each
+    with its own reconstruction.toml, are two distinct tomograms — the group is
+    part of the storage key. Both bind their own metadata and are enriched from
+    their own file; neither clobbers the other."""
+    result = assembled_sample_factory(
+        groups={
+            "A": {"raw_tomogram": [{"id": "denoised", "pipeline": "pA"}]},
+            "B": {"raw_tomogram": [{"id": "denoised", "pipeline": "pB"}]},
+        }
+    )
+    assert result.record is not None
+    tomos = {
+        (t.reconstruction_alignment_id, t.tomogram_id): t
+        for t in result.record_tomograms()
+    }
+    assert tomos[("A", "denoised")].pipeline == "pA"
+    assert tomos[("B", "denoised")].pipeline == "pB"
+    assert tomos[("A", "denoised")].mrc_path and "A" in tomos[("A", "denoised")].mrc_path
+    assert tomos[("B", "denoised")].mrc_path and "B" in tomos[("B", "denoised")].mrc_path
+
+
+def test_two_groups_distinct_stems_bind_per_group(assembled_sample_factory):
+    """Two Reconstructions/ groups with DISTINCT stems are NOT a duplicate —
+    per-group metadata binds and each is filesystem-enriched, no warning."""
+    result = assembled_sample_factory(
+        groups={
+            "A": {"raw_tomogram": [{"id": "recon_a", "pipeline": "pA"}]},
+            "B": {"raw_tomogram": [{"id": "recon_b", "pipeline": "pB"}]},
+        }
+    )
+    assert result.record is not None
+    tomos = {
+        (t.reconstruction_alignment_id, t.tomogram_id): t
+        for t in result.record_tomograms()
+    }
+    assert tomos[("A", "recon_a")].pipeline == "pA"
+    assert tomos[("B", "recon_b")].pipeline == "pB"
+    assert tomos[("A", "recon_a")].mrc_path and "A" in tomos[("A", "recon_a")].mrc_path
+    assert tomos[("B", "recon_b")].mrc_path and "B" in tomos[("B", "recon_b")].mrc_path
+
+
+def test_deprecated_processing_log_warning_categorized(tmp_path):
+    """A reconstruction group present on disk while acquisition.toml still
+    carries the processing-log blocks (no reconstruction.toml) is the deprecated
+    layout — the loader warning is categorized as deprecated_processing_log, not
+    the generic extra_field bucket."""
+    sample_dir = tmp_path / "sample_test"
+    _write_minimal_sample_toml(sample_dir)
+    _write(
+        sample_dir / "acq1" / "acquisition.toml",
+        """
+        [acquisition]
+        microscope = "Krios"
+
+        [[reconstruction_alignment]]
+        id = "grp1"
+
+        [[raw_tomogram]]
+        id = "tomo1"
+        """,
+    )
+    _make_mrc(
+        sample_dir / "acq1" / "Reconstructions" / "grp1" / "Tomograms" / "tomo1.mrc"
+    )
+
+    result = assemble_sample(_sample_loc(sample_dir))
+    deprecated = [
+        w for w in result.warnings if w.category == "deprecated_processing_log"
+    ]
+    assert len(deprecated) == 1
+    assert "grp1" in deprecated[0].location
+    assert deprecated[0].acquisition_id == "acq1"
+    assert not any(w.category == "extra_field" for w in result.warnings)
 
 
 def test_data_source_derived_from_directory(tmp_path):
