@@ -8,7 +8,8 @@
     "build": "vite build && tsc --noEmit",
     "preview": "vite preview",
     "test": "vitest run",
-    "start": "srvx --prod -s ../client dist/server/server.js"
+    "start": "srvx --prod -s ../client dist/server/server.js",
+    "gen:types": "openapi-typescript openapi.json -o src/types.gen.ts"
   },
   "dependencies": {
     "@emotion/cache": "11.14.0",
@@ -42,8 +43,14 @@
     "@vitejs/plugin-react": "^6.0.1",
     "@vitest/ui": "^4.1.8",
     "jsdom": "^29.1.1",
+    "openapi-typescript": "^7.4.1",
     "typescript": "^6.0.2",
     "vite": "^8.0.0",
     "vitest": "^4.1.8"
+  },
+  "overrides": {
+    "openapi-typescript": {
+      "typescript": "$typescript"
+    }
   }
 }
