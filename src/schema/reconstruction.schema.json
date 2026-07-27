@@ -1,120 +1,5 @@
 {
   "$defs": {
-    "Acquisition": {
-      "additionalProperties": true,
-      "properties": {
-        "acquisition_id": {
-          "title": "Acquisition Id",
-          "type": "string"
-        },
-        "renamed_from": {
-          "title": "Renamed From",
-          "type": "string"
-        },
-        "resolution": {
-          "title": "Resolution",
-          "type": "number"
-        },
-        "tilt_spacing": {
-          "title": "Tilt Spacing",
-          "type": "number"
-        },
-        "defocus_range": {
-          "title": "Defocus Range",
-          "type": "string"
-        },
-        "energy_filter": {
-          "title": "Energy Filter",
-          "type": "string"
-        },
-        "phase_plate": {
-          "title": "Phase Plate",
-          "type": "boolean"
-        },
-        "microscope": {
-          "title": "Microscope",
-          "type": "string"
-        },
-        "facility": {
-          "title": "Facility",
-          "type": "string"
-        },
-        "acquisition_quality": {
-          "title": "Acquisition Quality",
-          "maximum": 5,
-          "minimum": 1,
-          "type": "integer"
-        },
-        "pixel_size": {
-          "title": "Pixel Size",
-          "type": "number"
-        },
-        "dose_per_tilt": {
-          "title": "Dose Per Tilt",
-          "items": {
-            "type": "number"
-          },
-          "type": "array"
-        },
-        "total_dose": {
-          "title": "Total Dose",
-          "type": "number"
-        },
-        "tilt_min": {
-          "title": "Tilt Min",
-          "type": "number"
-        },
-        "tilt_max": {
-          "title": "Tilt Max",
-          "type": "number"
-        },
-        "tilt_axis": {
-          "title": "Tilt Axis",
-          "type": "number"
-        },
-        "tilt_angles": {
-          "title": "Tilt Angles",
-          "items": {
-            "type": "number"
-          },
-          "type": "array"
-        },
-        "defocus_per_image": {
-          "title": "Defocus Per Image",
-          "items": {
-            "type": "number"
-          },
-          "type": "array"
-        },
-        "date_collected": {
-          "title": "Date Collected",
-          "format": "date",
-          "type": "string"
-        },
-        "voltage": {
-          "title": "Voltage",
-          "type": "number"
-        },
-        "energy_filter_slit_width": {
-          "title": "Energy Filter Slit Width",
-          "type": "number"
-        },
-        "frame_count": {
-          "title": "Frame Count",
-          "type": "integer"
-        },
-        "camera": {
-          "title": "Camera",
-          "type": "string"
-        },
-        "path": {
-          "title": "Path",
-          "type": "string"
-        }
-      },
-      "title": "Acquisition",
-      "type": "object"
-    },
     "Annotation": {
       "additionalProperties": true,
       "properties": {
@@ -146,21 +31,6 @@
         "id"
       ],
       "title": "Annotation",
-      "type": "object"
-    },
-    "MdSource": {
-      "additionalProperties": true,
-      "properties": {
-        "md_run_id": {
-          "title": "Md Run Id",
-          "type": "string"
-        },
-        "frame": {
-          "title": "Frame",
-          "type": "integer"
-        }
-      },
-      "title": "MdSource",
       "type": "object"
     },
     "PostProcessedTomogram": {
@@ -354,75 +224,13 @@
       },
       "title": "ReconstructionAlignment",
       "type": "object"
-    },
-    "TiltSeries": {
-      "additionalProperties": true,
-      "description": "One tilt series within an acquisition (composite-PK child of Acquisition).\n\nComposite primary key: ``(sample_id, acquisition_id, tilt_series_id)``.\nThe tilt series is a researcher-authored folder under ``TiltSeries/`` \u2014\n``tilt_series_id`` is its directory name (accepted as the TOML ``id``\nalias). A tilt series may be stored raw/unaligned or already geometrically\ntransformed (``is_aligned``); alignment is folded in as transformation\nparameters rather than a separate entity. The MDOC-derived tilt geometry\nlives on :class:`Acquisition` (one acquisition tilt scheme, shared by all\nits tilt series). All non-PK fields are optional so a tilt series can be\ningested before disk enrichment runs.",
-      "properties": {
-        "sample_id": {
-          "title": "Sample Id",
-          "type": "string"
-        },
-        "acquisition_id": {
-          "title": "Acquisition Id",
-          "type": "string"
-        },
-        "id": {
-          "title": "Id",
-          "type": "string"
-        },
-        "renamed_from": {
-          "title": "Renamed From",
-          "type": "string"
-        },
-        "derived_from": {
-          "title": "Derived From",
-          "type": "string"
-        },
-        "is_aligned": {
-          "title": "Is Aligned",
-          "type": "boolean"
-        },
-        "alignment_software": {
-          "title": "Alignment Software",
-          "type": "string"
-        },
-        "alignment_method": {
-          "title": "Alignment Method",
-          "type": "string"
-        },
-        "st_path": {
-          "title": "St Path",
-          "type": "string"
-        },
-        "zarr_path": {
-          "title": "Zarr Path",
-          "type": "string"
-        },
-        "alignment_files": {
-          "items": {
-            "type": "string"
-          },
-          "title": "Alignment Files",
-          "type": "array"
-        },
-        "mtime": {
-          "title": "Mtime",
-          "type": "number"
-        }
-      },
-      "title": "TiltSeries",
-      "type": "object"
     }
   },
   "additionalProperties": true,
-  "description": "Parsed contents of one acquisition.toml.\n\n``tilt_series`` is populated by the scanner (from MDOC parsing) rather\nthan authored by researchers; the field is included on the schema so\ndownstream consumers (DB upsert, API responses, JSON Schema dumps) have\na stable shape.",
+  "description": "Parsed contents of one Reconstructions/{id}/reconstruction.toml.\n\n``reconstruction_alignment_id`` is the folder name (path-injected by the\nloader, not authored). Tomogram/annotation ids are the file stems in this\nfolder. Cross-file references (raw_tomogram.derived_from -> a tilt_series in\nacquisition.toml; post_processed_tomogram.derived_from -> a tomogram in this\nor another group) are reconciled by the loader after aggregation, not here.",
   "properties": {
-    "acquisition": {
-      "$ref": "#/$defs/Acquisition"
-    },
-    "md_source": {
-      "$ref": "#/$defs/MdSource"
+    "reconstruction_alignment": {
+      "$ref": "#/$defs/ReconstructionAlignment"
     },
     "raw_tomogram": {
       "items": {
@@ -444,25 +252,8 @@
       },
       "title": "Annotation",
       "type": "array"
-    },
-    "tilt_series": {
-      "items": {
-        "$ref": "#/$defs/TiltSeries"
-      },
-      "title": "Tilt Series",
-      "type": "array"
-    },
-    "reconstruction_alignment": {
-      "items": {
-        "$ref": "#/$defs/ReconstructionAlignment"
-      },
-      "title": "Reconstruction Alignment",
-      "type": "array"
     }
   },
-  "required": [
-    "acquisition"
-  ],
-  "title": "AcquisitionFile",
+  "title": "ReconstructionFile",
   "type": "object"
 }

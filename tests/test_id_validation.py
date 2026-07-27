@@ -139,40 +139,51 @@ def test_tomogram_rejects_bad_derived_from():
         PostProcessedTomogram.model_validate({"id": "tomo_001", "derived_from": ["also/bad"]})
 
 
-def test_tomogram_tilt_series_id_must_match_declared_tilt_series():
-    """A tomogram's tilt_series_id must reference a [[tilt_series]] in the same acquisition."""
+def test_raw_tomogram_derived_from_must_match_declared_tilt_series():
+    """A raw_tomogram's derived_from must reference a [[tilt_series]] in the same acquisition."""
     with pytest.raises(ValidationError, match="does not match any"):
         AcquisitionFile.model_validate(
             {
                 "acquisition": {},
-                "raw_tomogram": {"id": "tomo_001", "tilt_series_id": "ghost"},
+                "raw_tomogram": [{"id": "tomo_001", "derived_from": "ghost"}],
                 "tilt_series": [{"id": "ts_raw"}],
             }
         )
 
 
-def test_tomogram_tilt_series_id_resolves_to_declared_tilt_series():
-    """A tomogram referencing a declared tilt series validates; the id round-trips."""
+def test_raw_tomogram_derived_from_resolves_to_declared_tilt_series():
+    """A raw_tomogram referencing a declared tilt series validates; the id round-trips."""
     acq = AcquisitionFile.model_validate(
         {
             "acquisition": {},
-            "raw_tomogram": {"id": "tomo_001", "tilt_series_id": "ts_raw"},
-            "post_processed_tomogram": [
-                {"id": "tomo_002", "tilt_series_id": "ts_raw"}
+            "raw_tomogram": [{"id": "tomo_001", "derived_from": "ts_raw"}],
+            "tilt_series": [{"id": "ts_raw"}],
+        }
+    )
+    assert acq.raw_tomogram[0].derived_from == "ts_raw"
+
+
+def test_raw_tomogram_derived_from_optional():
+    """derived_from is optional — a raw_tomogram without one still validates."""
+    acq = AcquisitionFile.model_validate(
+        {"acquisition": {}, "raw_tomogram": [{"id": "tomo_001"}]}
+    )
+    assert acq.raw_tomogram[0].derived_from is None
+
+
+def test_raw_tomogram_supports_multiple_entries():
+    """Multiple [[raw_tomogram]] entries in one acquisition are allowed."""
+    acq = AcquisitionFile.model_validate(
+        {
+            "acquisition": {},
+            "raw_tomogram": [
+                {"id": "tomo_001", "derived_from": "ts_raw"},
+                {"id": "tomo_002", "derived_from": "ts_raw"},
             ],
             "tilt_series": [{"id": "ts_raw"}],
         }
     )
-    assert acq.raw_tomogram.tilt_series_id == "ts_raw"
-    assert acq.post_processed_tomogram[0].tilt_series_id == "ts_raw"
-
-
-def test_tomogram_tilt_series_id_optional():
-    """tilt_series_id is optional — a tomogram without one still validates."""
-    acq = AcquisitionFile.model_validate(
-        {"acquisition": {}, "raw_tomogram": {"id": "tomo_001"}}
-    )
-    assert acq.raw_tomogram.tilt_series_id is None
+    assert [t.tomogram_id for t in acq.raw_tomogram] == ["tomo_001", "tomo_002"]
 
 
 def test_tilt_series_derived_from_frames_sentinel():

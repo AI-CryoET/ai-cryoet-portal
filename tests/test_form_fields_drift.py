@@ -67,3 +67,30 @@ def test_committed_ts_matches_codegen():
         "frontend/src/utils/formFields.ts is out of sync with form_fields.py. "
         "Regenerate with `pixi run form-fields`."
     )
+
+
+def test_repeatable_sections_have_exactly_one_required_field():
+    """The frontend (hydrateSections / AuthoringForm) derives a repeatable
+    section's id field as the sole required field, to key loaded-entry
+    warnings and namespace pooling. If a repeatable section ever had zero or
+    more than one required field, that derivation would silently attach to
+    the wrong field (or none).
+
+    Only covers forms rendered by the generic sectioned renderer — the
+    project-gated composite sample form uses its own renderer and doesn't
+    rely on this invariant.
+    """
+    project_gated_forms = {s.form for s in FORM_SECTIONS if s.requires_project}
+    for s in FORM_SECTIONS:
+        if not s.repeatable or s.form in project_gated_forms:
+            continue
+        required = [
+            ff.field
+            for ff in FORM_FIELDS
+            if ff.form == s.form and ff.section == s.section and ff.required
+        ]
+        assert len(required) == 1, (
+            f"{s.form}.{s.section}: repeatable section must have exactly one "
+            f"required field (found {required}) — the frontend keys the "
+            "loaded-entry id on it"
+        )

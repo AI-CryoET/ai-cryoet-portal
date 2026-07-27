@@ -70,12 +70,32 @@ def _case_insensitive_duplicates(values, label: str) -> list[str]:
     problems: list[str] = []
     for v in values:
         key = v.casefold()
-        if key in seen and seen[key] != v:
-            problems.append(
-                f"{label} '{v}' collides case-insensitively with '{seen[key]}'"
-            )
+        if key in seen:
+            if seen[key] == v:
+                problems.append(f"duplicate {label} '{v}'")
+            else:
+                problems.append(
+                    f"{label} '{v}' collides case-insensitively with '{seen[key]}'"
+                )
         else:
-            seen.setdefault(key, v)
+            seen[key] = v
+    return problems
+
+
+def _duplicates_per_group(entities, id_attr: str, label: str) -> list[str]:
+    """Case-insensitive duplicate ids, checked within each alignment group.
+
+    ``entities`` carry ``reconstruction_alignment_id`` (None for blocks authored
+    in acquisition.toml, which the assembler has not yet scoped to a group).
+    """
+    by_group: dict[str | None, list[str]] = {}
+    for e in entities:
+        by_group.setdefault(e.reconstruction_alignment_id, []).append(
+            getattr(e, id_attr)
+        )
+    problems: list[str] = []
+    for group in sorted(by_group, key=lambda g: g or ""):
+        problems.extend(_case_insensitive_duplicates(by_group[group], label))
     return problems
 
 
@@ -284,17 +304,21 @@ class Acquisition(_Base):
 
 
 class RawTomogram(_Base):
-    # directory / acquisition.toml [raw_tomogram] (folder name = tomogram_id = TOML `id`)
+    # directory / acquisition.toml [[raw_tomogram]] (file stem = tomogram_id = TOML `id`)
     tomogram_id: IdStr = Field(alias="id")
+    # The enclosing Reconstructions/{id}/ folder. Path-injected by the
+    # assembler, never authored — the folder the file lives under IS the
+    # group. Part of the storage key, so two groups may share a file stem.
+    reconstruction_alignment_id: IdStr | None = None
     # scan-time directive, not stored (§08c); see Sample.renamed_from.
     renamed_from: str | None = None
-    # id of the [[tilt_series]] (in this acquisition) this reconstruction was
-    # built from; validated against the acquisition's tilt-series ids in
-    # AcquisitionFile._check_cross_refs.
-    tilt_series_id: IdStr | None = None
     pipeline: str | None = None
     software: str | None = None
-    derived_from: list[IdStr] = Field(default_factory=list)
+    # id of the [[tilt_series]] (in this acquisition) this reconstruction was
+    # built from; validated against the acquisition's tilt-series ids in
+    # AcquisitionFile._check_cross_refs. Authored (a raw tomogram derives
+    # directly from one tilt series, not from another tomogram).
+    derived_from: IdStr | None = None
     # MRC header
     image_size_x: int | None = None
     image_size_y: int | None = None
@@ -309,17 +333,19 @@ class RawTomogram(_Base):
 
 
 class PostProcessedTomogram(_Base):
-    # directory / acquisition.toml [[post_processed_tomogram]] (folder name = tomogram_id = TOML `id`)
+    # directory / acquisition.toml [[post_processed_tomogram]] (file stem = tomogram_id = TOML `id`)
     tomogram_id: IdStr = Field(alias="id")
+    # The enclosing Reconstructions/{id}/ folder. Path-injected by the
+    # assembler, never authored — the folder the file lives under IS the
+    # group. Part of the storage key, so two groups may share a file stem.
+    reconstruction_alignment_id: IdStr | None = None
     # scan-time directive, not stored (§08c); see Sample.renamed_from.
     renamed_from: str | None = None
-    # id of the [[tilt_series]] (in this acquisition) this reconstruction was
-    # built from; validated against the acquisition's tilt-series ids in
-    # AcquisitionFile._check_cross_refs.
-    tilt_series_id: IdStr | None = None
     denoising_software: str | None = None
     ctf_software: str | None = None
     missing_wedge_software: str | None = None
+    # id(s) of the tomogram(s) (raw or post-processed, in this acquisition)
+    # this was derived from; validated in AcquisitionFile._check_cross_refs.
     derived_from: list[IdStr] = Field(default_factory=list)
     # MRC header
     image_size_x: int | None = None
@@ -338,12 +364,19 @@ class PostProcessedTomogram(_Base):
 
 
 class Annotation(_Base):
-    # directory / acquisition.toml [[annotation]] (folder name = annotation_id = TOML `id`)
+    # directory / acquisition.toml [[annotation]] (file stem = annotation_id = TOML `id`)
     annotation_id: IdStr = Field(alias="id")
+    # The enclosing Reconstructions/{id}/ folder. Path-injected by the
+    # assembler, never authored — the folder the file lives under IS the
+    # group. Part of the storage key, so two groups may share a file stem.
+    reconstruction_alignment_id: IdStr | None = None
     # scan-time directive, not stored (§08c); see Sample.renamed_from.
     renamed_from: str | None = None
     type: str | None = None
-    target_tomogram: IdStr | None = None
+    # No target_tomogram: an annotation belongs to the whole
+    # Reconstructions/{reconstruction_alignment_id}/ group (structural, via
+    # the folder it lives under) — every tomogram in that group represents
+    # the same inferred biological structure.
     # directory scan (artifacts discovered in the annotation folder)
     files: list[str] = Field(default_factory=list)
 
@@ -385,6 +418,37 @@ class TiltSeries(_Base):
     mtime: float | None = None
 
 
+class ReconstructionAlignment(_Base):
+    """One 3D-alignment group within an acquisition (composite-PK child of
+    Acquisition).
+
+    Composite primary key: ``(sample_id, acquisition_id, reconstruction_alignment_id)``.
+    The group is a researcher-authored folder under ``Reconstructions/`` —
+    ``reconstruction_alignment_id`` is its directory name (accepted as the
+    TOML ``id`` alias). It does NOT have to match any ``tilt_series_id``: a
+    tomogram's tilt-series lineage is recorded separately on
+    ``RawTomogram.derived_from``. All non-PK fields are optional so a group
+    can be ingested before disk enrichment runs.
+    """
+
+    # composite PK fields (sample_id/acquisition_id path-injected by the
+    # scanner; reconstruction_alignment_id authored as folder name / TOML
+    # ``id``. Optional in Pydantic so partial loads don't blow up but pinned
+    # NOT NULL in the DB)
+    sample_id: IdStr | None = None
+    acquisition_id: IdStr | None = None
+    reconstruction_alignment_id: IdStr | None = Field(default=None, alias="id")
+    # scan-time directive, not stored (§08c); see Sample.renamed_from.
+    renamed_from: str | None = None
+    # acquisition.toml [[reconstruction_alignment]] — authored
+    alignment_software: str | None = None
+    alignment_method: str | None = None
+    # filesystem (alignment artifacts discovered under {id}/Alignment/)
+    alignment_files: list[str] = Field(default_factory=list)
+    # filesystem mtime gating
+    mtime: float | None = None
+
+
 class MdSource(_Base):
     # acquisition.toml ([md_source]) — simulation provenance for this acquisition.
     # md_run_id must match an [[md_run]] id in the sample's sample.toml.
@@ -403,20 +467,20 @@ class AcquisitionFile(_Base):
 
     acquisition: Acquisition
     md_source: MdSource | None = None
-    raw_tomogram: RawTomogram | None = None
+    raw_tomogram: list[RawTomogram] = Field(default_factory=list)
     post_processed_tomogram: list[PostProcessedTomogram] = Field(default_factory=list)
     annotation: list[Annotation] = Field(default_factory=list)
     tilt_series: list[TiltSeries] = Field(default_factory=list)
+    reconstruction_alignment: list[ReconstructionAlignment] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def _check_cross_refs(self) -> "AcquisitionFile":
-        # Raw and post-processed tomograms share one id namespace: derived_from
-        # and annotation.target_tomogram may reference either.
-        tomograms: list[RawTomogram | PostProcessedTomogram] = list(
-            self.post_processed_tomogram
-        )
-        if self.raw_tomogram is not None:
-            tomograms.insert(0, self.raw_tomogram)
+        # Raw and post-processed tomograms share one id namespace:
+        # post_processed_tomogram.derived_from may reference either.
+        tomograms: list[RawTomogram | PostProcessedTomogram] = [
+            *self.raw_tomogram,
+            *self.post_processed_tomogram,
+        ]
         tomo_ids = {t.tomogram_id for t in tomograms}
         ts_ids = {
             ts.tilt_series_id
@@ -424,11 +488,15 @@ class AcquisitionFile(_Base):
             if ts.tilt_series_id is not None
         }
         problems: list[str] = []
-        problems.extend(_case_insensitive_duplicates(
-            (t.tomogram_id for t in tomograms), "tomogram id"
+        # Tomogram/annotation ids are unique within their alignment group, not
+        # the whole acquisition: two Reconstructions/{id}/ groups may each hold
+        # a "denoised" stem. Authored blocks carry no group (None), so a real
+        # duplicate inside one acquisition.toml is still caught.
+        problems.extend(_duplicates_per_group(
+            tomograms, "tomogram_id", "tomogram id"
         ))
-        problems.extend(_case_insensitive_duplicates(
-            (a.annotation_id for a in self.annotation), "annotation id"
+        problems.extend(_duplicates_per_group(
+            self.annotation, "annotation_id", "annotation id"
         ))
         problems.extend(_case_insensitive_duplicates(
             (
@@ -438,17 +506,29 @@ class AcquisitionFile(_Base):
             ),
             "tilt series id",
         ))
-        for t in tomograms:
+        problems.extend(_case_insensitive_duplicates(
+            (
+                ra.reconstruction_alignment_id
+                for ra in self.reconstruction_alignment
+                if ra.reconstruction_alignment_id is not None
+            ),
+            "reconstruction alignment id",
+        ))
+        # Legacy-only: when the processing log still lives in acquisition.toml,
+        # derived_from is checkable here. Under reconstruction.toml these refs
+        # span files and are reconciled by the loader after aggregation.
+        for t in self.raw_tomogram:
+            if t.derived_from is not None and t.derived_from not in ts_ids:
+                problems.append(
+                    f"tomogram '{t.tomogram_id}' derived_from '{t.derived_from}' "
+                    f"does not match any [[tilt_series]] in this acquisition"
+                )
+        for t in self.post_processed_tomogram:
             for ref in t.derived_from:
                 if ref not in tomo_ids:
                     problems.append(
                         f"tomogram '{t.tomogram_id}' derived_from references unknown tomogram '{ref}'"
                     )
-            if t.tilt_series_id is not None and t.tilt_series_id not in ts_ids:
-                problems.append(
-                    f"tomogram '{t.tomogram_id}' tilt_series_id '{t.tilt_series_id}' "
-                    f"does not match any [[tilt_series]] in this acquisition"
-                )
         # A tilt series may derive from the literal "Frames" (raw, straight off
         # the frame stack) or from another tilt series in this acquisition.
         for ts in self.tilt_series:
@@ -460,12 +540,38 @@ class AcquisitionFile(_Base):
                     f"'{ts.derived_from}' is neither \"Frames\" nor a "
                     f"tilt_series id in this acquisition"
                 )
-        for a in self.annotation:
-            if a.target_tomogram is not None and a.target_tomogram not in tomo_ids:
-                problems.append(
-                    f"annotation '{a.annotation_id}' target_tomogram '{a.target_tomogram}' "
-                    f"not found in this acquisition"
-                )
+        if problems:
+            raise ValueError("; ".join(problems))
+        return self
+
+
+class ReconstructionFile(_Base):
+    """Parsed contents of one Reconstructions/{id}/reconstruction.toml.
+
+    ``reconstruction_alignment_id`` is the folder name (path-injected by the
+    loader, not authored). Tomogram/annotation ids are the file stems in this
+    folder. Cross-file references (raw_tomogram.derived_from -> a tilt_series in
+    acquisition.toml; post_processed_tomogram.derived_from -> a tomogram in this
+    or another group) are reconciled by the loader after aggregation, not here.
+    """
+
+    reconstruction_alignment: ReconstructionAlignment = Field(
+        default_factory=ReconstructionAlignment
+    )
+    raw_tomogram: list[RawTomogram] = Field(default_factory=list)
+    post_processed_tomogram: list[PostProcessedTomogram] = Field(default_factory=list)
+    annotation: list[Annotation] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _check_local_dupes(self) -> "ReconstructionFile":
+        problems: list[str] = []
+        problems.extend(_case_insensitive_duplicates(
+            (t.tomogram_id for t in (*self.raw_tomogram, *self.post_processed_tomogram)),
+            "tomogram id",
+        ))
+        problems.extend(_case_insensitive_duplicates(
+            (a.annotation_id for a in self.annotation), "annotation id"
+        ))
         if problems:
             raise ValueError("; ".join(problems))
         return self
@@ -487,6 +593,8 @@ class SampleRecord(_Base):
     milling: Milling | None = None
     md_run: list[MdRun] = Field(default_factory=list)
     acquisitions: dict[str, AcquisitionFile] = Field(default_factory=dict)
+    # acquisition id -> reconstruction_alignment_id -> parsed reconstruction.toml
+    reconstructions: dict[str, dict[str, ReconstructionFile]] = Field(default_factory=dict)
 
     @model_validator(mode="after")
     def _check_project_blocks(self) -> "SampleRecord":
