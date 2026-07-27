@@ -5,6 +5,9 @@ Utilities for the ai-cryoet portal:
 - **Data staging** — `reorg_facility_to_portal.py` and `relion_to_portal.py`
   stage Janelia cryoET facility data and RELION pipeline output into the portal
   ingestion layout.
+- **Data migration** — `migrate_reconstruction_groups.py` moves an existing
+  data root from the flat `Reconstructions/{Tomograms,Annotations}/{id}/`
+  layout to the 3D-alignment-grouped one.
 - **Frontend icons** — `icon/` regenerates the snowflake app icon, navbar logo,
   and favicons used by the frontend.
 
@@ -206,3 +209,41 @@ rm ai_cryoet_snowflake_*.png               # intermediates; not committed
 
 The `<link>` tags that reference these live in `frontend/src/routes/__root.tsx`;
 the navbar logo is imported in `frontend/src/components/Header.tsx`.
+
+## `migrate_reconstruction_groups.py`
+
+One-shot migration to the 3D-alignment-grouped reconstruction layout. For each
+acquisition it moves
+
+```
+Reconstructions/Tomograms/{tomogram_id}/<file>
+Reconstructions/Annotations/{annotation_id}/<file>
+```
+
+to
+
+```
+Reconstructions/{reconstruction_alignment_id}/Tomograms/{tomogram_id}.<ext>
+Reconstructions/{reconstruction_alignment_id}/Annotations/{annotation_id}.<ext>
+Reconstructions/{reconstruction_alignment_id}/Alignment/
+```
+
+and splits the acquisition.toml processing log into one `reconstruction.toml`
+per group (dropping the removed `tilt_series_id` / `target_tomogram` fields and
+setting `raw_tomogram.derived_from` to the acquisition's tilt-series id).
+
+The group id comes from the acquisition's single `[[tilt_series]]` id — the only
+unambiguous choice available from the old data. An acquisition with zero or
+several tilt series has no such id, so each `{id}/` folder becomes its own group
+instead. A tomogram and an annotation sharing a name always split into their own
+group: that pairing is itself evidence of a distinct reconstruction attempt.
+
+Dry-run by default; `--apply` performs the moves and writes the files. Re-running
+after an apply is a no-op. Anything ambiguous (two files with the same extension
+in one `{id}/` folder, a destination-name collision, a loose file directly under
+`Tomograms/`) is reported to stderr and left in place.
+
+```bash
+./utils/migrate_reconstruction_groups.py --root /groups/cryoet/cryoet/data
+./utils/migrate_reconstruction_groups.py --root /groups/cryoet/cryoet/data --apply
+```
