@@ -6,10 +6,12 @@ microscope = "synthetic"
 md_run_id = "run_001"
 frame = 1500
 
-[raw_tomogram]
+[[reconstruction_alignment]]
+id = "grp1"
+
+[[raw_tomogram]]
 id = "synth_tomo_1"
 
 [[annotation]]
 id = "synth_ann_1"
 type = "membrane_segmentation"
-target_tomogram = "synth_tomo_1"

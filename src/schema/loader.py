@@ -33,21 +33,21 @@ from schema import (
     AcquisitionFile,
     DataSource,
     MdRun,
+    ReconstructionFile,
     Sample,
     SampleRecord,
 )
-from schema.layout import infer_arm, sample_id_for
+from schema.layout import (
+    ANNOTATION_FILE_EXTENSIONS,
+    TOMOGRAM_FILE_EXTENSIONS,
+    entity_ids_in_dir,
+    infer_arm,
+    sample_id_for,
+)
 
 
 _PLACEHOLDER = "<FILL IN>"
 
-# Subdirectory layouts probed when cross-checking tomogram/annotation ids
-# against folders on disk. Tomograms live under one of two layouts (real
-# data vs simulated); annotations live under one. Kept in sync with
-# catalog.discovery.iter_tomograms / iter_annotations.
-_TOMOGRAM_PARENT_DIRS = ("Reconstructions/Tomograms", "SyntheticCryoET")
-_ANNOTATION_PARENT_DIRS = ("Reconstructions/Annotations",)
-_TILT_SERIES_PARENT_DIRS = ("TiltSeries",)
 _FOLDER_SUGGEST_CUTOFF = 80
 
 
@@ -184,7 +184,7 @@ def _format_extras_location(entry: ExtrasEntry) -> str:
         return f"acquisitions.{pk[1]}.md_source"
     if et == "raw_tomogram":
         # entity_pk = (sample_id, acq_id, tomogram_id)
-        return f"acquisitions.{pk[1]}.raw_tomogram"
+        return f"acquisitions.{pk[1]}.raw_tomogram[{pk[2]}]"
     if et == "post_processed_tomogram":
         # entity_pk = (sample_id, acq_id, tomogram_id)
         return f"acquisitions.{pk[1]}.post_processed_tomogram[{pk[2]}]"
@@ -194,31 +194,97 @@ def _format_extras_location(entry: ExtrasEntry) -> str:
     if et == "tilt_series":
         # entity_pk = (sample_id, acq_id, tilt_series_id)
         return f"acquisitions.{pk[1]}.tilt_series[{pk[2]}]"
+    if et == "reconstruction_alignment":
+        # entity_pk = (sample_id, acq_id, reconstruction_alignment_id)
+        return f"acquisitions.{pk[1]}.reconstruction_alignment[{pk[2]}]"
     return et
 
 
-# ── id ↔ folder cross-check ──────────────────────────────────────────────────
+# ── id ↔ disk cross-check ─────────────────────────────────────────────────────
 
 
-def _candidate_folder_names(acq_dir: Path, parent_dirs: tuple[str, ...]) -> list[str]:
-    """Return on-disk folder names from any of the candidate parent dirs.
+def _reconstruction_ids_on_disk(
+    acq_dir: Path, leaf: str, file_extensions: frozenset[str]
+) -> set[str]:
+    """Return every on-disk entity id under ``Reconstructions/*/{leaf}/``.
 
-    Used to suggest the closest match when a TOML-declared id has no
-    matching folder. Missing parents contribute nothing rather than
-    erroring.
+    ``leaf`` is ``"Tomograms"`` or ``"Annotations"``. Tomograms and annotations
+    are **files** whose id is the stem (:func:`schema.layout.entity_id_from_path`);
+    only children matching ``file_extensions`` (or a ``.zarr`` / ``.ome.zarr``
+    dir) count. Both arms nest the same way — one ``{reconstruction_alignment_id}/``
+    folder per 3D-alignment group — mirroring
+    ``catalog.discovery._reconstruction_leaf_dirs`` so the loader and scanner agree.
     """
-    names: list[str] = []
-    for sub in parent_dirs:
-        d = acq_dir / sub
-        if d.is_dir():
-            names.extend(p.name for p in d.iterdir() if p.is_dir())
-    return names
+    recon = acq_dir / "Reconstructions"
+    ids: set[str] = set()
+    if not recon.is_dir():
+        return ids
+    for group_dir in sorted(recon.iterdir()):
+        if not group_dir.is_dir():
+            continue
+        ids.update(entity_ids_in_dir(group_dir / leaf, file_extensions))
+    return ids
 
 
-def _has_matching_folder(
-    acq_dir: Path, parent_dirs: tuple[str, ...], entity_id: str
-) -> bool:
-    return any((acq_dir / sub / entity_id).is_dir() for sub in parent_dirs)
+def _tilt_series_ids_on_disk(acq_dir: Path) -> set[str]:
+    """Return the tilt-series ids (folder names) under ``acq_dir/TiltSeries/``.
+
+    Tilt series remain folders (``TiltSeries/{ts_id}/``); a missing ``TiltSeries``
+    contributes nothing.
+    """
+    ts_root = acq_dir / "TiltSeries"
+    if not ts_root.is_dir():
+        return set()
+    return {child.name for child in ts_root.iterdir() if child.is_dir()}
+
+
+def _reconstruction_alignment_ids_on_disk(acq_dir: Path) -> set[str]:
+    """Return the 3D-alignment group ids (folder names) under
+    ``acq_dir/Reconstructions/``. A missing ``Reconstructions`` contributes
+    nothing.
+    """
+    recon = acq_dir / "Reconstructions"
+    if not recon.is_dir():
+        return set()
+    return {child.name for child in recon.iterdir() if child.is_dir()}
+
+
+def _load_reconstruction_files(
+    acq_dir: Path, sample_id: str, acq_id: str, warnings_out: list[str]
+) -> dict[str, ReconstructionFile]:
+    """Parse each ``Reconstructions/{id}/reconstruction.toml`` independently.
+
+    A bad file (parse error or failed validation) warns and is skipped — it
+    never sinks the acquisition (per-group isolation, mirroring the
+    per-acquisition isolation above). The group id and the composite keys are
+    injected from the path and overwrite anything authored: the folder IS the
+    group.
+    """
+    out: dict[str, ReconstructionFile] = {}
+    recon_root = acq_dir / "Reconstructions"
+    if not recon_root.is_dir():
+        return out
+    for group_dir in sorted(p for p in recon_root.iterdir() if p.is_dir()):
+        toml_path = group_dir / "reconstruction.toml"
+        if not toml_path.is_file():
+            continue
+        try:
+            with toml_path.open("rb") as f:
+                data = tomllib.load(f)
+        except tomllib.TOMLDecodeError as exc:
+            warnings_out.append(f"{toml_path}: invalid TOML ({exc})")
+            continue
+        _strip_placeholders(data, str(toml_path), warnings_out)
+        # path-inject the group id + composite keys (never authored)
+        ra = data.setdefault("reconstruction_alignment", {})
+        ra["id"] = group_dir.name
+        ra["sample_id"] = sample_id
+        ra["acquisition_id"] = acq_id
+        try:
+            out[group_dir.name] = ReconstructionFile.model_validate(data)
+        except ValidationError as exc:
+            warnings_out.extend(_format_validation_errors(str(toml_path), exc))
+    return out
 
 
 def _scrub_dangling_refs(
@@ -234,112 +300,252 @@ def _scrub_dangling_refs(
     (:meth:`AcquisitionFile._check_cross_refs`) would then reject the whole
     acquisition over a dangling pointer we created — so scrub those refs first.
     """
-    tomograms: list = list(acq_model.post_processed_tomogram)
-    if acq_model.raw_tomogram is not None:
-        tomograms.append(acq_model.raw_tomogram)
-    for tomo in tomograms:
+    for raw in acq_model.raw_tomogram:
+        if raw.derived_from in dropped_ts_ids:
+            raw.derived_from = None
+    for tomo in acq_model.post_processed_tomogram:
         if dropped_tomo_ids and tomo.derived_from:
             tomo.derived_from = [
                 r for r in tomo.derived_from if r not in dropped_tomo_ids
             ]
-        if tomo.tilt_series_id in dropped_ts_ids:
-            tomo.tilt_series_id = None
-    for ann in acq_model.annotation:
-        if ann.target_tomogram in dropped_tomo_ids:
-            ann.target_tomogram = None
     for ts in acq_model.tilt_series:
         if ts.derived_from in dropped_ts_ids:
             ts.derived_from = None
 
 
+def _tomo_folder_msg(tomogram_id: str, candidates: list[str]) -> str:
+    """"no matching folder" message for a tomogram id, with a fuzzy suggestion.
+
+    Shared by the acquisition.toml check (:func:`_check_id_folder_alignment`)
+    and the per-group reconstruction.toml check
+    (:func:`_check_reconstruction_files`) so the warning text stays identical.
+    """
+    msg = (
+        f"tomogram[{tomogram_id}]: id has no matching folder under "
+        "Reconstructions/{reconstruction_alignment_id}/Tomograms/; the id "
+        "must equal a reconstruction file's name without its extension"
+    )
+    match = process.extractOne(
+        tomogram_id, candidates, score_cutoff=_FOLDER_SUGGEST_CUTOFF
+    )
+    if match:
+        msg += f" (did you mean '{match[0]}'?)"
+    return msg
+
+
+def _ann_folder_msg(annotation_id: str, candidates: list[str]) -> str:
+    """"no matching folder" message for an annotation id, with a fuzzy suggestion."""
+    msg = (
+        f"annotation[{annotation_id}]: id has no matching folder under "
+        "Reconstructions/{reconstruction_alignment_id}/Annotations/; the id "
+        "must equal a reconstruction file's name without its extension"
+    )
+    match = process.extractOne(
+        annotation_id, candidates, score_cutoff=_FOLDER_SUGGEST_CUTOFF
+    )
+    if match:
+        msg += f" (did you mean '{match[0]}'?)"
+    return msg
+
+
+def _check_reconstruction_files(
+    acq_dir: Path,
+    acq_model: AcquisitionFile,
+    recon_files: dict[str, ReconstructionFile],
+) -> list[str]:
+    """Reconcile each ``Reconstructions/{group}/reconstruction.toml`` against disk
+    and against its acquisition.toml, mutating the passed models in place.
+
+    Two checks, both downgraded to warnings (never an error that sinks the
+    group), mirroring :func:`_check_id_folder_alignment`:
+
+    1. Each tomogram/annotation id must equal a file's stem in *its own* group
+       folder (``Reconstructions/{group}/{Tomograms,Annotations}/``); an
+       unmatched entry is dropped and reported with the existing
+       "no matching folder" message.
+    2. Cross-file ``derived_from`` refs — which span files and are therefore
+       deferred by ``ReconstructionFile`` / ``AcquisitionFile`` validation — are
+       resolved after aggregation: ``raw_tomogram.derived_from`` against the
+       tilt-series ids in acquisition.toml, ``post_processed_tomogram.derived_from``
+       against every tomogram id across all groups of this acquisition. A
+       dangling ref warns; the entry is kept.
+    """
+    warnings: list[str] = []
+    recon_root = acq_dir / "Reconstructions"
+
+    ts_ids = {
+        ts.tilt_series_id
+        for ts in acq_model.tilt_series
+        if ts.tilt_series_id is not None
+    }
+    # Pass 1: drop entries with no matching file on disk, per group. The
+    # cross-group tomogram-id universe used below must be built from what
+    # *survives* this filtering, not from the raw pre-filter contents —
+    # otherwise a derived_from ref to a dropped sibling id would pass silently.
+    all_tomo_ids: set[str] = set()
+    group_prefixes: dict[str, str] = {}
+    for group in sorted(recon_files):
+        rf = recon_files[group]
+        group_dir = recon_root / group
+        tomo_on_disk = entity_ids_in_dir(
+            group_dir / "Tomograms", TOMOGRAM_FILE_EXTENSIONS
+        )
+        ann_on_disk = entity_ids_in_dir(
+            group_dir / "Annotations", ANNOTATION_FILE_EXTENSIONS
+        )
+        tomo_candidates = sorted(tomo_on_disk)
+        ann_candidates = sorted(ann_on_disk)
+        prefix = f"reconstruction_alignment[{group}]."
+        group_prefixes[group] = prefix
+
+        kept_raw = []
+        for raw in rf.raw_tomogram:
+            if raw.tomogram_id in tomo_on_disk:
+                kept_raw.append(raw)
+                continue
+            warnings.append(
+                prefix + _tomo_folder_msg(raw.tomogram_id, tomo_candidates)
+            )
+        rf.raw_tomogram = kept_raw
+
+        kept_post = []
+        for tomo in rf.post_processed_tomogram:
+            if tomo.tomogram_id in tomo_on_disk:
+                kept_post.append(tomo)
+                continue
+            warnings.append(
+                prefix + _tomo_folder_msg(tomo.tomogram_id, tomo_candidates)
+            )
+        rf.post_processed_tomogram = kept_post
+
+        kept_ann = []
+        for ann in rf.annotation:
+            if ann.annotation_id in ann_on_disk:
+                kept_ann.append(ann)
+                continue
+            warnings.append(
+                prefix + _ann_folder_msg(ann.annotation_id, ann_candidates)
+            )
+        rf.annotation = kept_ann
+
+        all_tomo_ids.update(t.tomogram_id for t in (*kept_raw, *kept_post))
+
+    # Pass 2: cross-file derived_from, against the post-filter universe.
+    for group in sorted(recon_files):
+        rf = recon_files[group]
+        prefix = group_prefixes[group]
+        for raw in rf.raw_tomogram:
+            if raw.derived_from is not None and raw.derived_from not in ts_ids:
+                warnings.append(
+                    f"{prefix}raw_tomogram[{raw.tomogram_id}]: derived_from "
+                    f"'{raw.derived_from}' matches no [[tilt_series]] in "
+                    "acquisition.toml"
+                )
+        for tomo in rf.post_processed_tomogram:
+            for ref in tomo.derived_from:
+                if ref not in all_tomo_ids:
+                    warnings.append(
+                        f"{prefix}post_processed_tomogram[{tomo.tomogram_id}]: "
+                        f"derived_from references unknown tomogram '{ref}'"
+                    )
+    return warnings
+
+
+def _drop_authored_group_ids(acq_data: dict) -> None:
+    """Discard any hand-authored ``reconstruction_alignment_id`` on a flat
+    acquisition.toml tomogram/annotation block, before validation.
+
+    The ``Reconstructions/{id}/`` folder IS the alignment group — the assembler
+    derives the value from the path, and the authoring UI never writes it
+    (``form_fields.py`` classifies it ``derived``). An authored value must not
+    survive into ``AcquisitionFile``: its id-uniqueness check is per group, so
+    two blocks declaring the same id under different authored groups would land
+    in different buckets and validate, and the assembler — which keys its lookup
+    on the id alone — would then stamp one block's metadata onto both folders.
+    Dropping it here keeps such a file rejected, as it was before the check
+    became group-scoped. To describe a per-group tomogram, put the block in that
+    group's ``reconstruction.toml``.
+    """
+    for key in ("raw_tomogram", "post_processed_tomogram", "annotation"):
+        for block in acq_data.get(key) or ():
+            if isinstance(block, dict):
+                block.pop("reconstruction_alignment_id", None)
+
+
 def _check_id_folder_alignment(
     acq_dir: Path, acq_model: AcquisitionFile
 ) -> list[str]:
-    """Drop declared tomogram/annotation/tilt-series entries whose id has no
-    matching folder on disk, returning one warning message per dropped entry.
+    """Reconcile declared tomogram/annotation/tilt-series/reconstruction-alignment
+    entries against disk, returning one warning message per dropped entry.
 
-    The TOML-authored ``id`` MUST equal the entity's on-disk directory name.
-    A single mismatch used to invalidate the *entire* acquisition.toml, which
-    silently discarded unrelated valid declarations in the same file (e.g. a
-    tomogram typo would also drop correctly-declared tilt series, disabling
-    their previews). Instead we drop only the offending entry — keeping its
-    valid siblings — and surface a warning so the typo gets fixed without
-    collateral data loss. References to a dropped id from surviving entries
-    are scrubbed (:func:`_scrub_dangling_refs`) so the cross-ref re-validation
-    doesn't fail the whole sample. A fuzzy suggestion is appended when the
-    closest folder name is plausibly the intended target.
+    The TOML-authored ``id`` MUST equal the entity's on-disk name — for
+    tomograms/annotations the reconstruction file's stem (``foo.mrc`` -> ``foo``),
+    for tilt series the ``TiltSeries/{id}/`` folder name, for a 3D-alignment
+    group the ``Reconstructions/{id}/`` folder name. A single mismatch used to
+    invalidate the *entire* acquisition.toml, which silently discarded unrelated
+    valid declarations in the same file (e.g. a tomogram typo would also drop
+    correctly-declared tilt series, disabling their previews). Instead we drop
+    only the offending entry — keeping its valid siblings — and surface a warning
+    so the typo gets fixed without collateral data loss. References to a dropped
+    id from surviving entries are scrubbed (:func:`_scrub_dangling_refs`) so the
+    cross-ref re-validation doesn't fail the whole sample. A fuzzy suggestion is
+    appended when the closest on-disk name is a plausible target.
     """
     warnings: list[str] = []
     dropped_tomo_ids: set[str] = set()
     dropped_ts_ids: set[str] = set()
 
-    tomo_candidates = _candidate_folder_names(acq_dir, _TOMOGRAM_PARENT_DIRS)
-    joined_parents = " or ".join(repr(p) for p in _TOMOGRAM_PARENT_DIRS)
-
-    def _tomo_msg(tomogram_id: str) -> str:
-        msg = (
-            f"tomogram[{tomogram_id}]: id has no matching folder under "
-            f"{joined_parents}; "
-            f"the id must equal the tomogram's directory name"
-        )
-        match = process.extractOne(
-            tomogram_id, tomo_candidates, score_cutoff=_FOLDER_SUGGEST_CUTOFF
-        )
-        if match:
-            msg += f" (did you mean '{match[0]}'?)"
-        return msg
+    tomo_ids_on_disk = _reconstruction_ids_on_disk(
+        acq_dir, "Tomograms", TOMOGRAM_FILE_EXTENSIONS
+    )
+    ann_ids_on_disk = _reconstruction_ids_on_disk(
+        acq_dir, "Annotations", ANNOTATION_FILE_EXTENSIONS
+    )
+    ts_on_disk = _tilt_series_ids_on_disk(acq_dir)
+    ra_on_disk = _reconstruction_alignment_ids_on_disk(acq_dir)
+    tomo_candidates = sorted(tomo_ids_on_disk)
+    ann_candidates = sorted(ann_ids_on_disk)
+    ts_candidates = sorted(ts_on_disk)
+    ra_candidates = sorted(ra_on_disk)
 
     # Raw and post-processed tomograms share one id namespace within the
-    # acquisition; check both against the same on-disk processing folders.
-    if acq_model.raw_tomogram is not None and not _has_matching_folder(
-        acq_dir, _TOMOGRAM_PARENT_DIRS, acq_model.raw_tomogram.tomogram_id
-    ):
-        warnings.append(_tomo_msg(acq_model.raw_tomogram.tomogram_id))
-        dropped_tomo_ids.add(acq_model.raw_tomogram.tomogram_id)
-        acq_model.raw_tomogram = None
+    # acquisition; check both against the same on-disk reconstruction files.
+    kept_raw = []
+    for raw in acq_model.raw_tomogram:
+        if raw.tomogram_id in tomo_ids_on_disk:
+            kept_raw.append(raw)
+            continue
+        warnings.append(_tomo_folder_msg(raw.tomogram_id, tomo_candidates))
+        dropped_tomo_ids.add(raw.tomogram_id)
+    acq_model.raw_tomogram = kept_raw
 
     kept_post = []
     for tomo in acq_model.post_processed_tomogram:
-        if _has_matching_folder(acq_dir, _TOMOGRAM_PARENT_DIRS, tomo.tomogram_id):
+        if tomo.tomogram_id in tomo_ids_on_disk:
             kept_post.append(tomo)
             continue
-        warnings.append(_tomo_msg(tomo.tomogram_id))
+        warnings.append(_tomo_folder_msg(tomo.tomogram_id, tomo_candidates))
         dropped_tomo_ids.add(tomo.tomogram_id)
     acq_model.post_processed_tomogram = kept_post
 
-    ann_candidates = _candidate_folder_names(acq_dir, _ANNOTATION_PARENT_DIRS)
     kept_ann = []
     for ann in acq_model.annotation:
-        if _has_matching_folder(acq_dir, _ANNOTATION_PARENT_DIRS, ann.annotation_id):
+        if ann.annotation_id in ann_ids_on_disk:
             kept_ann.append(ann)
             continue
-        msg = (
-            f"annotation[{ann.annotation_id}]: id has no matching folder under "
-            f"{_ANNOTATION_PARENT_DIRS[0]!r}; "
-            f"the id must equal the annotation's directory name"
-        )
-        match = process.extractOne(
-            ann.annotation_id, ann_candidates, score_cutoff=_FOLDER_SUGGEST_CUTOFF
-        )
-        if match:
-            msg += f" (did you mean '{match[0]}'?)"
-        warnings.append(msg)
+        warnings.append(_ann_folder_msg(ann.annotation_id, ann_candidates))
     acq_model.annotation = kept_ann
 
-    ts_candidates = _candidate_folder_names(acq_dir, _TILT_SERIES_PARENT_DIRS)
     kept_ts = []
     for ts in acq_model.tilt_series:
         # tilt_series_id may be None on partial / scanner-pending rows; only
         # the authored folder name is cross-checked against disk.
-        if ts.tilt_series_id is None or _has_matching_folder(
-            acq_dir, _TILT_SERIES_PARENT_DIRS, ts.tilt_series_id
-        ):
+        if ts.tilt_series_id is None or ts.tilt_series_id in ts_on_disk:
             kept_ts.append(ts)
             continue
         msg = (
             f"tilt_series[{ts.tilt_series_id}]: id has no matching folder under "
-            f"{_TILT_SERIES_PARENT_DIRS[0]!r}; "
-            f"the id must equal the tilt series' directory name"
+            "'TiltSeries'; the id must equal the tilt series' directory name"
         )
         match = process.extractOne(
             ts.tilt_series_id, ts_candidates, score_cutoff=_FOLDER_SUGGEST_CUTOFF
@@ -349,6 +555,29 @@ def _check_id_folder_alignment(
         warnings.append(msg)
         dropped_ts_ids.add(ts.tilt_series_id)
     acq_model.tilt_series = kept_ts
+
+    kept_ra = []
+    for ra in acq_model.reconstruction_alignment:
+        if (
+            ra.reconstruction_alignment_id is None
+            or ra.reconstruction_alignment_id in ra_on_disk
+        ):
+            kept_ra.append(ra)
+            continue
+        msg = (
+            f"reconstruction_alignment[{ra.reconstruction_alignment_id}]: id has "
+            "no matching folder under 'Reconstructions'; the id must equal the "
+            "3D-alignment group's directory name"
+        )
+        match = process.extractOne(
+            ra.reconstruction_alignment_id,
+            ra_candidates,
+            score_cutoff=_FOLDER_SUGGEST_CUTOFF,
+        )
+        if match:
+            msg += f" (did you mean '{match[0]}'?)"
+        warnings.append(msg)
+    acq_model.reconstruction_alignment = kept_ra
 
     if dropped_tomo_ids or dropped_ts_ids:
         _scrub_dangling_refs(acq_model, dropped_tomo_ids, dropped_ts_ids)
@@ -400,8 +629,7 @@ def _walk_extras(record: SampleRecord) -> list[ExtrasEntry]:
                 out.append(
                     ExtrasEntry("md_source", (sample_id, acq_id), k, v)
                 )
-        if acq_file.raw_tomogram is not None:
-            raw = acq_file.raw_tomogram
+        for raw in acq_file.raw_tomogram:
             for k, v in (raw.model_extra or {}).items():
                 out.append(
                     ExtrasEntry(
@@ -439,6 +667,19 @@ def _walk_extras(record: SampleRecord) -> list[ExtrasEntry]:
                     ExtrasEntry(
                         "tilt_series",
                         (sample_id, acq_id, ts.tilt_series_id),
+                        k,
+                        v,
+                    )
+                )
+        for ra in acq_file.reconstruction_alignment:
+            # same rationale as tilt_series above.
+            if ra.reconstruction_alignment_id is None:
+                continue
+            for k, v in (ra.model_extra or {}).items():
+                out.append(
+                    ExtrasEntry(
+                        "reconstruction_alignment",
+                        (sample_id, acq_id, ra.reconstruction_alignment_id),
                         k,
                         v,
                     )
@@ -591,6 +832,7 @@ def load_sample_record(
     else:
         acq_glob = "*/acquisition.toml"
     validated_acqs: dict[str, AcquisitionFile] = {}
+    reconstructions: dict[str, dict[str, ReconstructionFile]] = {}
     for acq_toml in sorted(sample_dir.glob(acq_glob)):
         acq_name = acq_toml.parent.name
         try:
@@ -603,6 +845,7 @@ def load_sample_record(
         _strip_placeholders(
             acq_data, f"acquisitions.{acq_name}", result.warnings
         )
+        _drop_authored_group_ids(acq_data)
         acq_data.setdefault("acquisition", {})["acquisition_id"] = acq_name
 
         with _warnings.catch_warnings(record=True) as caught:
@@ -642,6 +885,38 @@ def load_sample_record(
                 if ref_warning is not None:
                     result.warnings.append(ref_warning)
             validated_acqs[acq_name] = acq_model
+
+            recon_files = _load_reconstruction_files(
+                acq_toml.parent, sample_data["sample"]["sample_id"], acq_name,
+                result.warnings,
+            )
+            # Per-group reconstruction.toml reconciliation: id<->own-folder and
+            # cross-file derived_from (both downgraded to warnings).
+            for lw in _check_reconstruction_files(
+                acq_toml.parent, acq_model, recon_files
+            ):
+                result.warnings.append(f"acquisitions.{acq_name}.{lw}")
+            # Legacy dual-read: a reconstruction group present on disk with no
+            # reconstruction.toml, while acquisition.toml still carries the
+            # processing-log blocks, is the deprecated layout — warn per group.
+            if (
+                acq_model.raw_tomogram
+                or acq_model.post_processed_tomogram
+                or acq_model.annotation
+            ):
+                for group in sorted(
+                    _reconstruction_alignment_ids_on_disk(acq_toml.parent)
+                ):
+                    if group in recon_files:
+                        continue
+                    result.warnings.append(
+                        f"acquisitions.{acq_name}.reconstruction_alignment"
+                        f"[{group}]: processing-log blocks in acquisition.toml "
+                        f"are deprecated; move to Reconstructions/{group}/"
+                        "reconstruction.toml"
+                    )
+            if recon_files:
+                reconstructions[acq_name] = recon_files
 
     # Build the full record. Pass already-validated acquisitions through
     # by dumping back to dict (preserves alias round-tripping for the
@@ -685,6 +960,7 @@ def load_sample_record(
     if record is None:
         return result
 
+    record.reconstructions = reconstructions
     result.record = record
     result.extras = _walk_extras(record)
 
