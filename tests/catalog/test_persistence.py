@@ -20,13 +20,14 @@ from schema import (
     MdSource,
     PostProcessedTomogram,
     RawTomogram,
+    ReconstructionAlignment,
     Sample,
     SampleRecord,
     Simulation,
     TiltSeries,
 )
 from schema.loader import ExtrasEntry
-from schema.schema import DataSource, DatasetType, Project
+from schema.schema import DataSource, DatasetType, Project, ReconstructionFile
 
 from catalog import db, orm
 from catalog.assembler import ScanIssue
@@ -242,17 +243,21 @@ def test_upsert_raw_and_post_tomogram_share_id_namespace(session):
     tomograms; both land in their respective tables under the same composite PK
     shape (sample_id, acquisition_id, tomogram_id).
     """
-    raw = RawTomogram(id="t_raw", voxel_size=11.72)
+    raw = RawTomogram(
+        id="t_raw", reconstruction_alignment_id="grp1", voxel_size=11.72
+    )
     post1 = PostProcessedTomogram(
-        id="t_post1", voxel_size=11.72, size_bytes=12345
+        id="t_post1", reconstruction_alignment_id="grp1", voxel_size=11.72,
+        size_bytes=12345,
     )
     post2 = PostProcessedTomogram(
-        id="t_post2", voxel_size=11.72, denoising_software="cryoCARE"
+        id="t_post2", reconstruction_alignment_id="grp1", voxel_size=11.72,
+        denoising_software="cryoCARE",
     )
-    ann = Annotation(id="a1", target_tomogram="t_post1", files=["x.mrc"])
+    ann = Annotation(id="a1", reconstruction_alignment_id="grp1", files=["x.mrc"])
     acq_file = AcquisitionFile(
         acquisition=Acquisition(acquisition_id="acq1"),
-        raw_tomogram=raw,
+        raw_tomogram=[raw],
         post_processed_tomogram=[post1, post2],
         annotation=[ann],
     )
@@ -269,33 +274,88 @@ def test_upsert_raw_and_post_tomogram_share_id_namespace(session):
     )
     session.commit()
 
-    raw_row = session.get(orm.RawTomogramORM, ("s1", "acq1", "t_raw"))
+    raw_row = session.get(orm.RawTomogramORM, ("s1", "acq1", "grp1", "t_raw"))
     assert raw_row is not None
     assert raw_row.voxel_size == pytest.approx(11.72)
 
     post1_row = session.get(
-        orm.PostProcessedTomogramORM, ("s1", "acq1", "t_post1")
+        orm.PostProcessedTomogramORM, ("s1", "acq1", "grp1", "t_post1")
     )
     assert post1_row is not None
     assert post1_row.size_bytes == 12345
 
     post2_row = session.get(
-        orm.PostProcessedTomogramORM, ("s1", "acq1", "t_post2")
+        orm.PostProcessedTomogramORM, ("s1", "acq1", "grp1", "t_post2")
     )
     assert post2_row is not None
     assert post2_row.denoising_software == "cryoCARE"
 
-    ann_row = session.get(orm.AnnotationORM, ("s1", "acq1", "a1"))
+    ann_row = session.get(orm.AnnotationORM, ("s1", "acq1", "grp1", "a1"))
     assert ann_row is not None
     assert ann_row.files == ["x.mrc"]
-    assert ann_row.target_tomogram == "t_post1"
+
+
+def test_upsert_persists_reconstruction_toml_rows(session):
+    """Under reconstruction.toml the assembler populates
+    ``record.reconstructions[acq_id][group_id]`` and leaves ``acq_file.*`` empty.
+    Persistence must upsert those rows into the same ORM tables the legacy
+    acq_file.* loops write to (§4.5)."""
+    rf = ReconstructionFile(
+        reconstruction_alignment=ReconstructionAlignment(
+            id="grpA", alignment_software="AreTomo"
+        ),
+        raw_tomogram=[RawTomogram(id="ctf", pipeline="bp", voxel_size=11.72)],
+        post_processed_tomogram=[PostProcessedTomogram(id="ctf_dn")],
+        annotation=[Annotation(id="mito", files=["mito.mrc"])],
+    )
+    acq_file = AcquisitionFile(acquisition=Acquisition(acquisition_id="acq1"))
+    r = SampleRecord(
+        sample=Sample(
+            sample_id="s1",
+            data_source=DataSource.experimental,
+            project=Project.chromatin,
+        ),
+        acquisitions={"acq1": acq_file},
+        reconstructions={"acq1": {"grpA": rf}},
+    )
+    upsert_sample_record(session, r, extras=[], run_id="run-1", now=_NOW)
+    session.commit()
+
+    raw_row = session.get(orm.RawTomogramORM, ("s1", "acq1", "grpA", "ctf"))
+    assert raw_row is not None
+    assert raw_row.pipeline == "bp"
+    assert raw_row.voxel_size == pytest.approx(11.72)
+
+    post_row = session.get(
+        orm.PostProcessedTomogramORM, ("s1", "acq1", "grpA", "ctf_dn")
+    )
+    assert post_row is not None
+
+    ann_row = session.get(orm.AnnotationORM, ("s1", "acq1", "grpA", "mito"))
+    assert ann_row is not None
+    assert ann_row.files == ["mito.mrc"]
+
+    ra_row = session.get(orm.ReconstructionAlignmentORM, ("s1", "acq1", "grpA"))
+    assert ra_row is not None
+    assert ra_row.alignment_software == "AreTomo"
+
+    # A re-upsert of the same state must not delete the reconstruction rows
+    # (keep-set regression guard).
+    upsert_sample_record(session, r, extras=[], run_id="run-2", now=_NOW + 1)
+    session.commit()
+    assert session.get(
+        orm.RawTomogramORM, ("s1", "acq1", "grpA", "ctf")
+    ) is not None
+    assert session.get(
+        orm.ReconstructionAlignmentORM, ("s1", "acq1", "grpA")
+    ) is not None
 
 
 def test_stale_raw_tomogram_cleaned_up_on_disappearance(session):
-    raw = RawTomogram(id="t_raw")
+    raw = RawTomogram(id="t_raw", reconstruction_alignment_id="grp1")
     acq_file = AcquisitionFile(
         acquisition=Acquisition(acquisition_id="acq1"),
-        raw_tomogram=raw,
+        raw_tomogram=[raw],
     )
     r = SampleRecord(
         sample=Sample(
@@ -309,7 +369,9 @@ def test_stale_raw_tomogram_cleaned_up_on_disappearance(session):
         session, r, extras=[], run_id="run-1", now=_NOW
     )
     session.commit()
-    assert session.get(orm.RawTomogramORM, ("s1", "acq1", "t_raw")) is not None
+    assert session.get(
+        orm.RawTomogramORM, ("s1", "acq1", "grp1", "t_raw")
+    ) is not None
 
     # Drop the raw tomogram in the next upsert.
     acq_file2 = AcquisitionFile(acquisition=Acquisition(acquisition_id="acq1"))
@@ -318,13 +380,13 @@ def test_stale_raw_tomogram_cleaned_up_on_disappearance(session):
         session, r2, extras=[], run_id="run-2", now=_NOW
     )
     session.commit()
-    assert session.get(orm.RawTomogramORM, ("s1", "acq1", "t_raw")) is None
+    assert session.get(orm.RawTomogramORM, ("s1", "acq1", "grp1", "t_raw")) is None
 
 
 def test_stale_post_processed_tomogram_cleaned_up(session):
     tomos1 = [
-        PostProcessedTomogram(id="t1"),
-        PostProcessedTomogram(id="t2"),
+        PostProcessedTomogram(id="t1", reconstruction_alignment_id="grp1"),
+        PostProcessedTomogram(id="t2", reconstruction_alignment_id="grp1"),
     ]
     acq_file = AcquisitionFile(
         acquisition=Acquisition(acquisition_id="acq1"),
@@ -343,10 +405,10 @@ def test_stale_post_processed_tomogram_cleaned_up(session):
     )
     session.commit()
     assert session.get(
-        orm.PostProcessedTomogramORM, ("s1", "acq1", "t2")
+        orm.PostProcessedTomogramORM, ("s1", "acq1", "grp1", "t2")
     ) is not None
 
-    tomos2 = [PostProcessedTomogram(id="t1")]
+    tomos2 = [PostProcessedTomogram(id="t1", reconstruction_alignment_id="grp1")]
     acq_file2 = AcquisitionFile(
         acquisition=Acquisition(acquisition_id="acq1"),
         post_processed_tomogram=tomos2,
@@ -357,10 +419,10 @@ def test_stale_post_processed_tomogram_cleaned_up(session):
     )
     session.commit()
     assert session.get(
-        orm.PostProcessedTomogramORM, ("s1", "acq1", "t1")
+        orm.PostProcessedTomogramORM, ("s1", "acq1", "grp1", "t1")
     ) is not None
     assert session.get(
-        orm.PostProcessedTomogramORM, ("s1", "acq1", "t2")
+        orm.PostProcessedTomogramORM, ("s1", "acq1", "grp1", "t2")
     ) is None
 
 
@@ -609,7 +671,7 @@ def test_idempotent_double_upsert_same_state(session):
 def test_unflushed_inserts_dont_get_deleted_by_stale_cleanup(session):
     """Adding a new tomogram in a follow-up upsert must not be wiped by the
     stale-row cleanup. Regression guard for the keep-set logic."""
-    tomos1 = [PostProcessedTomogram(id="t1")]
+    tomos1 = [PostProcessedTomogram(id="t1", reconstruction_alignment_id="grp1")]
     acq_file = AcquisitionFile(
         acquisition=Acquisition(acquisition_id="acq1"),
         post_processed_tomogram=tomos1,
@@ -628,8 +690,8 @@ def test_unflushed_inserts_dont_get_deleted_by_stale_cleanup(session):
     session.commit()
 
     tomos2 = [
-        PostProcessedTomogram(id="t1"),
-        PostProcessedTomogram(id="t2"),
+        PostProcessedTomogram(id="t1", reconstruction_alignment_id="grp1"),
+        PostProcessedTomogram(id="t2", reconstruction_alignment_id="grp1"),
     ]
     acq_file2 = AcquisitionFile(
         acquisition=Acquisition(acquisition_id="acq1"),
@@ -642,10 +704,10 @@ def test_unflushed_inserts_dont_get_deleted_by_stale_cleanup(session):
     session.commit()
 
     assert session.get(
-        orm.PostProcessedTomogramORM, ("s1", "acq1", "t1")
+        orm.PostProcessedTomogramORM, ("s1", "acq1", "grp1", "t1")
     ) is not None
     assert session.get(
-        orm.PostProcessedTomogramORM, ("s1", "acq1", "t2")
+        orm.PostProcessedTomogramORM, ("s1", "acq1", "grp1", "t2")
     ) is not None
 
 
@@ -1162,9 +1224,13 @@ def test_deletion_event_on_stale_acquisition(session):
 
 
 def test_deletion_event_on_stale_raw_tomogram(session):
-    raw = RawTomogram(id="t_raw", mrc_path="/data/s1/acq1/raw/t_raw.mrc")
+    raw = RawTomogram(
+        id="t_raw",
+        reconstruction_alignment_id="grp1",
+        mrc_path="/data/s1/acq1/raw/t_raw.mrc",
+    )
     acq_file = AcquisitionFile(
-        acquisition=Acquisition(acquisition_id="acq1"), raw_tomogram=raw
+        acquisition=Acquisition(acquisition_id="acq1"), raw_tomogram=[raw]
     )
     r = SampleRecord(
         sample=Sample(
@@ -1192,7 +1258,11 @@ def test_deletion_event_on_stale_raw_tomogram(session):
 
 
 def test_deletion_event_on_stale_post_processed_tomogram(session):
-    tomo = PostProcessedTomogram(id="t1", zarr_path="/data/s1/acq1/post/t1.zarr")
+    tomo = PostProcessedTomogram(
+        id="t1",
+        reconstruction_alignment_id="grp1",
+        zarr_path="/data/s1/acq1/post/t1.zarr",
+    )
     acq_file = AcquisitionFile(
         acquisition=Acquisition(acquisition_id="acq1"),
         post_processed_tomogram=[tomo],
@@ -1222,7 +1292,7 @@ def test_deletion_event_on_stale_post_processed_tomogram(session):
 
 
 def test_deletion_event_on_stale_annotation(session):
-    ann = Annotation(id="a1", files=["x.mrc"])
+    ann = Annotation(id="a1", reconstruction_alignment_id="grp1", files=["x.mrc"])
     acq_file = AcquisitionFile(
         acquisition=Acquisition(acquisition_id="acq1"), annotation=[ann]
     )
@@ -1342,12 +1412,12 @@ def test_acquisition_and_children_vanish_together_logs_per_child_no_orphan_doubl
     dropped row (acquisition + each child) but the orphan acquisition-status/
     issue prune (a consequence of the acquisition's own event) is NOT logged
     separately — no double-counting (§08a acceptance criteria)."""
-    raw = RawTomogram(id="t_raw")
-    tomo = PostProcessedTomogram(id="t1")
-    ann = Annotation(id="a1")
+    raw = RawTomogram(id="t_raw", reconstruction_alignment_id="grp1")
+    tomo = PostProcessedTomogram(id="t1", reconstruction_alignment_id="grp1")
+    ann = Annotation(id="a1", reconstruction_alignment_id="grp1")
     acq_file = AcquisitionFile(
         acquisition=Acquisition(acquisition_id="acq1"),
-        raw_tomogram=raw,
+        raw_tomogram=[raw],
         post_processed_tomogram=[tomo],
         annotation=[ann],
     )
@@ -1417,3 +1487,68 @@ def test_soft_deleted_sample_keeps_sample_scan_status(session):
     )
     session.commit()
     assert session.get(orm.SampleScanStatusORM, "s1") is not None
+
+
+def _record_with_two_groups_sharing_stem() -> SampleRecord:
+    """One acquisition, two Reconstructions/{id}/ groups, both holding a
+    tomogram/annotation whose file stem is ``"dup"`` — legal because ids are
+    only unique within their alignment group."""
+    reconstructions = {
+        group_id: ReconstructionFile(
+            reconstruction_alignment=ReconstructionAlignment(id=group_id),
+            raw_tomogram=[RawTomogram(id="dup")],
+            post_processed_tomogram=[PostProcessedTomogram(id="dup_dn")],
+            annotation=[Annotation(id="dup", files=[f"{group_id}/dup.mrc"])],
+        )
+        for group_id in ("grp_a", "grp_b")
+    }
+    return SampleRecord(
+        sample=Sample(
+            sample_id="s1",
+            data_source=DataSource.experimental,
+            project=Project.chromatin,
+        ),
+        acquisitions={
+            "acq1": AcquisitionFile(acquisition=Acquisition(acquisition_id="acq1"))
+        },
+        reconstructions={"acq1": reconstructions},
+    )
+
+
+def test_same_stem_in_two_groups_persists_as_two_rows(session):
+    """Two alignment groups holding the same tomogram stem produce two rows,
+    not one overwritten row."""
+    r = _record_with_two_groups_sharing_stem()
+    upsert_sample_record(session, r, extras=[], run_id="run-1", now=_NOW)
+    session.commit()
+
+    raws = session.execute(select(orm.RawTomogramORM)).scalars().all()
+    assert len(raws) == 2
+    assert {t.reconstruction_alignment_id for t in raws} == {"grp_a", "grp_b"}
+    assert {t.tomogram_id for t in raws} == {"dup"}
+
+    anns = session.execute(select(orm.AnnotationORM)).scalars().all()
+    assert len(anns) == 2
+    assert {a.reconstruction_alignment_id for a in anns} == {"grp_a", "grp_b"}
+    assert {a.annotation_id for a in anns} == {"dup"}
+
+
+def test_reupsert_does_not_prune_group_scoped_rows(session):
+    """The keep-set and the prune key must agree on arity, or a second scan
+    deletes every row it just wrote."""
+    r = _record_with_two_groups_sharing_stem()
+    upsert_sample_record(session, r, extras=[], run_id="run-1", now=_NOW)
+    session.commit()
+    upsert_sample_record(session, r, extras=[], run_id="run-2", now=_NOW + 1)
+    session.commit()
+
+    assert len(session.execute(select(orm.RawTomogramORM)).scalars().all()) == 2
+    assert (
+        len(
+            session.execute(select(orm.PostProcessedTomogramORM)).scalars().all()
+        )
+        == 2
+    )
+    assert len(session.execute(select(orm.AnnotationORM)).scalars().all()) == 2
+    # No row was dropped and re-added: nothing in the §08a deletion feed.
+    assert _deletion_events(session) == []

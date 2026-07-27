@@ -271,12 +271,11 @@ class MdSourceORM(Base):
 
 
 class RawTomogramORM(Base):
-    """At-most-one raw tomogram per acquisition.
+    """One raw tomogram per row (an acquisition may have several).
 
-    The 1:1-ness is enforced upstream by ``AcquisitionFile.raw_tomogram``
-    being ``RawTomogram | None``; the DB PK includes ``tomogram_id`` to
-    mirror ``PostProcessedTomogramORM`` and let cross-table queries treat
-    both as composite-keyed children of an acquisition.
+    DB PK is ``(sample_id, acquisition_id, reconstruction_alignment_id,
+    tomogram_id)``: the id is a file stem, unique only within its
+    Reconstructions/{id}/ group, so the group is part of the key.
     """
 
     __tablename__ = "raw_tomograms"
@@ -284,13 +283,16 @@ class RawTomogramORM(Base):
     sample_id: Mapped[str] = mapped_column(String(_ID_MAX_LEN), nullable=False)
     acquisition_id: Mapped[str] = mapped_column(String(_ID_MAX_LEN), nullable=False)
     tomogram_id: Mapped[str] = mapped_column(String(_ID_MAX_LEN), nullable=False)
-    tilt_series_id: Mapped[str | None] = mapped_column(
-        String(_ID_MAX_LEN), nullable=True
+    reconstruction_alignment_id: Mapped[str] = mapped_column(
+        String(_ID_MAX_LEN), nullable=False
     )
     pipeline: Mapped[str | None] = mapped_column(String, nullable=True)
     software: Mapped[str | None] = mapped_column(String, nullable=True)
     voxel_size: Mapped[float | None] = mapped_column(Float, nullable=True)
-    derived_from: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    # the tilt_series id (under TiltSeries/) this was reconstructed from
+    derived_from: Mapped[str | None] = mapped_column(
+        String(_ID_MAX_LEN), nullable=True
+    )
     image_size_x: Mapped[int | None] = mapped_column(Integer, nullable=True)
     image_size_y: Mapped[int | None] = mapped_column(Integer, nullable=True)
     image_size_z: Mapped[int | None] = mapped_column(Integer, nullable=True)
@@ -300,7 +302,12 @@ class RawTomogramORM(Base):
     zarr_scale: Mapped[list | None] = mapped_column(JSON, nullable=True)
 
     __table_args__ = (
-        PrimaryKeyConstraint("sample_id", "acquisition_id", "tomogram_id"),
+        PrimaryKeyConstraint(
+            "sample_id",
+            "acquisition_id",
+            "reconstruction_alignment_id",
+            "tomogram_id",
+        ),
         ForeignKeyConstraint(
             ["sample_id", "acquisition_id"],
             ["acquisitions.sample_id", "acquisitions.acquisition_id"],
@@ -314,8 +321,8 @@ class PostProcessedTomogramORM(Base):
     sample_id: Mapped[str] = mapped_column(String(_ID_MAX_LEN), nullable=False)
     acquisition_id: Mapped[str] = mapped_column(String(_ID_MAX_LEN), nullable=False)
     tomogram_id: Mapped[str] = mapped_column(String(_ID_MAX_LEN), nullable=False)
-    tilt_series_id: Mapped[str | None] = mapped_column(
-        String(_ID_MAX_LEN), nullable=True
+    reconstruction_alignment_id: Mapped[str] = mapped_column(
+        String(_ID_MAX_LEN), nullable=False
     )
     denoising_software: Mapped[str | None] = mapped_column(String, nullable=True)
     ctf_software: Mapped[str | None] = mapped_column(String, nullable=True)
@@ -332,7 +339,12 @@ class PostProcessedTomogramORM(Base):
     size_bytes: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     __table_args__ = (
-        PrimaryKeyConstraint("sample_id", "acquisition_id", "tomogram_id"),
+        PrimaryKeyConstraint(
+            "sample_id",
+            "acquisition_id",
+            "reconstruction_alignment_id",
+            "tomogram_id",
+        ),
         ForeignKeyConstraint(
             ["sample_id", "acquisition_id"],
             ["acquisitions.sample_id", "acquisitions.acquisition_id"],
@@ -346,14 +358,19 @@ class AnnotationORM(Base):
     sample_id: Mapped[str] = mapped_column(String(_ID_MAX_LEN), nullable=False)
     acquisition_id: Mapped[str] = mapped_column(String(_ID_MAX_LEN), nullable=False)
     annotation_id: Mapped[str] = mapped_column(String(_ID_MAX_LEN), nullable=False)
-    type: Mapped[str | None] = mapped_column(String, nullable=True)
-    target_tomogram: Mapped[str | None] = mapped_column(
-        String(_ID_MAX_LEN), nullable=True
+    reconstruction_alignment_id: Mapped[str] = mapped_column(
+        String(_ID_MAX_LEN), nullable=False
     )
+    type: Mapped[str | None] = mapped_column(String, nullable=True)
     files: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
 
     __table_args__ = (
-        PrimaryKeyConstraint("sample_id", "acquisition_id", "annotation_id"),
+        PrimaryKeyConstraint(
+            "sample_id",
+            "acquisition_id",
+            "reconstruction_alignment_id",
+            "annotation_id",
+        ),
         ForeignKeyConstraint(
             ["sample_id", "acquisition_id"],
             ["acquisitions.sample_id", "acquisitions.acquisition_id"],
@@ -387,6 +404,38 @@ class TiltSeriesORM(Base):
 
     __table_args__ = (
         PrimaryKeyConstraint("sample_id", "acquisition_id", "tilt_series_id"),
+        ForeignKeyConstraint(
+            ["sample_id", "acquisition_id"],
+            ["acquisitions.sample_id", "acquisitions.acquisition_id"],
+        ),
+    )
+
+
+class ReconstructionAlignmentORM(Base):
+    """One 3D-alignment group per row, FK on the parent acquisition.
+
+    Composite PK ``(sample_id, acquisition_id, reconstruction_alignment_id)``
+    mirrors the Pydantic ``ReconstructionAlignment`` model. The group is a
+    researcher-authored folder under ``Reconstructions/`` — it does NOT have
+    to match any ``tilt_series_id``.
+    """
+
+    __tablename__ = "reconstruction_alignments"
+
+    sample_id: Mapped[str] = mapped_column(String(_ID_MAX_LEN), nullable=False)
+    acquisition_id: Mapped[str] = mapped_column(String(_ID_MAX_LEN), nullable=False)
+    reconstruction_alignment_id: Mapped[str] = mapped_column(
+        String(_ID_MAX_LEN), nullable=False
+    )
+    alignment_software: Mapped[str | None] = mapped_column(String, nullable=True)
+    alignment_method: Mapped[str | None] = mapped_column(String, nullable=True)
+    alignment_files: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    mtime: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+    __table_args__ = (
+        PrimaryKeyConstraint(
+            "sample_id", "acquisition_id", "reconstruction_alignment_id"
+        ),
         ForeignKeyConstraint(
             ["sample_id", "acquisition_id"],
             ["acquisitions.sample_id", "acquisitions.acquisition_id"],
