@@ -110,6 +110,7 @@ eerfile = "*"
 
 [tool.pixi.feature.api.tasks]
 api = "uvicorn catalog.api.main:app --port 8000"
+openapi-schema = "python -m catalog.api.generate_openapi"
 frontend = { cmd = "npm run dev", cwd = "frontend", depends-on = [
     "frontend-install",
 ] }
@@ -118,6 +119,11 @@ frontend-install = { cmd = "npm install", cwd = "frontend", inputs = [
     "frontend/package-lock.json",
 ], outputs = [
     "frontend/node_modules/.package-lock.json",
+] }
+# Regenerate frontend/src/types.gen.ts from the FastAPI OpenAPI schema.
+gen-frontend-types = { cmd = "npm run gen:types", cwd = "frontend", depends-on = [
+    "openapi-schema",
+    "frontend-install",
 ] }
 
 [tool.pixi.environments]

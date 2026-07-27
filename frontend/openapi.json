@@ -1,0 +1,4034 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "CryoET Catalog API",
+    "version": "0.1.0"
+  },
+  "paths": {
+    "/samples": {
+      "get": {
+        "tags": [
+          "samples"
+        ],
+        "summary": "List Samples",
+        "description": "Paginated list of live samples (deleted_at IS NULL) with filters and\nintrinsic child-row counts (n_acquisitions/n_tomograms/n_tilt_series).\n\nFilters are registry-driven (``catalog.api.filter_fields.FIELDS``); the\nfull param set is read off ``request.query_params`` rather than declared\none-by-one. Param naming: text/existence/boolean use the field ``key``;\nrange fields use ``{key}_min`` / ``{key}_max``. See the OpenAPI-friendly\nnote: the registry is the documented contract.\n\nFilter semantics:\n  * Repeatable categorical params act as OR within a facet, AND across.\n  * Sub-entity (1:1, label, acquisition, annotation) filters use EXISTS\n    subqueries; all conditions on one sub-entity must hold on the same row.\n  * Range filters are NULL-tolerant: a row with NULL on the bound column is\n    treated as a match (so partial metadata doesn't drop the whole sample).\n  * Counts on the SELECT list are filter-INDEPENDENT total child rows.",
+        "operationId": "list_samples_samples_get",
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Q"
+            }
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "sample_id",
+                "project",
+                "type"
+              ],
+              "type": "string",
+              "default": "sample_id",
+              "title": "Sort"
+            }
+          },
+          {
+            "name": "order",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "asc",
+                "desc"
+              ],
+              "type": "string",
+              "default": "asc",
+              "title": "Order"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 1000,
+              "minimum": 1,
+              "default": 100,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "title": "Offset"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/SampleSummary"
+                  },
+                  "title": "Response List Samples Samples Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/samples/{sample_id}": {
+      "get": {
+        "tags": [
+          "samples"
+        ],
+        "summary": "Get Sample",
+        "description": "Full sample record with typed sub-entities, acquisitions, tomograms,\nannotations, and tilt_series. 404 for missing or soft-deleted.",
+        "operationId": "get_sample_samples__sample_id__get",
+        "parameters": [
+          {
+            "name": "sample_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Sample Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SampleDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/manage/summary": {
+      "get": {
+        "tags": [
+          "manage"
+        ],
+        "summary": "Get Summary",
+        "description": "Status/cadence card: latest scan, configured cadence, outstanding counts.",
+        "operationId": "get_summary_manage_summary_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManageSummary"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/manage/issues": {
+      "get": {
+        "tags": [
+          "manage"
+        ],
+        "summary": "Get Outstanding Issues",
+        "description": "Outstanding issues (resolved_at IS NULL), grouped by entity + file_kind.",
+        "operationId": "get_outstanding_issues_manage_issues_get",
+        "parameters": [
+          {
+            "name": "severity",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "error",
+                    "warning"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Severity"
+            }
+          },
+          {
+            "name": "file_kind",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "File Kind"
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Q"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/IssueGroup"
+                  },
+                  "title": "Response Get Outstanding Issues Manage Issues Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/manage/issues/resolved": {
+      "get": {
+        "tags": [
+          "manage"
+        ],
+        "summary": "Get Resolved Issues",
+        "description": "Issues resolved within the last ``within_hours`` hours, same grouping.",
+        "operationId": "get_resolved_issues_manage_issues_resolved_get",
+        "parameters": [
+          {
+            "name": "within_hours",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "default": 24.0,
+              "title": "Within Hours"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/IssueGroup"
+                  },
+                  "title": "Response Get Resolved Issues Manage Issues Resolved Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/manage/deletions": {
+      "get": {
+        "tags": [
+          "manage"
+        ],
+        "summary": "Get Deletions",
+        "description": "Append-only deletion feed, newest-first. No resolve/dismiss \u2014 every\nscan-detected disappearance stays in the feed (\u00a708a).",
+        "operationId": "get_deletions_manage_deletions_get",
+        "parameters": [
+          {
+            "name": "entity_type",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Entity Type"
+            }
+          },
+          {
+            "name": "sample_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Sample Id"
+            }
+          },
+          {
+            "name": "within_hours",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "number",
+                  "exclusiveMinimum": 0
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Within Hours"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 500,
+              "default": 100,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "title": "Offset"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/DeletionEvent"
+                  },
+                  "title": "Response Get Deletions Manage Deletions Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/manage/scans": {
+      "get": {
+        "tags": [
+          "manage"
+        ],
+        "summary": "List Scans",
+        "operationId": "list_scans_manage_scans_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ScanRun"
+                  },
+                  "type": "array",
+                  "title": "Response List Scans Manage Scans Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/manage/scans/{scan_run_id}": {
+      "get": {
+        "tags": [
+          "manage"
+        ],
+        "summary": "Get Scan",
+        "operationId": "get_scan_manage_scans__scan_run_id__get",
+        "parameters": [
+          {
+            "name": "scan_run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Scan Run Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanRun"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/manage/scans/{scan_run_id}/logs": {
+      "get": {
+        "tags": [
+          "manage"
+        ],
+        "summary": "Get Scan Logs",
+        "description": "Log lines for one run, ordered by seq. 404 if the run is unknown.",
+        "operationId": "get_scan_logs_manage_scans__scan_run_id__logs_get",
+        "parameters": [
+          {
+            "name": "scan_run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Scan Run Id"
+            }
+          },
+          {
+            "name": "level",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "DEBUG",
+                    "INFO",
+                    "WARNING",
+                    "ERROR"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Level"
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Q"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ScanLogLine"
+                  },
+                  "title": "Response Get Scan Logs Manage Scans  Scan Run Id  Logs Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/manage/scans/{scan_run_id}/samples": {
+      "get": {
+        "tags": [
+          "manage"
+        ],
+        "summary": "Get Scan Samples",
+        "description": "Per-sample outcomes for one run (optional outcome filter). 404 if unknown.",
+        "operationId": "get_scan_samples_manage_scans__scan_run_id__samples_get",
+        "parameters": [
+          {
+            "name": "scan_run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Scan Run Id"
+            }
+          },
+          {
+            "name": "outcome",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "upserted",
+                    "skipped",
+                    "failed"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Outcome"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ScanSampleOutcomeOut"
+                  },
+                  "title": "Response Get Scan Samples Manage Scans  Scan Run Id  Samples Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/samples/{sample_id}/warnings": {
+      "get": {
+        "tags": [
+          "warnings"
+        ],
+        "summary": "Get Sample Warnings",
+        "description": "Outstanding issues for this sample (current state).\n\nReads the entity-keyed ``issues`` table directly (resolved_at IS NULL)\nrather than the latest completed scan, so a sample skipped in the latest\nscan still surfaces its still-outstanding issues. Maps each issue to the\nlegacy ``WarningOut`` shape used by the per-sample detail block.",
+        "operationId": "get_sample_warnings_samples__sample_id__warnings_get",
+        "parameters": [
+          {
+            "name": "sample_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Sample Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/WarningOut"
+                  },
+                  "title": "Response Get Sample Warnings Samples  Sample Id  Warnings Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/extras/summary": {
+      "get": {
+        "tags": [
+          "extras"
+        ],
+        "summary": "Extras Summary",
+        "description": "Group extras rows by (entity_type, key), most common first.",
+        "operationId": "extras_summary_extras_summary_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ExtrasSummaryRow"
+                  },
+                  "type": "array",
+                  "title": "Response Extras Summary Extras Summary Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/filters/options": {
+      "get": {
+        "tags": [
+          "filters"
+        ],
+        "summary": "Get Filter Options",
+        "description": "Return distinct values + numeric ranges for the sample filter drawer.\n\nAll queries are scoped to live samples (``samples.deleted_at IS NULL``);\nsoft-deleted samples never contribute to options or range bounds.",
+        "operationId": "get_filter_options_filters_options_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FiltersOptionsOut"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/stats/overview": {
+      "get": {
+        "tags": [
+          "stats"
+        ],
+        "summary": "Get Stats Overview",
+        "description": "Aggregate totals + per-project rollup over live samples.\n\n``totals.warnings`` reflects the current outstanding-issue count\n(``issues`` WHERE resolved_at IS NULL) \u2014 Plan \u00a74.7.",
+        "operationId": "get_stats_overview_stats_overview_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StatsOverviewOut"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/tomograms/{sample_id}/{acquisition_id}/{tomogram_id}/preview.png": {
+      "get": {
+        "tags": [
+          "tomograms"
+        ],
+        "summary": "Tomogram Preview",
+        "description": "Render the center-XY slice as a PNG (1200px wide, 1\u201399% percentile).\n\nReturns 404 for missing row or path-outside-root, 422 for an existing\nrow whose ``mrc_path`` is missing on disk.",
+        "operationId": "tomogram_preview_tomograms__sample_id___acquisition_id___tomogram_id__preview_png_get",
+        "parameters": [
+          {
+            "name": "sample_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Sample Id"
+            }
+          },
+          {
+            "name": "acquisition_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Acquisition Id"
+            }
+          },
+          {
+            "name": "tomogram_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Tomogram Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/tomograms/{sample_id}/{acquisition_id}/{tomogram_id}/neuroglancer": {
+      "post": {
+        "tags": [
+          "tomograms"
+        ],
+        "summary": "Tomogram Neuroglancer",
+        "description": "Launch a Neuroglancer viewer over the tomogram volume.\n\nThe frontend rewrites the URL hostname to ``window.location.hostname``\nbefore opening \u2014 Neuroglancer reports the API host's FQDN which may\nnot be reachable from the browser.",
+        "operationId": "tomogram_neuroglancer_tomograms__sample_id___acquisition_id___tomogram_id__neuroglancer_post",
+        "parameters": [
+          {
+            "name": "sample_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Sample Id"
+            }
+          },
+          {
+            "name": "acquisition_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Acquisition Id"
+            }
+          },
+          {
+            "name": "tomogram_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Tomogram Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ViewerLaunchOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/annotations/{sample_id}/{acquisition_id}/{annotation_id}/preview.png": {
+      "get": {
+        "tags": [
+          "annotations"
+        ],
+        "summary": "Annotation Preview",
+        "description": "Render the annotation MRC's center-XY slice as a PNG (1200px, 1\u201399%).\n\nReturns 404 for a missing row or path-outside-root, 422 for an annotation\nwith no ``.mrc`` artifact.",
+        "operationId": "annotation_preview_annotations__sample_id___acquisition_id___annotation_id__preview_png_get",
+        "parameters": [
+          {
+            "name": "sample_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Sample Id"
+            }
+          },
+          {
+            "name": "acquisition_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Acquisition Id"
+            }
+          },
+          {
+            "name": "annotation_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Annotation Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/annotations/{sample_id}/{acquisition_id}/{annotation_id}/neuroglancer": {
+      "post": {
+        "tags": [
+          "annotations"
+        ],
+        "summary": "Annotation Neuroglancer",
+        "description": "Launch a Neuroglancer viewer over the annotation's ``.mrc`` volume.\n\nMirrors the tomogram launch route \u2014 same registry, same dev-side hostname\nrewrite on the frontend. 422 for an annotation with no ``.mrc`` artifact.",
+        "operationId": "annotation_neuroglancer_annotations__sample_id___acquisition_id___annotation_id__neuroglancer_post",
+        "parameters": [
+          {
+            "name": "sample_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Sample Id"
+            }
+          },
+          {
+            "name": "acquisition_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Acquisition Id"
+            }
+          },
+          {
+            "name": "annotation_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Annotation Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ViewerLaunchOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/acquisitions/{sample_id}/{acquisition_id}/polar.png": {
+      "get": {
+        "tags": [
+          "acquisitions"
+        ],
+        "summary": "Acquisition Polar",
+        "description": "Semicircular polar plot of the acquisition's cached ``tilt_angles``.\n\n422 if the acquisition has no cached angles.",
+        "operationId": "acquisition_polar_acquisitions__sample_id___acquisition_id__polar_png_get",
+        "parameters": [
+          {
+            "name": "sample_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Sample Id"
+            }
+          },
+          {
+            "name": "acquisition_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Acquisition Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/tilt-series/{sample_id}/{acquisition_id}/{tilt_series_id}/preview.png": {
+      "get": {
+        "tags": [
+          "tilt-series"
+        ],
+        "summary": "Tilt Series Preview",
+        "description": "Median-tilt image as PNG.\n\nPrefers the authored ``stack/`` (zarr, then ``.st``/``.mrc``); falls back\nto the acquisition's raw ``Frames/`` images. 422 if none are reachable.",
+        "operationId": "tilt_series_preview_tilt_series__sample_id___acquisition_id___tilt_series_id__preview_png_get",
+        "parameters": [
+          {
+            "name": "sample_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Sample Id"
+            }
+          },
+          {
+            "name": "acquisition_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Acquisition Id"
+            }
+          },
+          {
+            "name": "tilt_series_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Tilt Series Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/tilt-series/{sample_id}/{acquisition_id}/{tilt_series_id}/neuroglancer": {
+      "post": {
+        "tags": [
+          "tilt-series"
+        ],
+        "summary": "Tilt Series Neuroglancer",
+        "description": "Launch a Neuroglancer viewer over the tilt-series stack.\n\nPrefer the authored ``stack/`` (zarr, then ``.st``/``.mrc``); fall back to\nthe acquisition's raw ``Frames/`` images. 422 if none are reachable.",
+        "operationId": "tilt_series_neuroglancer_tilt_series__sample_id___acquisition_id___tilt_series_id__neuroglancer_post",
+        "parameters": [
+          {
+            "name": "sample_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Sample Id"
+            }
+          },
+          {
+            "name": "acquisition_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Acquisition Id"
+            }
+          },
+          {
+            "name": "tilt_series_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Tilt Series Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ViewerLaunchOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/thumbnails/{relpath}": {
+      "get": {
+        "tags": [
+          "thumbnails"
+        ],
+        "summary": "Get Thumbnail",
+        "operationId": "get_thumbnail_thumbnails__relpath__get",
+        "parameters": [
+          {
+            "name": "relpath",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Relpath"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/toml/{kind}": {
+      "post": {
+        "tags": [
+          "toml"
+        ],
+        "summary": "Author Toml",
+        "operationId": "author_toml_toml__kind__post",
+        "parameters": [
+          {
+            "name": "kind",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Kind"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true,
+                "title": "Payload"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/toml/{kind}/parse": {
+      "post": {
+        "tags": [
+          "toml"
+        ],
+        "summary": "Parse Toml",
+        "description": "Seed mode: upload (ADR-0004). Parse a posted ``.toml`` body into form\nstate with the backend ``tomllib`` loader \u2014 keeps TOML parsing off the\nfrontend. Unknown/extra keys come through verbatim; the renderer splits\nregistry fields from extras. Bad TOML -> 422 (no validation here; schema\nrules run on generate).",
+        "operationId": "parse_toml_toml__kind__parse_post",
+        "parameters": [
+          {
+            "name": "kind",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Kind"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true,
+                "title": "Payload"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/toml/md-run-ids/{sample_id}": {
+      "get": {
+        "tags": [
+          "toml"
+        ],
+        "summary": "Md Run Ids",
+        "description": "md_source.md_run_id suggestions: the ids of the sample's known md_runs.\nFree-text remains accepted on submit; this only feeds the dropdown.",
+        "operationId": "md_run_ids_toml_md_run_ids__sample_id__get",
+        "parameters": [
+          {
+            "name": "sample_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Sample Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/toml/{kind}/load/{record_id}": {
+      "get": {
+        "tags": [
+          "toml"
+        ],
+        "summary": "Load Toml",
+        "description": "Seed mode: pull-from-API (ADR-0004). Load an existing record's authored\nfields by id from the catalog DB. The data may lag the on-disk file \u2014 the\nrenderer surfaces a staleness warning for this mode.",
+        "operationId": "load_toml_toml__kind__load__record_id__get",
+        "parameters": [
+          {
+            "name": "kind",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Kind"
+            }
+          },
+          {
+            "name": "record_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Record Id"
+            }
+          },
+          {
+            "name": "sample_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Sample Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/md-previews/by-prefix/{prefix}": {
+      "get": {
+        "tags": [
+          "md-previews"
+        ],
+        "summary": "Get Md Preview By Prefix",
+        "operationId": "get_md_preview_by_prefix_md_previews_by_prefix__prefix__get",
+        "parameters": [
+          {
+            "name": "prefix",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Prefix"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/md-previews/{relpath}": {
+      "get": {
+        "tags": [
+          "md-previews"
+        ],
+        "summary": "Get Md Preview",
+        "operationId": "get_md_preview_md_previews__relpath__get",
+        "parameters": [
+          {
+            "name": "relpath",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Relpath"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "AcquisitionOut": {
+        "properties": {
+          "acquisition_id": {
+            "type": "string",
+            "title": "Acquisition Id"
+          },
+          "resolution": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resolution"
+          },
+          "tilt_spacing": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tilt Spacing"
+          },
+          "defocus_range": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Defocus Range"
+          },
+          "energy_filter": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Energy Filter"
+          },
+          "phase_plate": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Phase Plate"
+          },
+          "microscope": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Microscope"
+          },
+          "facility": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Facility"
+          },
+          "acquisition_quality": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Acquisition Quality"
+          },
+          "pixel_size": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pixel Size"
+          },
+          "dose_per_tilt": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "number"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dose Per Tilt"
+          },
+          "total_dose": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total Dose"
+          },
+          "tilt_min": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tilt Min"
+          },
+          "tilt_max": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tilt Max"
+          },
+          "tilt_axis": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tilt Axis"
+          },
+          "tilt_angles": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "number"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tilt Angles"
+          },
+          "defocus_per_image": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "number"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Defocus Per Image"
+          },
+          "date_collected": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Date Collected"
+          },
+          "voltage": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Voltage"
+          },
+          "energy_filter_slit_width": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Energy Filter Slit Width"
+          },
+          "frame_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Frame Count"
+          },
+          "camera": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Camera"
+          },
+          "path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Path"
+          },
+          "md_source": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MdSourceOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "raw_tomogram": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RawTomogramOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "post_processed_tomograms": {
+            "items": {
+              "$ref": "#/components/schemas/PostProcessedTomogramOut"
+            },
+            "type": "array",
+            "title": "Post Processed Tomograms",
+            "default": []
+          },
+          "annotations": {
+            "items": {
+              "$ref": "#/components/schemas/AnnotationOut"
+            },
+            "type": "array",
+            "title": "Annotations",
+            "default": []
+          },
+          "tilt_series": {
+            "items": {
+              "$ref": "#/components/schemas/TiltSeriesOut"
+            },
+            "type": "array",
+            "title": "Tilt Series",
+            "default": []
+          },
+          "scan_status": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AcquisitionScanStatus"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "acquisition_id"
+        ],
+        "title": "AcquisitionOut"
+      },
+      "AcquisitionScanStatus": {
+        "properties": {
+          "last_scanned_at": {
+            "type": "number",
+            "title": "Last Scanned At"
+          },
+          "last_changed_at": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Changed At"
+          },
+          "last_outcome": {
+            "type": "string",
+            "title": "Last Outcome"
+          },
+          "last_scan_run_id": {
+            "type": "string",
+            "title": "Last Scan Run Id"
+          },
+          "thumbnail_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Thumbnail Path"
+          },
+          "thumbnail_source_kind": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Thumbnail Source Kind"
+          },
+          "thumbnail_source_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Thumbnail Source Path"
+          },
+          "thumbnail_generated_at": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Thumbnail Generated At"
+          },
+          "thumbnail_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Thumbnail Status"
+          }
+        },
+        "type": "object",
+        "required": [
+          "last_scanned_at",
+          "last_outcome",
+          "last_scan_run_id"
+        ],
+        "title": "AcquisitionScanStatus",
+        "description": "Per-acquisition freshness + thumbnail provenance (from\n``acquisition_scan_status``). Extends the sample shape with the\nthumbnail's real rendered source, generated-at, and status."
+      },
+      "AnnotationOut": {
+        "properties": {
+          "annotation_id": {
+            "type": "string",
+            "title": "Annotation Id"
+          },
+          "type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Type"
+          },
+          "target_tomogram": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Tomogram"
+          },
+          "files": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Files",
+            "default": []
+          }
+        },
+        "type": "object",
+        "required": [
+          "annotation_id"
+        ],
+        "title": "AnnotationOut"
+      },
+      "ChromatinOut": {
+        "properties": {
+          "substrate": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Substrate"
+          },
+          "linker_length_bp": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Linker Length Bp"
+          },
+          "linker_pattern": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "integer"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Linker Pattern"
+          },
+          "linker_distribution": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Linker Distribution"
+          },
+          "buffer": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Buffer"
+          },
+          "ptm": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ptm"
+          },
+          "histone_variants": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Histone Variants"
+          },
+          "transcription_factors": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Transcription Factors"
+          },
+          "nucleosome_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Nucleosome Count"
+          },
+          "dna_length_bp": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dna Length Bp"
+          },
+          "nucleosome_uM": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Nucleosome Um"
+          },
+          "sequence_identity": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sequence Identity"
+          },
+          "nucleosome_footprint": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "integer"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Nucleosome Footprint"
+          },
+          "linker_length_fraction": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Linker Length Fraction"
+          }
+        },
+        "type": "object",
+        "title": "ChromatinOut"
+      },
+      "DeletionEvent": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "scan_run_id": {
+            "type": "string",
+            "title": "Scan Run Id"
+          },
+          "detected_at": {
+            "type": "number",
+            "title": "Detected At"
+          },
+          "entity_type": {
+            "type": "string",
+            "title": "Entity Type"
+          },
+          "kind": {
+            "type": "string",
+            "title": "Kind",
+            "default": "deletion"
+          },
+          "sample_id": {
+            "type": "string",
+            "title": "Sample Id"
+          },
+          "acquisition_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Acquisition Id"
+          },
+          "entity_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Entity Id"
+          },
+          "last_known_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Known Path"
+          },
+          "last_known_json": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Known Json"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "scan_run_id",
+          "detected_at",
+          "entity_type",
+          "sample_id"
+        ],
+        "title": "DeletionEvent",
+        "description": "One row of the append-only deletion audit feed (\u00a708a/\u00a708c)."
+      },
+      "EntityScanStatus": {
+        "properties": {
+          "last_scanned_at": {
+            "type": "number",
+            "title": "Last Scanned At"
+          },
+          "last_changed_at": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Changed At"
+          },
+          "last_outcome": {
+            "type": "string",
+            "title": "Last Outcome"
+          },
+          "last_scan_run_id": {
+            "type": "string",
+            "title": "Last Scan Run Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "last_scanned_at",
+          "last_outcome",
+          "last_scan_run_id"
+        ],
+        "title": "EntityScanStatus",
+        "description": "Per-sample freshness rollup (from ``sample_scan_status``)."
+      },
+      "ExtrasSummaryRow": {
+        "properties": {
+          "entity_type": {
+            "type": "string",
+            "title": "Entity Type"
+          },
+          "key": {
+            "type": "string",
+            "title": "Key"
+          },
+          "count": {
+            "type": "integer",
+            "title": "Count"
+          }
+        },
+        "type": "object",
+        "required": [
+          "entity_type",
+          "key",
+          "count"
+        ],
+        "title": "ExtrasSummaryRow"
+      },
+      "FiducialOut": {
+        "properties": {
+          "aunp_size_nm": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Aunp Size Nm"
+          },
+          "vendor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Vendor"
+          },
+          "catalog_number": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Catalog Number"
+          },
+          "product_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Product Name"
+          },
+          "concentration_value": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Concentration Value"
+          },
+          "concentration_unit": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Concentration Unit"
+          }
+        },
+        "type": "object",
+        "title": "FiducialOut"
+      },
+      "FiltersOptionsOut": {
+        "properties": {
+          "categorical": {
+            "additionalProperties": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "type": "object",
+            "title": "Categorical",
+            "default": {}
+          },
+          "ranges": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/RangeOut"
+            },
+            "type": "object",
+            "title": "Ranges",
+            "default": {}
+          }
+        },
+        "type": "object",
+        "title": "FiltersOptionsOut",
+        "description": "Registry-driven filter options: ``categorical`` keyed by each ``text``\nfield's key, ``ranges`` keyed by each ``range`` field's key."
+      },
+      "FreezingOut": {
+        "properties": {
+          "grid_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Grid Type"
+          },
+          "solution_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Solution Type"
+          },
+          "cryoprotectant": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cryoprotectant"
+          },
+          "method": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Method"
+          },
+          "planchette_size": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Planchette Size"
+          },
+          "spacer_thickness": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Spacer Thickness"
+          }
+        },
+        "type": "object",
+        "title": "FreezingOut"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "IssueGroup": {
+        "properties": {
+          "scope": {
+            "type": "string",
+            "title": "Scope"
+          },
+          "sample_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sample Id"
+          },
+          "acquisition_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Acquisition Id"
+          },
+          "md_run_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Md Run Id"
+          },
+          "file_kind": {
+            "type": "string",
+            "title": "File Kind"
+          },
+          "file_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "File Path"
+          },
+          "severity": {
+            "type": "string",
+            "title": "Severity"
+          },
+          "issues": {
+            "items": {
+              "$ref": "#/components/schemas/IssueItem"
+            },
+            "type": "array",
+            "title": "Issues",
+            "default": []
+          },
+          "first_seen_at": {
+            "type": "number",
+            "title": "First Seen At"
+          },
+          "last_seen_at": {
+            "type": "number",
+            "title": "Last Seen At"
+          },
+          "last_seen_run_id": {
+            "type": "string",
+            "title": "Last Seen Run Id"
+          },
+          "latest_run_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Latest Run Id"
+          },
+          "latest_scan_at": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Latest Scan At"
+          },
+          "resolved_at": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resolved At"
+          },
+          "resolved_run_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resolved Run Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "scope",
+          "file_kind",
+          "severity",
+          "first_seen_at",
+          "last_seen_at",
+          "last_seen_run_id"
+        ],
+        "title": "IssueGroup",
+        "description": "Outstanding (or recently-resolved) issues grouped by\n(scope, sample_id, acquisition_id, md_run_id, file_kind)."
+      },
+      "IssueItem": {
+        "properties": {
+          "category": {
+            "type": "string",
+            "title": "Category"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          }
+        },
+        "type": "object",
+        "required": [
+          "category",
+          "message"
+        ],
+        "title": "IssueItem"
+      },
+      "LabelOut": {
+        "properties": {
+          "ordinal": {
+            "type": "integer",
+            "title": "Ordinal"
+          },
+          "label_target": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label Target"
+          },
+          "aunp_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Aunp Type"
+          },
+          "aunp_size_nm": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "items": {
+                  "type": "number"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Aunp Size Nm"
+          },
+          "conjugation": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Conjugation"
+          },
+          "conjugation_target": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Conjugation Target"
+          },
+          "fluorophore": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fluorophore"
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
+          }
+        },
+        "type": "object",
+        "required": [
+          "ordinal"
+        ],
+        "title": "LabelOut"
+      },
+      "LatestScanInfo": {
+        "properties": {
+          "started_at": {
+            "type": "number",
+            "title": "Started At"
+          },
+          "ended_at": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ended At"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "duration": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration"
+          }
+        },
+        "type": "object",
+        "required": [
+          "started_at",
+          "status"
+        ],
+        "title": "LatestScanInfo"
+      },
+      "ManageSummary": {
+        "properties": {
+          "latest_scan": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LatestScanInfo"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "cadence_cron": {
+            "type": "string",
+            "title": "Cadence Cron"
+          },
+          "cadence_tz": {
+            "type": "string",
+            "title": "Cadence Tz"
+          },
+          "outstanding": {
+            "$ref": "#/components/schemas/OutstandingCounts"
+          },
+          "deletions_latest_run": {
+            "type": "integer",
+            "title": "Deletions Latest Run",
+            "default": 0
+          }
+        },
+        "type": "object",
+        "required": [
+          "cadence_cron",
+          "cadence_tz",
+          "outstanding"
+        ],
+        "title": "ManageSummary",
+        "description": "Status/cadence card payload for the Manage page (\u00a73.4)."
+      },
+      "MdRunOut": {
+        "properties": {
+          "md_run_id": {
+            "type": "string",
+            "title": "Md Run Id"
+          },
+          "seed": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Seed"
+          },
+          "computer": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Computer"
+          },
+          "sample_time": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sample Time"
+          },
+          "timestep": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Timestep"
+          },
+          "reference_contact": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reference Contact"
+          },
+          "force_field_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Force Field Version"
+          }
+        },
+        "type": "object",
+        "required": [
+          "md_run_id"
+        ],
+        "title": "MdRunOut"
+      },
+      "MdSourceOut": {
+        "properties": {
+          "md_run_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Md Run Id"
+          },
+          "frame": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Frame"
+          }
+        },
+        "type": "object",
+        "title": "MdSourceOut"
+      },
+      "MillingOut": {
+        "properties": {
+          "scheme": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scheme"
+          },
+          "date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Date"
+          },
+          "quality": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Quality"
+          }
+        },
+        "type": "object",
+        "title": "MillingOut"
+      },
+      "OutstandingCounts": {
+        "properties": {
+          "errors": {
+            "type": "integer",
+            "title": "Errors",
+            "default": 0
+          },
+          "warnings": {
+            "type": "integer",
+            "title": "Warnings",
+            "default": 0
+          }
+        },
+        "type": "object",
+        "title": "OutstandingCounts"
+      },
+      "PostProcessedTomogramOut": {
+        "properties": {
+          "tomogram_id": {
+            "type": "string",
+            "title": "Tomogram Id"
+          },
+          "voxel_size": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Voxel Size"
+          },
+          "derived_from": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Derived From",
+            "default": []
+          },
+          "image_size_x": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Image Size X"
+          },
+          "image_size_y": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Image Size Y"
+          },
+          "image_size_z": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Image Size Z"
+          },
+          "mrc_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mrc Path"
+          },
+          "zarr_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Zarr Path"
+          },
+          "zarr_axes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Zarr Axes"
+          },
+          "zarr_scale": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "number"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Zarr Scale"
+          },
+          "denoising_software": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Denoising Software"
+          },
+          "ctf_software": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ctf Software"
+          },
+          "missing_wedge_software": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Missing Wedge Software"
+          },
+          "size_bytes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Size Bytes"
+          }
+        },
+        "type": "object",
+        "required": [
+          "tomogram_id"
+        ],
+        "title": "PostProcessedTomogramOut"
+      },
+      "ProjectStatRow": {
+        "properties": {
+          "project": {
+            "type": "string",
+            "title": "Project"
+          },
+          "samples": {
+            "type": "integer",
+            "title": "Samples",
+            "default": 0
+          },
+          "acquisitions": {
+            "type": "integer",
+            "title": "Acquisitions",
+            "default": 0
+          },
+          "tomograms": {
+            "type": "integer",
+            "title": "Tomograms",
+            "default": 0
+          },
+          "size_bytes": {
+            "type": "integer",
+            "title": "Size Bytes",
+            "default": 0
+          }
+        },
+        "type": "object",
+        "required": [
+          "project"
+        ],
+        "title": "ProjectStatRow"
+      },
+      "RangeOut": {
+        "properties": {
+          "min": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Min"
+          },
+          "max": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max"
+          }
+        },
+        "type": "object",
+        "title": "RangeOut",
+        "description": "Range bounds; ``None`` when no rows exist for the facet."
+      },
+      "RawTomogramOut": {
+        "properties": {
+          "tomogram_id": {
+            "type": "string",
+            "title": "Tomogram Id"
+          },
+          "voxel_size": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Voxel Size"
+          },
+          "derived_from": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Derived From",
+            "default": []
+          },
+          "image_size_x": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Image Size X"
+          },
+          "image_size_y": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Image Size Y"
+          },
+          "image_size_z": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Image Size Z"
+          },
+          "mrc_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mrc Path"
+          },
+          "zarr_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Zarr Path"
+          },
+          "zarr_axes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Zarr Axes"
+          },
+          "zarr_scale": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "number"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Zarr Scale"
+          },
+          "pipeline": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pipeline"
+          },
+          "software": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Software"
+          }
+        },
+        "type": "object",
+        "required": [
+          "tomogram_id"
+        ],
+        "title": "RawTomogramOut"
+      },
+      "SampleDetail": {
+        "properties": {
+          "sample_id": {
+            "type": "string",
+            "title": "Sample Id"
+          },
+          "project": {
+            "type": "string",
+            "title": "Project"
+          },
+          "lab_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lab Name"
+          },
+          "data_source": {
+            "type": "string",
+            "title": "Data Source"
+          },
+          "type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Type"
+          },
+          "cell_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cell Type"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Path"
+          },
+          "chromatin": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ChromatinOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "fiducial": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FiducialOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "simulation": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SimulationOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "freezing": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FreezingOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "milling": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MillingOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "label": {
+            "items": {
+              "$ref": "#/components/schemas/LabelOut"
+            },
+            "type": "array",
+            "title": "Label",
+            "default": []
+          },
+          "md_run": {
+            "items": {
+              "$ref": "#/components/schemas/MdRunOut"
+            },
+            "type": "array",
+            "title": "Md Run",
+            "default": []
+          },
+          "acquisitions": {
+            "items": {
+              "$ref": "#/components/schemas/AcquisitionOut"
+            },
+            "type": "array",
+            "title": "Acquisitions",
+            "default": []
+          },
+          "thumbnail_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Thumbnail Path"
+          },
+          "scan_status": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EntityScanStatus"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "sample_id",
+          "project",
+          "data_source"
+        ],
+        "title": "SampleDetail"
+      },
+      "SampleSummary": {
+        "properties": {
+          "sample_id": {
+            "type": "string",
+            "title": "Sample Id"
+          },
+          "project": {
+            "type": "string",
+            "title": "Project"
+          },
+          "lab_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lab Name"
+          },
+          "data_source": {
+            "type": "string",
+            "title": "Data Source"
+          },
+          "type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Type"
+          },
+          "cell_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cell Type"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Path"
+          },
+          "warning_count": {
+            "type": "integer",
+            "title": "Warning Count",
+            "default": 0
+          },
+          "n_acquisitions": {
+            "type": "integer",
+            "title": "N Acquisitions",
+            "default": 0
+          },
+          "n_tomograms": {
+            "type": "integer",
+            "title": "N Tomograms",
+            "default": 0
+          },
+          "n_tilt_series": {
+            "type": "integer",
+            "title": "N Tilt Series",
+            "default": 0
+          },
+          "thumbnail_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Thumbnail Path"
+          }
+        },
+        "type": "object",
+        "required": [
+          "sample_id",
+          "project",
+          "data_source"
+        ],
+        "title": "SampleSummary"
+      },
+      "ScanLogLine": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "seq": {
+            "type": "integer",
+            "title": "Seq"
+          },
+          "ts": {
+            "type": "number",
+            "title": "Ts"
+          },
+          "level": {
+            "type": "string",
+            "title": "Level"
+          },
+          "sample_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sample Id"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "seq",
+          "ts",
+          "level",
+          "message"
+        ],
+        "title": "ScanLogLine"
+      },
+      "ScanRun": {
+        "properties": {
+          "scan_run_id": {
+            "type": "string",
+            "title": "Scan Run Id"
+          },
+          "started_at": {
+            "type": "number",
+            "title": "Started At"
+          },
+          "ended_at": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ended At"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "root": {
+            "type": "string",
+            "title": "Root"
+          },
+          "n_upserted": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "N Upserted"
+          },
+          "n_skipped": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "N Skipped"
+          },
+          "n_failed": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "N Failed"
+          },
+          "n_new_issues": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "N New Issues"
+          },
+          "n_resolved_issues": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "N Resolved Issues"
+          },
+          "n_warning_active": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "N Warning Active"
+          },
+          "n_error_active": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "N Error Active"
+          }
+        },
+        "type": "object",
+        "required": [
+          "scan_run_id",
+          "started_at",
+          "status",
+          "root"
+        ],
+        "title": "ScanRun"
+      },
+      "ScanSampleOutcomeOut": {
+        "properties": {
+          "sample_id": {
+            "type": "string",
+            "title": "Sample Id"
+          },
+          "outcome": {
+            "type": "string",
+            "title": "Outcome"
+          },
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "required": [
+          "sample_id",
+          "outcome"
+        ],
+        "title": "ScanSampleOutcomeOut"
+      },
+      "SimulationOut": {
+        "properties": {
+          "dataset_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dataset Type"
+          }
+        },
+        "type": "object",
+        "title": "SimulationOut"
+      },
+      "StatsOverviewOut": {
+        "properties": {
+          "totals": {
+            "$ref": "#/components/schemas/StatsTotalsOut"
+          },
+          "by_project": {
+            "items": {
+              "$ref": "#/components/schemas/ProjectStatRow"
+            },
+            "type": "array",
+            "title": "By Project",
+            "default": []
+          }
+        },
+        "type": "object",
+        "required": [
+          "totals"
+        ],
+        "title": "StatsOverviewOut"
+      },
+      "StatsTotalsOut": {
+        "properties": {
+          "samples": {
+            "type": "integer",
+            "title": "Samples",
+            "default": 0
+          },
+          "acquisitions": {
+            "type": "integer",
+            "title": "Acquisitions",
+            "default": 0
+          },
+          "tilt_series": {
+            "type": "integer",
+            "title": "Tilt Series",
+            "default": 0
+          },
+          "tomograms": {
+            "type": "integer",
+            "title": "Tomograms",
+            "default": 0
+          },
+          "annotations": {
+            "type": "integer",
+            "title": "Annotations",
+            "default": 0
+          },
+          "warnings": {
+            "type": "integer",
+            "title": "Warnings",
+            "default": 0
+          }
+        },
+        "type": "object",
+        "title": "StatsTotalsOut"
+      },
+      "TiltSeriesOut": {
+        "properties": {
+          "tilt_series_id": {
+            "type": "string",
+            "title": "Tilt Series Id"
+          },
+          "derived_from": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Derived From"
+          },
+          "is_aligned": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Is Aligned"
+          },
+          "alignment_software": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Alignment Software"
+          },
+          "alignment_method": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Alignment Method"
+          },
+          "st_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "St Path"
+          },
+          "zarr_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Zarr Path"
+          },
+          "alignment_files": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Alignment Files",
+            "default": []
+          },
+          "mtime": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mtime"
+          }
+        },
+        "type": "object",
+        "required": [
+          "tilt_series_id"
+        ],
+        "title": "TiltSeriesOut"
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "ctx": {
+            "type": "object",
+            "title": "Context"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
+      },
+      "ViewerLaunchOut": {
+        "properties": {
+          "url": {
+            "type": "string",
+            "title": "Url"
+          }
+        },
+        "type": "object",
+        "required": [
+          "url"
+        ],
+        "title": "ViewerLaunchOut",
+        "description": "Response of a POST .../neuroglancer launch.\n\nFrontend rewrites the hostname to ``window.location.hostname`` before\nopening."
+      },
+      "WarningOut": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "sample_id": {
+            "type": "string",
+            "title": "Sample Id"
+          },
+          "category": {
+            "type": "string",
+            "title": "Category"
+          },
+          "location": {
+            "type": "string",
+            "title": "Location"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          },
+          "detected_at": {
+            "type": "number",
+            "title": "Detected At"
+          },
+          "scan_run_id": {
+            "type": "string",
+            "title": "Scan Run Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "sample_id",
+          "category",
+          "location",
+          "message",
+          "detected_at",
+          "scan_run_id"
+        ],
+        "title": "WarningOut"
+      }
+    }
+  }
+}
