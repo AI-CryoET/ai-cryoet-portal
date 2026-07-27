@@ -36,8 +36,13 @@ ZARR_DIR_SUFFIXES = (".zarr", ".ome.zarr")
 # so both agree on which files under Reconstructions/ count as an entity. A stray
 # ``notes.txt`` next to the reconstructions is ignored by both.
 TOMOGRAM_FILE_EXTENSIONS = frozenset({".mrc"})
+# ``.npy`` is here because real annotation folders ship one alongside the
+# ``.mrc``/``.star`` (point clouds from the active-zone pipeline). It must stay
+# in step with the copy in utils/migrate_reconstruction_groups.py, which is
+# standalone and cannot import this module — tests/test_migrate_reconstruction_groups.py
+# pins the two against each other.
 ANNOTATION_FILE_EXTENSIONS = frozenset(
-    {".star", ".mrc", ".png", ".tiff", ".tif", ".csv", ".json"}
+    {".star", ".mrc", ".png", ".tiff", ".tif", ".csv", ".json", ".npy"}
 )
 
 DATASET_TYPE_BY_DIR: dict[str, DatasetType] = {

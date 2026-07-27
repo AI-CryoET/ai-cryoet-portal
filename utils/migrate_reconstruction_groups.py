@@ -49,8 +49,13 @@ MD_SIMULATION_SUBDIRS = ("Bulk", "SingleMolecule", "Slab")
 TOMOGRAM_FILE_EXTENSIONS = {".mrc"}
 ANNOTATION_FILE_EXTENSIONS = {".star", ".mrc", ".png", ".tiff", ".tif", ".csv", ".json", ".npy"}
 
-# macOS litter that shouldn't block deletion of an otherwise-empty old folder.
-IGNORED_JUNK = {".DS_Store"}
+# Litter that shouldn't block deletion of an otherwise-empty old folder.
+# `.DS_Store` / `Thumbs.db` are OS thumbnail caches, never data.
+# `.gitkeep` is here because the starter skeletons ship placeholder
+# Tomograms/{id}/ and Annotations/{id}/ folders containing nothing else — left
+# in place they keep the flat Tomograms/Annotations dir alive, and the scanner
+# then reads that leftover dir as a bogus (empty) reconstruction group.
+IGNORED_JUNK = {".DS_Store", "Thumbs.db", ".gitkeep"}
 
 
 def _atomic_write(path: Path, text: str) -> None:
@@ -79,6 +84,35 @@ def _rmdir_if_empty(d: Path) -> None:
     for e in entries:
         e.unlink()
     d.rmdir()
+
+
+def _prunable_dirs(kind_dir: Path) -> list[Path]:
+    """Every directory under a Tomograms/ or Annotations/ dir that the migration
+    may have emptied, deepest first.
+
+    Includes ``{id}/`` folders that produced no moves at all — a placeholder
+    holding only a ``.gitkeep`` is never a move source, so collecting only
+    ``{src.parent for src, _ in moves}`` would leave it (and therefore the whole
+    flat dir) behind. Zarr stores are entities, not containers: never descend
+    into one, or an empty chunk dir inside a store that was skipped could be
+    rmdir'd out from under it.
+    """
+    if not kind_dir.is_dir():
+        return []
+
+    def _subdirs(d: Path) -> list[Path]:
+        return [
+            p for p in d.iterdir() if p.is_dir() and not p.name.endswith(".zarr")
+        ]
+
+    out: list[Path] = []
+    stack = _subdirs(kind_dir)
+    while stack:
+        d = stack.pop()
+        out.append(d)
+        stack += _subdirs(d)
+    out.sort(key=lambda p: len(p.parts), reverse=True)
+    return out
 
 
 def _ext_of(entry: Path) -> str:
@@ -607,12 +641,13 @@ def main():
                 _atomic_write(toml_path, new_toml)
 
             # Remove now-emptied source folders (e.g. Tomograms/Missalignment/
-            # and its ctf/even/odd subfolders) once their content has moved out.
+            # and its ctf/even/odd subfolders) once their content has moved out,
+            # plus any {id}/ folder that held nothing but junk to begin with.
             # Deepest-first so a parent is emptied of its subdirs before its own
             # rmdir. Skip any left non-empty by a stray file the allowlist ignored.
-            src_dirs = sorted({src.parent for src, _ in moves}, key=lambda p: len(p.parts), reverse=True)
-            for id_dir in src_dirs:
-                _rmdir_if_empty(id_dir)
+            for kind in ("Tomograms", "Annotations"):
+                for id_dir in _prunable_dirs(recon_dir / kind):
+                    _rmdir_if_empty(id_dir)
 
             # Clean up now-empty flat Tomograms/Annotations dirs.
             for kind in ("Tomograms", "Annotations"):

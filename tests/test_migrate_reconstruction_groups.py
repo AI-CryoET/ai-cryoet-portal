@@ -223,3 +223,41 @@ def test_ext_of_strips_multi_suffix_zarr(tmp_path, name, expected):
         path.touch()
     assert migrate._ext_of(path) == expected
     assert path.name[: -len(expected)] == entity_id_from_path(path)
+
+
+def test_allowlists_match_the_schema():
+    """The script is standalone (no `src/` import) so it carries its own copy of
+    the extension allowlists. They must equal schema.layout's, or the migration
+    moves a file the scanner then ignores — or leaves one behind, which keeps
+    the flat Tomograms/Annotations dir alive as a bogus group.
+    """
+    from schema import layout
+
+    assert migrate.TOMOGRAM_FILE_EXTENSIONS == set(layout.TOMOGRAM_FILE_EXTENSIONS)
+    assert migrate.ANNOTATION_FILE_EXTENSIONS == set(layout.ANNOTATION_FILE_EXTENSIONS)
+
+
+def test_placeholder_folders_are_cleaned_up(tmp_path):
+    """A Tomograms/{id}/ holding only a .gitkeep produces no moves, so it is not
+    a move source — but leaving it keeps the flat dir alive and the scanner
+    reads that as an empty reconstruction group."""
+    acq = _make_acq(tmp_path)
+    placeholder = acq / "Reconstructions" / "Annotations" / "annotation_id"
+    placeholder.mkdir()
+    (placeholder / ".gitkeep").write_text("")
+    (placeholder / "Thumbs.db").write_bytes(b"")  # OS litter, same class
+    _run(tmp_path, apply=True)
+    assert not placeholder.exists()
+    assert not (acq / "Reconstructions" / "Annotations").exists()
+
+
+def test_stray_file_keeps_its_folder(tmp_path):
+    """The converse: a file the allowlist does NOT cover is real content the
+    migration can't place, so its folder (and the flat dir) must survive rather
+    than be silently deleted."""
+    acq = _make_acq(tmp_path)
+    keep = acq / "Reconstructions" / "Annotations" / "notes"
+    keep.mkdir()
+    (keep / "readme.txt").write_text("hand-written")
+    _run(tmp_path, apply=True)
+    assert (keep / "readme.txt").read_text() == "hand-written"
