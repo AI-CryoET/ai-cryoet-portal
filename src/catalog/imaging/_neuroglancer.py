@@ -55,9 +55,11 @@ def view_neuroglancer(
 ):
     """Open a Neuroglancer viewer over ``data`` and return the Viewer object.
 
-    Flips X and Y to match IMOD convention (origin at lower-left, +X right,
-    +Y up) — Neuroglancer's native convention is the opposite. 2D inputs are
-    promoted to 3D with a singleton Z.
+    Mirrors X and Y to match IMOD convention (origin at lower-left, +X right,
+    +Y up) — Neuroglancer's native convention is the opposite. The mirror is
+    applied via the layer's coordinate transform, not by flipping the array,
+    so the served volume keeps the memory-map's native layout (see below).
+    2D inputs are promoted to 3D with a singleton Z.
 
     :param data: 2D or 3D numpy array.
     :param name: Layer name in the viewer.
@@ -102,23 +104,38 @@ def view_neuroglancer(
             float(np.percentile(subvol, contrast_percentile[1])),
         )
 
-    # Flip X and Y to match IMOD convention.
-    y_axis = axis_names.index("y")
-    x_axis = axis_names.index("x")
-    data = np.flip(data, axis=y_axis)
-    data = np.flip(data, axis=x_axis)
-
     dimensions = neuroglancer.CoordinateSpace(
         names=axis_names,
         scales=voxel_size,
         units="nm",
     )
 
+    # Mirror X and Y for IMOD orientation in the coordinate transform rather
+    # than with np.flip on the array. Flipping the array would return a
+    # negative-stride view that makes LocalVolume read chunks *backwards*
+    # through the memory-map (poor locality over NFS). A -1 on the diagonal 
+    # with a +(extent-1) translation reproduces np.flip exactly: 
+    # output_index = (N-1) - input.
+    n = len(axis_names)
+    matrix = [[1.0 if i == j else 0.0 for j in range(n + 1)] for i in range(n)]
+    for flip_axis in ("y", "x"):
+        if flip_axis in axis_names:
+            k = axis_names.index(flip_axis)
+            matrix[k][k] = -1.0
+            matrix[k][n] = float(data.shape[k] - 1)
+
+    source = neuroglancer.LayerDataSource(
+        url=neuroglancer.LocalVolume(data, dimensions=dimensions),
+        transform=neuroglancer.CoordinateSpaceTransform(
+            input_dimensions=dimensions,
+            output_dimensions=dimensions,
+            matrix=matrix,
+        ),
+    )
+
     viewer = neuroglancer.Viewer()
     with viewer.txn() as s:
-        layer = neuroglancer.ImageLayer(
-            source=neuroglancer.LocalVolume(data, dimensions=dimensions),
-        )
+        layer = neuroglancer.ImageLayer(source=source)
         if contrast_range is not None:
             layer.shader_controls = {
                 "normalized": {"range": list(contrast_range)},
