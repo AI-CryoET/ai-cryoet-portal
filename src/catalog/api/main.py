@@ -11,7 +11,7 @@ Configuration via environment:
   CATALOG_MD_PREVIEW_DIR     — directory of cached OVITO/MD preview PNGs
                                (aicryoet-tools .portal_cache). Optional; a missing
                                dir just disables the /md-previews route.
-  NEUROGLANCER_MAX_VIEWERS   — bounded LRU size for active viewers (default 32).
+  NEUROGLANCER_MAX_VIEWERS   — bounded LRU size for active viewers (default 12).
 """
 from __future__ import annotations
 import asyncio
@@ -205,11 +205,11 @@ async def _lifespan(app: FastAPI):
     if getattr(app.state, "active_viewers_lock", None) is None:
         app.state.active_viewers_lock = asyncio.Lock()
     if getattr(app.state, "neuroglancer_max_viewers", None) is None:
-        raw_max = os.environ.get("NEUROGLANCER_MAX_VIEWERS", "32")
+        raw_max = os.environ.get("NEUROGLANCER_MAX_VIEWERS", "12")
         try:
             app.state.neuroglancer_max_viewers = max(1, int(raw_max))
         except ValueError:
-            app.state.neuroglancer_max_viewers = 32
+            app.state.neuroglancer_max_viewers = 12
 
     yield
     if not pre_seeded_engine:
