@@ -174,6 +174,11 @@ def _load_mrc_volume(mrc_path: str) -> tuple[np.ndarray, tuple[float, float, flo
         mrc_path, mode="r", permissive=True
     )
     data = mrc.data.copy() if use_copy else mrc.data
+    # This array is shared across viewers via the LRU cache, so make it
+    # read-only: an accidental in-place write now raises loudly instead of
+    # silently corrupting every other viewer's data. Harmless no-op on the
+    # mmap path, which is already opened mode="r".
+    data.setflags(write=False)
     # MRC headers store spacing in Angstrom; Neuroglancer is told nm.
     vx = float(mrc.voxel_size.x) / 10.0
     vy = float(mrc.voxel_size.y) / 10.0
