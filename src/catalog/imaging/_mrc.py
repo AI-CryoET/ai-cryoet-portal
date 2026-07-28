@@ -139,9 +139,21 @@ def render_center_xy_slice_png(mrc_path: Path | str, *, width: int = 1200) -> by
 
 
 def read_mrc_volume(mrc_path: Path | str) -> tuple[np.ndarray, tuple[float, float, float], str]:
-    """Load the full MRC volume + voxel size + axis order for Neuroglancer.
+    """Memory-map the full MRC volume + voxel size + axis order for Neuroglancer.
 
-    Returns ``(data, voxel_size_in_array_order, axis_order_string)``.
+    Returns ``(data, voxel_size_in_array_order, axis_order_string)`` where
+    ``data`` is a **read-only memory-map** (``mrcfile.mmap``), *not* a heap
+    copy. Neuroglancer's ``LocalVolume`` wraps it lazily and serves chunks
+    straight from the map, so a launch pages in only the voxels the browser
+    actually views instead of reading the whole (often multi-GB) volume into
+    the API process. That eager ``.copy()`` was the dominant cause of OOM
+    kills under concurrent viewers — mmap makes retained viewers cost shared,
+    reclaimable page cache rather than pinned heap.
+
+    The map safely outlives the ``MrcFile`` handle: numpy keeps the underlying
+    ``mmap`` alive through ``data.base`` independently of the ``MrcFile``
+    object, so callers can hold just the returned array.
+
     Voxel size is reordered to match the array axes (slowest → fastest), so
     callers can feed it directly into ``view_neuroglancer``.
 
@@ -153,17 +165,18 @@ def read_mrc_volume(mrc_path: Path | str) -> tuple[np.ndarray, tuple[float, floa
     ``"angstrom"`` and ``"Å"`` both raise. nm is the nearest unit that can
     express an MRC spacing at all.
     """
-    mrc_path = Path(mrc_path)
-    with mrcfile.open(str(mrc_path), mode="r", permissive=True) as mrc:
-        data = mrc.data.copy()
+    # Not a `with` block: closing the MrcFile would unmap the memory the
+    # returned array (and the eventual LocalVolume) reads from.
+    mrc = mrcfile.mmap(str(mrc_path), mode="r", permissive=True)
+    data = mrc.data
 
-        # MRC headers store spacing in Angstrom; Neuroglancer is told nm.
-        vx = float(mrc.voxel_size.x) / 10.0
-        vy = float(mrc.voxel_size.y) / 10.0
-        vz = float(mrc.voxel_size.z) / 10.0
-        mapc = int(mrc.header.mapc)
-        mapr = int(mrc.header.mapr)
-        maps = int(mrc.header.maps)
+    # MRC headers store spacing in Angstrom; Neuroglancer is told nm.
+    vx = float(mrc.voxel_size.x) / 10.0
+    vy = float(mrc.voxel_size.y) / 10.0
+    vz = float(mrc.voxel_size.z) / 10.0
+    mapc = int(mrc.header.mapc)
+    mapr = int(mrc.header.mapr)
+    maps = int(mrc.header.maps)
     axis_names = {1: "x", 2: "y", 3: "z"}
     axis_order = f"{axis_names[maps]}{axis_names[mapr]}{axis_names[mapc]}"
     voxel_map = {"x": vx, "y": vy, "z": vz}
