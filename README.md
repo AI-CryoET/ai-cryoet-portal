@@ -88,7 +88,7 @@ The "View in Neuroglancer" feature starts an in-process HTTP server inside the A
 |---|---|---|
 | `NEUROGLANCER_BIND_ADDRESS` | `0.0.0.0` | IP address the Neuroglancer server binds to. |
 | `NEUROGLANCER_PORT` | `8050` | Port the Neuroglancer server listens on. Must be published separately from the API port; the browser connects to this port directly (not through nginx). |
-| `NEUROGLANCER_MAX_VIEWERS` | `8` | Maximum number of concurrent viewers held in the LRU registry. |
+| `NEUROGLANCER_MAX_VIEWERS` | `32` | Maximum number of concurrent viewers held in the LRU registry. Volumes are memory-mapped (not copied), so a retained viewer costs reclaimable page cache, not pinned heap — the cap mainly bounds how many still-open tabs survive without eviction. |
 | `DASHBOARD_HOSTNAME` | _(unset)_ | Overrides the hostname in Neuroglancer viewer URLs. Use in deployments where the server-side host differs from what the browser sees. |
 
 The API must run as a **single worker with `--no-reload`** because the Neuroglancer server is process-global. Running multiple workers or hot-reloading would attempt to bind a second HTTP server on the same port.
