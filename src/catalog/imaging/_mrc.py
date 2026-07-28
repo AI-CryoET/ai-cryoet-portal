@@ -16,6 +16,7 @@ don't share global state (plan §7.5 / §11.6).
 from __future__ import annotations
 
 import os
+from functools import lru_cache
 from io import BytesIO
 from pathlib import Path
 from typing import Literal
@@ -194,6 +195,18 @@ def _load_mrc_volume(mrc_path: str) -> tuple[np.ndarray, tuple[float, float, flo
     return data, voxel_size, axis_order
 
 
+# Shared across concurrent viewers: two tabs on the same tomogram share one
+# read-only array instead of each copying it — the dominant memory saving when
+# people view the same dataset. Keyed on (path, mtime) so a re-scan that rewrites
+# the file invalidates automatically. maxsize is aligned with
+# NEUROGLANCER_MAX_VIEWERS (12); raising that env var means bumping this too.
+@lru_cache(maxsize=12)
+def _load_mrc_volume_cached(
+    mrc_path: str, mtime: float
+) -> tuple[np.ndarray, tuple[float, float, float], str]:
+    return _load_mrc_volume(mrc_path)
+
+
 def read_mrc_volume(
     mrc_path: Path | str,
 ) -> tuple[np.ndarray, tuple[float, float, float], str]:
@@ -205,5 +218,10 @@ def read_mrc_volume(
 
     Voxel size is returned in **nm** (MRC headers are Angstrom): ``view_neuroglancer``
     builds a ``CoordinateSpace(units="nm")``, and Neuroglancer rejects ``"angstrom"``.
+
+    Results are cached process-wide, keyed on ``(path, mtime)`` (see
+    ``_load_mrc_volume_cached``), so concurrent viewers of the same unchanged
+    file share one array instead of each holding a separate copy.
     """
-    return _load_mrc_volume(str(mrc_path))
+    p = str(mrc_path)
+    return _load_mrc_volume_cached(p, os.path.getmtime(p))

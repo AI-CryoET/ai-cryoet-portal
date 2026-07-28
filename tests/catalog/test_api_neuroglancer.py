@@ -93,6 +93,17 @@ def test_read_mrc_volume_oversize_falls_back_to_mmap(tmp_path, monkeypatch):
     assert isinstance(data, np.memmap)
 
 
+def test_read_mrc_volume_shared_cache_returns_same_array(tmp_path):
+    """Two loads of the same unchanged file share one array (no re-read)."""
+    from catalog.imaging import _mrc
+
+    p = tmp_path / "shared.mrc"
+    _write_synthetic_mrc(p)
+    d1, _v1, _a1 = _mrc.read_mrc_volume(p)
+    d2, _v2, _a2 = _mrc.read_mrc_volume(p)
+    assert d1 is d2
+
+
 @pytest.fixture
 def client(tmp_path, monkeypatch):
     data_root = tmp_path / "data"
