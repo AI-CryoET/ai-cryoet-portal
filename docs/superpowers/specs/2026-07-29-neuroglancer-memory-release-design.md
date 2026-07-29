@@ -130,26 +130,39 @@ for v in evicted:
     await run_in_threadpool(teardown_viewer, v)
 ```
 
-### 3. Trigger: use-aware idle sweep
+### 3. Trigger: use-aware idle sweep (gated on memory pressure)
 
 Each `active_viewers` entry carries `last_active` (monotonic) and the last-seen
-`state_generation`. A background task started in the app lifespan
-(`main.py`) sweeps on an interval and tears down anything idle past the TTL:
+`state_generation`. A background task started in the app lifespan (`main.py`)
+sweeps on an interval, refreshing liveness every pass, and tears down anything
+idle past the TTL — **but only while the pod is under memory pressure**.
+Freeing an idle viewer is only worth doing when RAM is tight; below the
+threshold, idle viewers stay resident (fast re-open) and the LRU cap remains
+the hard bound.
+
+Pressure = anon memory as a fraction of the cgroup v2 limit
+(`/sys/fs/cgroup/memory.stat` `anon` ÷ `memory.max`). Anon is the right signal:
+it's the unreclaimable memory the viewer arrays + base process hold. We ignore
+`memory.current`, which also counts reclaimable NFS page cache the kernel drops
+on its own — so page cache alone never reads as pressure. Off cgroup v2
+(dev/tests) the probe returns 0.0, so the sweep never reclaims.
 
 ```python
-async def sweep_idle_viewers(app, interval, ttl):
+async def sweep_idle_viewers(app, interval, ttl, pressure_ratio):
     while True:
         await asyncio.sleep(interval)
         now = time.monotonic()
+        under_pressure = _memory_usage_ratio() >= pressure_ratio
         stale = []
         async with app.state.active_viewers_lock:
             for key, e in list(app.state.active_viewers.items()):
                 gen = e.viewer.config_state.state_generation
                 if gen != e.last_gen:            # client interacted -> alive
                     e.last_gen, e.last_active = gen, now
-                elif now - e.last_active > ttl:
+                elif under_pressure and now - e.last_active > ttl:
                     stale.append((key, e.viewer))
-                    del app.state.active_viewers[key]
+            for key, _v in stale:
+                del app.state.active_viewers[key]
         for _key, v in stale:                    # off-lock, threadpool
             await run_in_threadpool(teardown_viewer, v)
 ```
@@ -165,17 +178,20 @@ launch. Fallback if the activity signal proves unreliable: drop the
 |---|---|---|
 | `NEUROGLANCER_MAX_VIEWERS` | **8** | Phase 1's 12 assumed anon-only; the cgroup caps anon **+** page cache together. At ~1.3-1.5 GB/volume, 8 fits with headroom; ~10-12 is the practical ceiling. |
 | load cache `maxsize` | **8** | matches the viewer cap so it isn't a second, larger memory pool. |
-| `NEUROGLANCER_VIEWER_TTL_SECONDS` | **3600** (1 hr) | idle viewers reclaimed after an hour of no interaction. |
+| `NEUROGLANCER_VIEWER_TTL_SECONDS` | **3600** (1 hr) | idle threshold; only reclaimed under memory pressure. |
 | `NEUROGLANCER_SWEEP_INTERVAL_SECONDS` | **60** | sweep cadence. |
+| `NEUROGLANCER_MEMORY_PRESSURE_RATIO` | **0.8** | reclaim idle viewers only once anon usage ≥ this fraction of the cgroup limit. |
 
 Bound after these changes: resident volumes ≈ 8 × ~1.3-1.5 GB ≈ 11-12 GB —
 under 24 Gi with ~3 GB base process and room left for NFS page cache.
 
 ## Honest limitations
 
-- Memory returns within `TTL + interval` of the **last interaction**, not the
-  instant the tab closes. A tab left open but untouched for an hour is culled
-  and its viewer breaks — acceptable for a read-only portal.
+- Idle memory is only reclaimed **under pressure**: below the threshold, closed
+  tabs' viewers stay resident until the LRU cap evicts them. This is intended —
+  no reclamation work while RAM is plentiful. Under pressure, memory returns
+  within `TTL + interval` of the **last interaction**, and an idle-but-open tab
+  can be culled (its viewer breaks — acceptable for a read-only portal).
 - Instant, precise release on real disconnect is Phase 2 (proxy the SSE
   stream).
 

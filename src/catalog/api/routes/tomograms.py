@@ -176,13 +176,47 @@ async def launch_viewer_in_registry(
     return neuroglancer_url(viewer)
 
 
-async def sweep_idle_viewers(app, interval: float, ttl: float) -> None:
-    """Tear down viewers unused for longer than ``ttl`` seconds, forever.
+def _memory_usage_ratio() -> float:
+    """Anon memory as a fraction of the cgroup v2 limit (0.0 if unreadable).
+
+    Anon is the unreclaimable memory the viewers' arrays + base process hold —
+    the right pressure signal here. We deliberately ignore ``memory.current``,
+    which also counts reclaimable NFS page cache the kernel drops on its own,
+    so page cache alone never looks like pressure. Returns 0.0 off cgroup v2
+    (dev/tests) → never reads as under pressure.
+    """
+    try:
+        with open("/sys/fs/cgroup/memory.max") as f:
+            raw = f.read().strip()
+        if raw == "max":  # no limit set
+            return 0.0
+        limit = int(raw)
+        with open("/sys/fs/cgroup/memory.stat") as f:
+            anon = next(
+                int(line.split()[1]) for line in f if line.startswith("anon ")
+            )
+        return anon / limit if limit > 0 else 0.0
+    except (OSError, ValueError, StopIteration):
+        return 0.0
+
+
+async def sweep_idle_viewers(
+    app, interval: float, ttl: float, pressure_ratio: float
+) -> None:
+    """Reclaim idle viewers, but only while the pod is under memory pressure.
 
     There is no browser tab-close signal (the viewer tab is served by the
     process-global Neuroglancer server on its own origin), so "closed" is
     inferred from inactivity: an entry whose ``state_generation`` hasn't moved
-    for ``ttl`` is reclaimed. Runs as a lifespan background task.
+    for ``ttl``. Freeing that memory is only worth doing when RAM is actually
+    tight, so teardown is gated on anon usage reaching ``pressure_ratio`` of the
+    cgroup limit. Below that, idle viewers stay resident (fast re-open, RAM to
+    spare); the LRU cap remains the hard bound. Runs as a lifespan background
+    task. (Phase 2's SSE proxy will replace the timeout with real disconnect
+    events, keeping this only as the under-pressure backstop.)
+
+    Liveness is refreshed every pass regardless of pressure so ``last_active``
+    stays accurate for when pressure does hit.
     """
     from catalog.imaging._neuroglancer import teardown_viewer
 
@@ -191,6 +225,7 @@ async def sweep_idle_viewers(app, interval: float, ttl: float) -> None:
     while True:
         await asyncio.sleep(interval)
         now = time.monotonic()
+        under_pressure = _memory_usage_ratio() >= pressure_ratio
         stale = []
         async with lock:
             for key, entry in list(registry.items()):
@@ -198,12 +233,12 @@ async def sweep_idle_viewers(app, interval: float, ttl: float) -> None:
                 if gen != entry.last_gen:  # client interacted → still alive
                     entry.last_gen = gen
                     entry.last_active = now
-                elif now - entry.last_active > ttl:
+                elif under_pressure and now - entry.last_active > ttl:
                     stale.append((key, entry.viewer))
             for key, _v in stale:
                 del registry[key]
         for key, v in stale:
-            logger.info("Reclaiming idle Neuroglancer viewer {}", key)
+            logger.info("Reclaiming idle Neuroglancer viewer under memory pressure: {}", key)
             await run_in_threadpool(teardown_viewer, v)
 
 

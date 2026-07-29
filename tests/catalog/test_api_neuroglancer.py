@@ -304,45 +304,30 @@ def test_eviction_tears_down_evicted_viewer(client, monkeypatch):
     assert len(torn) == 1  # exactly one viewer evicted + torn down
 
 
-def test_sweep_reclaims_idle_but_keeps_active(client, monkeypatch):
-    """The idle sweep tears down a stale entry but spares one that interacted."""
-    import catalog.imaging._neuroglancer as ng_mod
-    from catalog.api.routes.tomograms import (
-        ViewerEntry,
-        sweep_idle_viewers,
-    )
+class _GenViewer:
+    """Viewer whose state_generation we can bump to simulate interaction."""
 
-    torn = []
-    monkeypatch.setattr(ng_mod, "teardown_viewer", lambda v: torn.append(v))
+    def __init__(self, gen):
+        self._gen = gen
 
-    class GenViewer:
-        """Viewer whose state_generation we can bump to simulate interaction."""
+    @property
+    def config_state(self):
+        outer = self
 
-        def __init__(self, gen):
-            self._gen = gen
+        class _CS:
+            state_generation = outer._gen
 
-        @property
-        def config_state(self):
-            outer = self
+        return _CS()
 
-            class _CS:
-                state_generation = outer._gen
 
-            return _CS()
-
-    from collections import OrderedDict
-    idle = GenViewer(1)
-    active = GenViewer(1)
-    reg = OrderedDict()
-    reg[("idle",)] = ViewerEntry(idle, last_active=0.0, last_gen=1)  # far in the past
-    reg[("active",)] = ViewerEntry(active, last_active=0.0, last_gen=1)
-    client.app.state.active_viewers = reg
+def _run_one_sweep(app, **kw):
+    """Drive ``sweep_idle_viewers`` through a single pass, then cancel it."""
+    from catalog.api.routes.tomograms import sweep_idle_viewers
 
     async def driver():
-        client.app.state.active_viewers_lock = asyncio.Lock()
-        active._gen = 2  # active viewer's client pushed new state since last sweep
-        task = asyncio.create_task(sweep_idle_viewers(client.app, interval=0.01, ttl=1.0))
-        await asyncio.sleep(0.05)  # let one sweep pass run
+        app.state.active_viewers_lock = asyncio.Lock()
+        task = asyncio.create_task(sweep_idle_viewers(app, interval=0.01, **kw))
+        await asyncio.sleep(0.05)
         task.cancel()
         try:
             await task
@@ -350,8 +335,52 @@ def test_sweep_reclaims_idle_but_keeps_active(client, monkeypatch):
             pass
 
     asyncio.run(driver())
+
+
+def test_sweep_reclaims_idle_under_pressure_but_keeps_active(client, monkeypatch):
+    """Under memory pressure, the sweep tears down a stale entry, spares an active one."""
+    import catalog.imaging._neuroglancer as ng_mod
+    import catalog.api.routes.tomograms as tomo_mod
+    from catalog.api.routes.tomograms import ViewerEntry
+
+    torn = []
+    monkeypatch.setattr(ng_mod, "teardown_viewer", lambda v: torn.append(v))
+    monkeypatch.setattr(tomo_mod, "_memory_usage_ratio", lambda: 0.95)  # under pressure
+
+    from collections import OrderedDict
+    idle = _GenViewer(1)
+    active = _GenViewer(1)
+    reg = OrderedDict()
+    reg[("idle",)] = ViewerEntry(idle, last_active=0.0, last_gen=1)  # far in the past
+    reg[("active",)] = ViewerEntry(active, last_active=0.0, last_gen=1)
+    client.app.state.active_viewers = reg
+    active._gen = 2  # active viewer's client pushed new state since last sweep
+
+    _run_one_sweep(client.app, ttl=1.0, pressure_ratio=0.8)
+
     assert torn == [idle]
     assert list(reg.keys()) == [("active",)]
+
+
+def test_sweep_keeps_idle_when_no_memory_pressure(client, monkeypatch):
+    """With RAM to spare, an idle viewer is NOT reclaimed (only fires under pressure)."""
+    import catalog.imaging._neuroglancer as ng_mod
+    import catalog.api.routes.tomograms as tomo_mod
+    from catalog.api.routes.tomograms import ViewerEntry
+
+    torn = []
+    monkeypatch.setattr(ng_mod, "teardown_viewer", lambda v: torn.append(v))
+    monkeypatch.setattr(tomo_mod, "_memory_usage_ratio", lambda: 0.10)  # no pressure
+
+    from collections import OrderedDict
+    reg = OrderedDict()
+    reg[("idle",)] = ViewerEntry(_GenViewer(1), last_active=0.0, last_gen=1)
+    client.app.state.active_viewers = reg
+
+    _run_one_sweep(client.app, ttl=1.0, pressure_ratio=0.8)
+
+    assert torn == []
+    assert list(reg.keys()) == [("idle",)]
 
 
 def test_concurrent_launches_dont_crash(client):

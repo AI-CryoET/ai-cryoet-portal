@@ -13,8 +13,12 @@ Configuration via environment:
                                dir just disables the /md-previews route.
   NEUROGLANCER_MAX_VIEWERS   — bounded LRU size for active viewers (default 8).
   NEUROGLANCER_VIEWER_TTL_SECONDS      — idle viewers reclaimed after this many
-                               seconds without interaction (default 3600 = 1 hr).
+                               seconds without interaction, but only under
+                               memory pressure (default 3600 = 1 hr).
   NEUROGLANCER_SWEEP_INTERVAL_SECONDS  — idle-sweep cadence (default 60).
+  NEUROGLANCER_MEMORY_PRESSURE_RATIO   — reclaim idle viewers only once anon
+                               memory reaches this fraction of the cgroup limit
+                               (default 0.8). Below it, idle viewers persist.
 """
 from __future__ import annotations
 import asyncio
@@ -232,9 +236,12 @@ async def _lifespan(app: FastAPI):
     # catalog.api.routes.tomograms.sweep_idle_viewers.
     ttl = _positive_float("NEUROGLANCER_VIEWER_TTL_SECONDS", 3600.0)
     interval = _positive_float("NEUROGLANCER_SWEEP_INTERVAL_SECONDS", 60.0)
+    pressure = _positive_float("NEUROGLANCER_MEMORY_PRESSURE_RATIO", 0.8)
     from catalog.api.routes.tomograms import sweep_idle_viewers
 
-    sweep_task = asyncio.create_task(sweep_idle_viewers(app, interval, ttl))
+    sweep_task = asyncio.create_task(
+        sweep_idle_viewers(app, interval, ttl, pressure)
+    )
 
     yield
 
