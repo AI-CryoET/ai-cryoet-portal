@@ -72,6 +72,48 @@ def test_read_mrc_volume_returns_nm_in_array_order(tmp_path):
     assert voxel_size == pytest.approx((3.0, 2.0, 1.0))
 
 
+def test_read_mrc_volume_small_is_in_ram_copy(tmp_path):
+    """Volumes under COPY_MAX_BYTES are read fully into RAM (not a memmap)."""
+    from catalog.imaging import _mrc
+
+    p = tmp_path / "small.mrc"
+    _write_synthetic_mrc(p)
+    data, _voxel, _axes = _mrc.read_mrc_volume(p)
+    assert not isinstance(data, np.memmap)
+
+
+def test_read_mrc_volume_oversize_falls_back_to_mmap(tmp_path, monkeypatch):
+    """Volumes over COPY_MAX_BYTES fall back to mmap so the pod can't OOM."""
+    from catalog.imaging import _mrc
+
+    monkeypatch.setattr(_mrc, "COPY_MAX_BYTES", 1)  # force the tiny file oversize
+    p = tmp_path / "oversize.mrc"
+    _write_synthetic_mrc(p)
+    data, _voxel, _axes = _mrc.read_mrc_volume(p)
+    assert isinstance(data, np.memmap)
+
+
+def test_read_mrc_volume_returns_readonly_array(tmp_path):
+    """The shared cached array is read-only so a stray in-place write can't corrupt other viewers."""
+    from catalog.imaging import _mrc
+
+    p = tmp_path / "ro.mrc"
+    _write_synthetic_mrc(p)
+    data, _voxel, _axes = _mrc.read_mrc_volume(p)
+    assert data.flags.writeable is False
+
+
+def test_read_mrc_volume_shared_cache_returns_same_array(tmp_path):
+    """Two loads of the same unchanged file share one array (no re-read)."""
+    from catalog.imaging import _mrc
+
+    p = tmp_path / "shared.mrc"
+    _write_synthetic_mrc(p)
+    d1, _v1, _a1 = _mrc.read_mrc_volume(p)
+    d2, _v2, _a2 = _mrc.read_mrc_volume(p)
+    assert d1 is d2
+
+
 @pytest.fixture
 def client(tmp_path, monkeypatch):
     data_root = tmp_path / "data"

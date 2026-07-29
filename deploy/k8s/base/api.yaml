@@ -79,13 +79,20 @@ spec:
             periodSeconds: 20
           resources:
             requests:
-              cpu: 250m
-              memory: 512Mi
+              cpu: "1"
+              memory: 6Gi
             limits:
-              # Tomogram volumes are read into memory for Neuroglancer launches;
-              # give the API generous headroom relative to the other services.
-              cpu: "2"
-              memory: 4Gi
+              # Tomogram volumes are read into RAM for Neuroglancer serving, so
+              # steady-state common-case memory ~= NEUROGLANCER_MAX_VIEWERS (12) x
+              # COPY_MAX_BYTES (1.5 GB) ~= 18 GB. Transient peaks can exceed that:
+              # a re-scan changing mtime can briefly hold both a stale and a fresh
+              # array for the same slot, and the copy path itself holds 2x during
+              # the mrc.data -> .copy() step. 24Gi leaves headroom for that — watch
+              # actual pod memory during rollout. CPU serving is light once volumes
+              # are resident, so 4 cores is plenty (the 8-core bump was a no-op —
+              # the old bottleneck was blocking NFS reads, not CPU).
+              cpu: "4"
+              memory: 24Gi
       terminationGracePeriodSeconds: 10
       volumes:
         - name: catalog-data

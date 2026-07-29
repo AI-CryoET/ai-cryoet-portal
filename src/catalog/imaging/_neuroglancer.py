@@ -112,9 +112,11 @@ def view_neuroglancer(
 
     # Mirror X and Y for IMOD orientation in the coordinate transform rather
     # than with np.flip on the array. Flipping the array would return a
-    # negative-stride view that makes LocalVolume read chunks *backwards*
-    # through the memory-map (poor locality over NFS). A -1 on the diagonal 
-    # with a +(extent-1) translation reproduces np.flip exactly: 
+    # negative-stride view, which is fine for the in-RAM copy but would make
+    # LocalVolume read chunks *backwards* through the mmap fallback (poor
+    # locality over NFS). Doing the flip in the transform keeps both paths
+    # clean and the array in one coordinate frame. A -1 on the diagonal
+    # with a +(extent-1) translation reproduces np.flip exactly:
     # output_index = (N-1) - input.
     n = len(axis_names)
     matrix = [[1.0 if i == j else 0.0 for j in range(n + 1)] for i in range(n)]
