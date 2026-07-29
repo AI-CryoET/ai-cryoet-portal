@@ -14,6 +14,7 @@ heavy MRC decode + matplotlib render, ETag keyed on ``(mrc_path, mtime)``.
 from __future__ import annotations
 
 import hashlib
+import json
 from functools import lru_cache
 from pathlib import Path
 
@@ -24,7 +25,7 @@ from sqlalchemy.orm import Session
 from catalog import orm
 from catalog.api.deps import get_session
 from catalog.api.path_validation import validate_under_data_root
-from catalog.api.routes.tomograms import launch_viewer_in_registry
+from catalog.api.routes.tomograms import launch_viewer_in_registry, _lookup_tomogram
 from catalog.api.schemas import ViewerLaunchOut
 
 router = APIRouter()
@@ -48,6 +49,11 @@ def _lookup_annotation(
 def _annotation_mrc_path(files: list[str]) -> str | None:
     """First ``.mrc`` artifact in an annotation's file list, or ``None``."""
     return next((f for f in files if f.lower().endswith(".mrc")), None)
+
+
+def _annotation_json_path(files: list[str]) -> str | None:
+    """First ``_neuroglancer.json`` artifact in an annotation's file list, or ``None``."""
+    return next((f for f in files if f.lower().endswith("_neuroglancer.json")), None)
 
 
 @lru_cache(maxsize=64)
@@ -121,27 +127,62 @@ async def annotation_neuroglancer(
     rewrite on the frontend. 422 for an annotation with no ``.mrc`` artifact.
     """
     row = _lookup_annotation(session, sample_id, acquisition_id, annotation_id)
-    mrc_path = _annotation_mrc_path(row.files)
-    if not mrc_path:
-        raise HTTPException(status_code=422, detail="annotation has no mrc file")
+    json_path = _annotation_json_path(row.files)
 
-    resolved = validate_under_data_root(request, mrc_path)
-    if not resolved.is_file():
-        raise HTTPException(status_code=422, detail="mrc file missing on disk")
+    if json_path:
+        tomogram_row = _lookup_tomogram(session, sample_id, acquisition_id, row.target_tomogram)
+        if not tomogram_row.mrc_path:
+            raise HTTPException(status_code=422, detail="tomogram has no mrc_path")
+        resolved_tomo_mrc = validate_under_data_root(request, tomogram_row.mrc_path)
+        if not resolved_tomo_mrc.is_file():
+            raise HTTPException(status_code=422, detail="mrc file missing on disk")
 
-    def launch():
-        from catalog.imaging._mrc import read_mrc_volume
-        from catalog.imaging._neuroglancer import view_neuroglancer
+        resolved_json = validate_under_data_root(request, json_path)
+        if not resolved_json.is_file():
+            raise HTTPException(status_code=422, detail="json file missing on disk")
 
-        data, voxel_size, axis_order = read_mrc_volume(str(resolved))
-        return view_neuroglancer(
-            data,
-            name=Path(resolved).stem,
-            voxel_size=voxel_size,
-            axis_names=axis_order,
+        def launch():
+            from catalog.imaging._mrc import read_mrc_volume
+            from catalog.imaging._neuroglancer import view_neuroglancer, add_json_layer
+
+            data, voxel_size, axis_order = read_mrc_volume(str(resolved_tomo_mrc))
+            json_data = json.loads(resolved_json.read_text())[0] # always only a single bbox
+            init_pos = tuple(tomogram_row.__getattribute__(f'image_size_{a}')/2 for a in axis_order)
+            viewer = view_neuroglancer(
+                data,
+                name=Path(resolved_tomo_mrc).stem,
+                voxel_size=voxel_size,
+                axis_names=axis_order,
+                initial_position=init_pos,
+            )
+            add_json_layer(viewer, 'AuNP_bbox', json_data)
+            return viewer
+
+        url = await launch_viewer_in_registry(
+            request, ("annotation", sample_id, acquisition_id, annotation_id), launch
         )
+        return ViewerLaunchOut(url=url)
+    else:
+        mrc_path = _annotation_mrc_path(row.files)
+        if not mrc_path:
+            raise HTTPException(status_code=422, detail="annotation has no mrc_path")
+        resolved_annot_mrc = validate_under_data_root(request, mrc_path)
+        if not resolved_annot_mrc.is_file():
+            raise HTTPException(status_code=422, detail="annotation mrc file missing from disk")
 
-    url = await launch_viewer_in_registry(
-        request, ("annotation", sample_id, acquisition_id, annotation_id), launch
-    )
-    return ViewerLaunchOut(url=url)
+        def launch():
+            from catalog.imaging._mrc import read_mrc_volume
+            from catalog.imaging._neuroglancer import view_neuroglancer
+
+            data, voxel_size, axis_order = read_mrc_volume(str(resolved_annot_mrc))
+            return view_neuroglancer(
+                data,
+                name=Path(resolved_annot_mrc).stem,
+                voxel_size=voxel_size,
+                axis_names=axis_order,
+            )
+
+        url = await launch_viewer_in_registry(
+            request, ("annotation", sample_id, acquisition_id, annotation_id), launch
+        )
+        return ViewerLaunchOut(url=url)
