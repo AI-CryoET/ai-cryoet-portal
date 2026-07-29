@@ -121,7 +121,9 @@ async def annotation_neuroglancer(
     request: Request,
     session: Session = Depends(get_session),
 ):
-    """Launch a Neuroglancer viewer over the annotation's ``.mrc`` volume.
+    """Launch a Neuroglancer viewer over the annotation's ``.mrc`` volume, or a 
+    Neuroglancer view + bounding box overlay if ``.json`` files are in the ``annotation_id``
+    dir. 
 
     Mirrors the tomogram launch route — same registry, same dev-side hostname
     rewrite on the frontend. 422 for an annotation with no ``.mrc`` artifact.
@@ -130,6 +132,8 @@ async def annotation_neuroglancer(
     json_path = _annotation_json_path(row.files)
 
     if json_path:
+        if not row.target_tomogram:
+            raise HTTPException(status_code=422, detail="annotation has no target tomogram")
         tomogram_row = _lookup_tomogram(session, sample_id, acquisition_id, row.target_tomogram)
         if not tomogram_row.mrc_path:
             raise HTTPException(status_code=422, detail="tomogram has no mrc_path")
@@ -147,7 +151,7 @@ async def annotation_neuroglancer(
 
             data, voxel_size, axis_order = read_mrc_volume(str(resolved_tomo_mrc))
             json_data = json.loads(resolved_json.read_text())[0] # always only a single bbox
-            init_pos = tuple(tomogram_row.__getattribute__(f'image_size_{a}')/2 for a in axis_order)
+            init_pos = tuple(getattr(tomogram_row, f'image_size_{a}')/2 for a in axis_order)
             viewer = view_neuroglancer(
                 data,
                 name=Path(resolved_tomo_mrc).stem,
@@ -155,13 +159,9 @@ async def annotation_neuroglancer(
                 axis_names=axis_order,
                 initial_position=init_pos,
             )
-            add_json_layer(viewer, 'AuNP_bbox', json_data)
+            add_json_layer(viewer, annotation_id, json_data)
             return viewer
 
-        url = await launch_viewer_in_registry(
-            request, ("annotation", sample_id, acquisition_id, annotation_id), launch
-        )
-        return ViewerLaunchOut(url=url)
     else:
         mrc_path = _annotation_mrc_path(row.files)
         if not mrc_path:
@@ -182,7 +182,7 @@ async def annotation_neuroglancer(
                 axis_names=axis_order,
             )
 
-        url = await launch_viewer_in_registry(
-            request, ("annotation", sample_id, acquisition_id, annotation_id), launch
-        )
-        return ViewerLaunchOut(url=url)
+    url = await launch_viewer_in_registry(
+        request, ("annotation", sample_id, acquisition_id, annotation_id), launch
+    )
+    return ViewerLaunchOut(url=url)
