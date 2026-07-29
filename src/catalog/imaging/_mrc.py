@@ -203,9 +203,17 @@ def _load_mrc_volume(mrc_path: str) -> tuple[np.ndarray, tuple[float, float, flo
 # Shared across concurrent viewers: two tabs on the same tomogram share one
 # read-only array instead of each copying it — the dominant memory saving when
 # people view the same dataset. Keyed on (path, mtime) so a re-scan that rewrites
-# the file invalidates automatically. maxsize is aligned with
-# NEUROGLANCER_MAX_VIEWERS (12); raising that env var means bumping this too.
-@lru_cache(maxsize=12)
+# the file invalidates automatically.
+#
+# This cache is a SECOND strong holder of every array (the first is each live
+# viewer's volume_manager). It bounds steady-state resident memory on its own:
+# ~maxsize distinct volumes stay resident even after their tabs close, until
+# they age out here. So maxsize is the RAM ceiling — keep it aligned with
+# NEUROGLANCER_MAX_VIEWERS (default 10). Raising that env var means bumping this.
+# At ~1.3-1.5 GB/volume (in-RAM ≈ on-disk; .copy() keeps the native dtype),
+# 10 fits the 24 Gi pod (~16-18 GB anon + base, room left for NFS page cache);
+# ~12 is the practical ceiling before page-cache reclaim starts to thrash.
+@lru_cache(maxsize=10)
 def _load_mrc_volume_cached(
     mrc_path: str, mtime: float
 ) -> tuple[np.ndarray, tuple[float, float, float], str]:

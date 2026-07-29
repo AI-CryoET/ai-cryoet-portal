@@ -88,7 +88,10 @@ The "View in Neuroglancer" feature starts an in-process HTTP server inside the A
 |---|---|---|
 | `NEUROGLANCER_BIND_ADDRESS` | `0.0.0.0` | IP address the Neuroglancer server binds to. |
 | `NEUROGLANCER_PORT` | `8050` | Port the Neuroglancer server listens on. Must be published separately from the API port; the browser connects to this port directly (not through nginx). |
-| `NEUROGLANCER_MAX_VIEWERS` | `12` | Maximum concurrent viewers in the LRU registry. Volumes ≤ 1.5 GB are read into RAM, so worst-case memory ≈ this × 1.5 GB — keep it matched to the pod memory limit. Raising it also requires bumping the volume-cache `maxsize` in `_mrc.py`. |
+| `NEUROGLANCER_MAX_VIEWERS` | `10` | Maximum concurrent viewers in the LRU registry. Each live viewer pins its volume in RAM (~1.3–1.5 GB), so worst-case memory ≈ this × volume size — keep it matched to the pod memory limit (10 fits 24 Gi; ~12 is the practical ceiling). Raising it also requires bumping the volume-cache `maxsize` in `_mrc.py`. |
+| `NEUROGLANCER_VIEWER_TTL_SECONDS` | `3600` | Idle viewers are torn down (volume RAM freed) after this many seconds without interaction — the stand-in for a browser tab-close signal, which isn't reachable. Only fires under memory pressure (see below). |
+| `NEUROGLANCER_SWEEP_INTERVAL_SECONDS` | `60` | How often the idle sweep runs. |
+| `NEUROGLANCER_MEMORY_PRESSURE_RATIO` | `0.8` | The idle sweep only reclaims viewers once anon memory reaches this fraction of the pod's cgroup limit. Below it, idle viewers stay resident (fast re-open, RAM to spare); the LRU cap remains the hard bound. |
 | `DASHBOARD_HOSTNAME` | _(unset)_ | Overrides the hostname in Neuroglancer viewer URLs. Use in deployments where the server-side host differs from what the browser sees. |
 
 The API must run as a **single worker with `--no-reload`** because the Neuroglancer server is process-global. Running multiple workers or hot-reloading would attempt to bind a second HTTP server on the same port.
