@@ -235,7 +235,10 @@ def _plan_folder_as_group(recon_dir: Path, gid: str):
         id_dir = recon_dir / kind / gid
         if not id_dir.is_dir():
             continue
-        m, w = _expand_entity_folder(id_dir, allowed_exts, group_dir / kind, prepend_folder=(kind == "Tomograms"))
+        # No prepend here: when the folder itself becomes the group, its name is
+        # already preserved as the group dir, so prefixing each file with it too
+        # would only duplicate it (bp_3dctf_bin4/Tomograms/bp_3dctf_bin4_recon).
+        m, w = _expand_entity_folder(id_dir, allowed_exts, group_dir / kind)
         moves += m
         warnings += w
     return moves, [group_dir / "Alignment"], warnings
@@ -395,6 +398,42 @@ def _expand_blocks(text: str, header: str, id_map: dict[str, list[str]]) -> str:
         return "\n".join(copies)
 
     return pattern.sub(repl, text)
+
+
+def _rewrite_derived_from(text: str, tomo_id_map: dict[str, list[str]]) -> str:
+    """Rewrite post_processed_tomogram.derived_from lineage refs from their old
+    (pre-migration folder) tomogram ids to the flattened stems the migration
+    renamed those tomograms to, so the reference still resolves after the
+    prepend rename. One old id may map to several new stems (an
+    extension-collision split) — the ref expands to all of them; an id that was
+    not renamed is left untouched."""
+    if not tomo_id_map:
+        return text
+
+    def _remap(old_ids: list[str]) -> list[str]:
+        out: list[str] = []
+        for oid in old_ids:
+            for nid in tomo_id_map.get(oid, [oid]):
+                if nid not in out:
+                    out.append(nid)
+        return out
+
+    def _fix_df(dm: re.Match) -> str:
+        new_ids = _remap(re.findall(r'"([^"]+)"', dm.group(2)))
+        joined = ", ".join('"' + i + '"' for i in new_ids)
+        return f"{dm.group(1)}[{joined}]"
+
+    def _fix_block(bm: re.Match) -> str:
+        block = re.sub(
+            r"^([ \t]*derived_from[ \t]*=[ \t]*)\[([^\]]*)\]",
+            _fix_df, bm.group(1), flags=re.M,
+        )
+        return "[[post_processed_tomogram]]\n" + block
+
+    return re.sub(
+        r"\[\[post_processed_tomogram\]\]\n(.*?)(?=\n\[|\Z)",
+        _fix_block, text, flags=re.S,
+    )
 
 
 def prepare_processing_log(text: str, group_id: str | None) -> str:
@@ -633,12 +672,24 @@ def main():
             if new_id not in ids:  # same entity can collapse to 2+ moves (.mrc + .zarr) -> same id twice
                 ids.append(new_id)
 
+        # Flatten the per-group tomogram renames into one old-id -> new-id(s)
+        # map for rewriting derived_from lineage refs (which may resolve across
+        # sibling groups, so this is intentionally not group-scoped).
+        tomo_id_map: dict[str, list[str]] = {}
+        for gid_map in group_tomo_renames.values():
+            for old, news in gid_map.items():
+                bucket = tomo_id_map.setdefault(old, [])
+                for nid in news:
+                    if nid not in bucket:
+                        bucket.append(nid)
+
         toml_path = acq_dir / "acquisition.toml"
         recon_tomls: dict[str, str] = {}
         new_toml = None
         if toml_path.is_file():
             orig_text = toml_path.read_text()
             prepared = prepare_processing_log(orig_text, group_id)
+            prepared = _rewrite_derived_from(prepared, tomo_id_map)
             for gid in all_group_ids:
                 recon_tomls[gid] = build_reconstruction_toml(
                     gid, prepared, group_tomo_renames.get(gid, {}), group_ann_renames.get(gid, {})

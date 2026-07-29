@@ -87,10 +87,11 @@ def test_apply_moves_files_into_the_group(tmp_path):
     acq = _make_acq(tmp_path)
     _run(tmp_path, apply=True)
     group = acq / "Reconstructions" / "ts_1"
-    # The {id}/ folder name becomes the file stem; a single leaf collapses.
-    assert (group / "Tomograms" / "bp_3dctf_bin4.mrc").read_bytes() == b"raw"
-    assert (group / "Tomograms" / "bp_3dctf_bin4.ome.zarr").is_dir()
-    assert (group / "Tomograms" / "denoised.mrc").read_bytes() == b"denoised"
+    # A tomogram keeps its descriptive filename, prefixed with the source folder
+    # name; a single annotation leaf still collapses onto the folder name.
+    assert (group / "Tomograms" / "bp_3dctf_bin4_recon.mrc").read_bytes() == b"raw"
+    assert (group / "Tomograms" / "bp_3dctf_bin4_recon.ome.zarr").is_dir()
+    assert (group / "Tomograms" / "denoised_out.mrc").read_bytes() == b"denoised"
     assert (group / "Annotations" / "membrain_seg_v10.mrc").read_bytes() == b"seg"
     assert (group / "Alignment").is_dir()
     # The flat dirs are gone, so a rescan can't read them as a bogus group.
@@ -135,11 +136,14 @@ def test_migrated_tree_loads(tmp_path):
     assert result.acquisition_errors == {}
     assert result.record is not None
     rf = result.record.reconstructions["Position_86"]["ts_1"]
-    assert [t.tomogram_id for t in rf.raw_tomogram] == ["bp_3dctf_bin4"]
+    assert [t.tomogram_id for t in rf.raw_tomogram] == ["bp_3dctf_bin4_recon"]
     assert rf.raw_tomogram[0].derived_from == "ts_1"
-    assert [t.tomogram_id for t in rf.post_processed_tomogram] == ["denoised"]
+    assert [t.tomogram_id for t in rf.post_processed_tomogram] == ["denoised_out"]
+    # the post-processed tomogram's derived_from ref was rewritten to the
+    # renamed raw tomogram, so lineage still resolves (no dangling-ref warning).
+    assert rf.post_processed_tomogram[0].derived_from == ["bp_3dctf_bin4_recon"]
     assert [a.annotation_id for a in rf.annotation] == ["membrain_seg_v10"]
-    assert not any("no matching folder" in w for w in result.warnings)
+    assert result.warnings == []
 
 
 def test_second_apply_is_a_noop(tmp_path):
@@ -203,23 +207,24 @@ def test_extension_collision_keeps_filenames_as_separate_entities(tmp_path, caps
     _run(tmp_path, apply=True)
     err = capsys.readouterr().err
     assert "do not collapse onto 'denoised'" in err
-    assert "2 entities: other, out" in err
+    assert "2 entities: denoised_other, denoised_out" in err
 
     tomos = acq / "Reconstructions" / "ts_1" / "Tomograms"
-    # Filenames survive; the id is each stem, not the folder name.
-    assert (tomos / "out.mrc").read_bytes() == b"denoised"
-    assert (tomos / "other.mrc").read_bytes() == b"other"
+    # Filenames survive; each id is the folder name prefixed onto the surviving
+    # filename stem, so the two collide-in-extension files stay separate.
+    assert (tomos / "denoised_out.mrc").read_bytes() == b"denoised"
+    assert (tomos / "denoised_other.mrc").read_bytes() == b"other"
     assert not (tomos / "denoised.mrc").exists()
-    # The unambiguous sibling still collapses onto its folder name.
-    assert (tomos / "bp_3dctf_bin4.mrc").is_file()
+    # The unambiguous sibling keeps its prefixed descriptive filename.
+    assert (tomos / "bp_3dctf_bin4_recon.mrc").is_file()
     # Nothing is left behind, so the flat dir goes.
     assert not (acq / "Reconstructions" / "Tomograms").exists()
 
     # The single authored [[post_processed_tomogram]] id = "denoised" became one
     # block per resulting stem, other fields copied verbatim.
     recon = (acq / "Reconstructions" / "ts_1" / "reconstruction.toml").read_text()
-    assert 'id = "out"' in recon
-    assert 'id = "other"' in recon
+    assert 'id = "denoised_out"' in recon
+    assert 'id = "denoised_other"' in recon
     assert 'id = "denoised"' not in recon
     assert recon.count("cryoCARE") == 2
 
