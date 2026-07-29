@@ -2,9 +2,8 @@
 
 Utilities for the ai-cryoet portal:
 
-- **Data staging** — `reorg_facility_to_portal.py` and `relion_to_portal.py`
-  stage Janelia cryoET facility data and RELION pipeline output into the portal
-  ingestion layout.
+- **Data staging** — `reorg_facility_to_portal.py` stages Janelia cryoET
+  facility data into the portal ingestion layout.
 - **Data migration** — `migrate_reconstruction_groups.py` moves an existing
   data root from the flat `Reconstructions/{Tomograms,Annotations}/{id}/`
   layout to the 3D-alignment-grouped one.
@@ -12,6 +11,8 @@ Utilities for the ai-cryoet portal:
   `scratch/data/` test tree from the real data root.
 - **Frontend icons** — `icon/` regenerates the snowflake app icon, navbar logo,
   and favicons used by the frontend.
+- **Archived** — `archive/` holds retired scripts kept for reference, currently
+  `relion_to_portal.py` (see [Archived](#archived) below).
 
 ## `reorg_facility_to_portal.py`
 
@@ -112,71 +113,25 @@ defaults.
 
 ---
 
-## `relion_to_portal.py`
+## Archived
 
-Maps a completed **RELION-5 tomography pipeline** directory into the same portal
-sample layout. Where `reorg_facility_to_portal.py` ingests *raw facility output*,
-this script ingests the *processed results* of a RELION project — tilt-series
-alignments, reconstructions, and denoised tomograms — alongside the raw movies.
+Retired scripts kept under `archive/` for reference, not maintained.
 
-Jobs are located by their canonical `_rlnJobTypeLabel` (read from each
-`jobNNN/job.star`), not by the arbitrary `jobNNN` number, so reruns and renamed
-jobs route correctly. When several jobs share a family, the highest-numbered
-successful one (with `RELION_JOB_EXIT_SUCCESS`) wins.
+### `archive/relion_to_portal.py`
 
-### Routing
+Mapped a completed **RELION-5 tomography pipeline** directory (tilt-series
+alignments, reconstructions, denoised tomograms, plus the raw movies) into the
+portal sample layout — the processed-results counterpart to
+`reorg_facility_to_portal.py`.
 
-| RELION job family             | Portal destination                                         |
-|-------------------------------|------------------------------------------------------------|
-| `relion.importtomo`           | `Frames/` (raw movies + mdoc + shared gain)                |
-| `relion.aligntiltseries`      | split: `<acq>.mrc` + `<acq>.rawtlt` → `TiltSeries/`; `*.aln` + `*.com` → `Alignments/` |
-| `relion.reconstructtomograms` | `Reconstructions/Tomograms/reconstruct_halves/`            |
-| `relion.denoisetomo`          | `Reconstructions/Tomograms/denoised/`                      |
-| `relion.motioncorr`           | skipped (regenerable motion-corrected frames)              |
-| `relion.ctffind`              | skipped (CTF metadata only)                                |
-| `relion.excludetilts`         | skipped (tilt-selection star only)                         |
-
-Derived/QC files inside routed jobs (e.g. `_aligned.mrc`, `_ctf.mrc`, `*.eps`,
-`*.log`) are intentionally left behind.
-
-### Placement modes
-
-Like the facility script, files are placed by `--symlink` / `--copy` / `--move`
-(mutually exclusive), defaulting to `--symlink`. **One difference to note:**
-
-- It is a **dry run by default** — even with a placement mode chosen, it prints
-  the plan and writes nothing until you pass `--apply`.
-
-### Recommended workflow
-
-1. **Dry run** (the default) — inspect the discovered jobs and the routing plan:
-   ```bash
-   ./relion_to_portal.py PIPELINE_DIR TARGET_SAMPLE_DIR
-   ```
-
-2. **Symlink test (default)** — stage the layout instantly to inspect it, then
-   `rm -rf`:
-   ```bash
-   ./relion_to_portal.py PIPELINE_DIR TARGET_SAMPLE_DIR --apply
-   ```
-
-3. **Real run** — copy (preserves the pipeline) or move (consumes it):
-   ```bash
-   ./relion_to_portal.py PIPELINE_DIR TARGET_SAMPLE_DIR --apply --copy
-   ```
-
-### Options
-
-| Option            | Purpose                                                            |
-|-------------------|--------------------------------------------------------------------|
-| `--apply`         | Actually perform the action (without it, dry run).                 |
-| `--symlink / --copy / --move` | Placement action (default `--symlink`).                |
-| `--manifest CSV`  | Write a per-file routed-vs-unrouted inventory (with sizes) to CSV. |
-
-The `--manifest` option is useful for auditing exactly which pipeline files were
-routed where and which were left behind (and why).
-
-See `./relion_to_portal.py --help` for details.
+**Why it was archived:** there is no remaining RELION data to reorganize. It
+also predates the 3D-alignment-grouped `Reconstructions/` layout — it still
+writes the old flat `Reconstructions/Tomograms/{reconstruct_halves,denoised}/`
+paths — so it would have to be rewritten for the current format
+(`Reconstructions/{reconstruction_alignment_id}/…`; see
+`migrate_reconstruction_groups.py`) before it could be used again. Moved to
+`utils/archive/relion_to_portal.py` rather than deleted so that rewrite has a
+starting point if RELION output ever needs staging.
 
 ---
 
