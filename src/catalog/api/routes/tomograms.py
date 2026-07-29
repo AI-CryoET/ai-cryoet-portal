@@ -7,20 +7,26 @@ table to maintain (decision §11.8).
 Heavy work (MRC decode, matplotlib render, Neuroglancer launch) runs on
 ``fastapi.concurrency.run_in_threadpool`` so the event loop stays free.
 
-Evicting a viewer means dropping the registry's reference; the underlying
-``neuroglancer.Viewer`` has no per-instance ``.stop()`` and may linger in
-process memory until GC. Restart the API to fully reset Neuroglancer
-state (plan §7.4).
+A viewer leaving the registry (LRU eviction, re-launch of the same key, or
+the idle sweep) is torn down via ``teardown_viewer`` so its volume RAM is
+actually released — dropping the registry reference alone does not, because
+the array is also pinned by the viewer's ``volume_manager`` and the load
+cache. Neuroglancer has no per-instance ``.stop()``, so teardown breaks that
+still-open browser tab.
 """
 from __future__ import annotations
 
+import asyncio
 import hashlib
+import time
 from collections import OrderedDict
+from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi.concurrency import run_in_threadpool
+from loguru import logger
 from sqlalchemy.orm import Session
 
 from catalog import orm
@@ -108,6 +114,29 @@ async def tomogram_preview(
     )
 
 
+@dataclass
+class ViewerEntry:
+    """A live viewer plus the liveness state the idle sweep tracks.
+
+    ``last_active`` / ``last_gen`` let ``sweep_idle_viewers`` tell an idle
+    viewer from an actively-used one: the browser bumps
+    ``viewer.config_state.state_generation`` whenever it pushes state
+    (pan/zoom/scroll).
+    """
+
+    viewer: object
+    last_active: float
+    last_gen: object
+
+
+def _viewer_generation(viewer) -> object:
+    """Best-effort read of a viewer's client-state generation (None if absent)."""
+    try:
+        return viewer.config_state.state_generation
+    except Exception:  # noqa: BLE001 — fakes/older viewers lack config_state
+        return None
+
+
 async def launch_viewer_in_registry(
     request: Request,
     key: tuple[str, ...],
@@ -118,25 +147,64 @@ async def launch_viewer_in_registry(
     The lock guards against concurrent launches racing to evict each
     other's entries when at capacity. ``launch_fn`` is run on a threadpool
     because viewer creation blocks for tens of ms on first call.
+
+    Evicted viewers (LRU overflow, or the stale entry when re-launching the
+    same key) are torn down off-lock so their volume RAM is actually freed —
+    dropping the registry reference alone does not (see ``teardown_viewer``).
     """
-    from catalog.imaging._neuroglancer import neuroglancer_url
+    from catalog.imaging._neuroglancer import neuroglancer_url, teardown_viewer
 
     registry: OrderedDict = request.app.state.active_viewers
     lock = request.app.state.active_viewers_lock
     max_viewers: int = request.app.state.neuroglancer_max_viewers
 
     viewer = await run_in_threadpool(launch_fn)
+    entry = ViewerEntry(viewer, time.monotonic(), _viewer_generation(viewer))
 
+    evicted = []
     async with lock:
-        if key in registry:
-            registry.move_to_end(key)
-            registry[key] = viewer
-        else:
-            registry[key] = viewer
-            while len(registry) > max_viewers:
-                registry.popitem(last=False)
+        old = registry.pop(key, None)  # replacing a re-launch of the same key
+        if old is not None:
+            evicted.append(old.viewer)
+        registry[key] = entry
+        while len(registry) > max_viewers:
+            evicted.append(registry.popitem(last=False)[1].viewer)
+
+    for v in evicted:
+        await run_in_threadpool(teardown_viewer, v)
 
     return neuroglancer_url(viewer)
+
+
+async def sweep_idle_viewers(app, interval: float, ttl: float) -> None:
+    """Tear down viewers unused for longer than ``ttl`` seconds, forever.
+
+    There is no browser tab-close signal (the viewer tab is served by the
+    process-global Neuroglancer server on its own origin), so "closed" is
+    inferred from inactivity: an entry whose ``state_generation`` hasn't moved
+    for ``ttl`` is reclaimed. Runs as a lifespan background task.
+    """
+    from catalog.imaging._neuroglancer import teardown_viewer
+
+    registry: OrderedDict = app.state.active_viewers
+    lock = app.state.active_viewers_lock
+    while True:
+        await asyncio.sleep(interval)
+        now = time.monotonic()
+        stale = []
+        async with lock:
+            for key, entry in list(registry.items()):
+                gen = _viewer_generation(entry.viewer)
+                if gen != entry.last_gen:  # client interacted → still alive
+                    entry.last_gen = gen
+                    entry.last_active = now
+                elif now - entry.last_active > ttl:
+                    stale.append((key, entry.viewer))
+            for key, _v in stale:
+                del registry[key]
+        for key, v in stale:
+            logger.info("Reclaiming idle Neuroglancer viewer {}", key)
+            await run_in_threadpool(teardown_viewer, v)
 
 
 def _load_volume_for_viewer(mrc_path: str):

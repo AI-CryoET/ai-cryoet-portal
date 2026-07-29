@@ -19,10 +19,13 @@ GC. Restart the API to fully reset Neuroglancer state.
 """
 from __future__ import annotations
 
+import ctypes
+import gc
 import os
 from urllib.parse import urlparse, urlunparse
 
 import numpy as np
+from loguru import logger
 
 # Module-level flag mirroring the closure-style state on the vendored
 # ``view_neuroglancer``. ``set_server_bind_address`` is process-global and
@@ -150,6 +153,33 @@ def view_neuroglancer(
         if initial_position is not None:
             s.position = initial_position
     return viewer
+
+
+def teardown_viewer(viewer) -> None:
+    """Release a viewer's volume RAM.
+
+    Each viewer's numpy array is pinned by ``viewer.volume_manager.volumes``
+    (a strong dict inside the Viewer). Clearing the viewer's layers makes
+    neuroglancer's ``LocalVolumeManager`` drop that entry synchronously; a
+    following ``gc.collect()`` breaks the ``Viewer <-> manager`` cycle and
+    ``malloc_trim`` returns the freed pages to the OS. Verified to take RSS
+    from ~1 GB back to baseline for a 1 GiB volume.
+
+    Runs on the threadpool (``viewer.txn()`` blocks briefly). Best-effort:
+    a fake/broken viewer must not crash the caller — this is cleanup, and
+    the GC/trim still run. Neuroglancer has no per-viewer ``.stop()``, so this
+    breaks that still-open browser tab (same trade-off as LRU eviction).
+    """
+    try:
+        with viewer.txn() as s:
+            s.layers.clear()
+    except Exception as exc:  # noqa: BLE001 — best-effort cleanup
+        logger.warning("teardown_viewer: clearing layers failed: {}", exc)
+    gc.collect()
+    try:
+        ctypes.CDLL("libc.so.6").malloc_trim(0)  # glibc only; return heap to OS
+    except OSError:
+        pass
 
 
 def neuroglancer_url(viewer) -> str:
