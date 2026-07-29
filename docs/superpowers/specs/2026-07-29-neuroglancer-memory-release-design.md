@@ -176,13 +176,13 @@ launch. Fallback if the activity signal proves unreliable: drop the
 
 | Setting | Value | Rationale |
 |---|---|---|
-| `NEUROGLANCER_MAX_VIEWERS` | **8** | Phase 1's 12 assumed anon-only; the cgroup caps anon **+** page cache together. At ~1.3-1.5 GB/volume, 8 fits with headroom; ~10-12 is the practical ceiling. |
-| load cache `maxsize` | **8** | matches the viewer cap so it isn't a second, larger memory pool. |
+| `NEUROGLANCER_MAX_VIEWERS` | **10** | Phase 1's 12 assumed anon-only; the cgroup caps anon **+** page cache together. At ~1.3-1.5 GB/volume (in-RAM ≈ on-disk), 10 fits with headroom; ~12 is the practical ceiling. |
+| load cache `maxsize` | **10** | matches the viewer cap so it isn't a second, larger memory pool. |
 | `NEUROGLANCER_VIEWER_TTL_SECONDS` | **3600** (1 hr) | idle threshold; only reclaimed under memory pressure. |
 | `NEUROGLANCER_SWEEP_INTERVAL_SECONDS` | **60** | sweep cadence. |
 | `NEUROGLANCER_MEMORY_PRESSURE_RATIO` | **0.8** | reclaim idle viewers only once anon usage ≥ this fraction of the cgroup limit. |
 
-Bound after these changes: resident volumes ≈ 8 × ~1.3-1.5 GB ≈ 11-12 GB —
+Bound after these changes: resident volumes ≈ 10 × ~1.3-1.5 GB ≈ 13-15 GB —
 under 24 Gi with ~3 GB base process and room left for NFS page cache.
 
 ## Honest limitations
