@@ -104,7 +104,8 @@ this is the same trade-off today's LRU eviction already accepts.
 Clearing layers only releases holder (1). The array stays resident while
 `_load_mrc_volume_cached` still holds it. Bound that cache to the RAM budget:
 
-- Set the cache `maxsize` = the viewer cap (see §4), **not** 12.
+- Set the cache `maxsize` = the viewer cap (see §4), **not** 12 (was aligned to
+  the old cheap-mmap-era cap).
 
 Then steady-state resident memory ≈ `max(cache_maxsize, MAX_VIEWERS) × volume`,
 regardless of how many tabs have been opened over time. A torn-down viewer's
@@ -162,13 +163,13 @@ launch. Fallback if the activity signal proves unreliable: drop the
 
 | Setting | Value | Rationale |
 |---|---|---|
-| `NEUROGLANCER_MAX_VIEWERS` | **6** | Phase 1's 12 assumed anon-only; the cgroup caps anon **+** page cache together, so hold fewer. |
-| load cache `maxsize` | **6** | matches the viewer cap so it isn't a second, larger memory pool. |
+| `NEUROGLANCER_MAX_VIEWERS` | **8** | Phase 1's 12 assumed anon-only; the cgroup caps anon **+** page cache together. At ~1.3-1.5 GB/volume, 8 fits with headroom; ~10-12 is the practical ceiling. |
+| load cache `maxsize` | **8** | matches the viewer cap so it isn't a second, larger memory pool. |
 | `NEUROGLANCER_VIEWER_TTL_SECONDS` | **3600** (1 hr) | idle viewers reclaimed after an hour of no interaction. |
 | `NEUROGLANCER_SWEEP_INTERVAL_SECONDS` | **60** | sweep cadence. |
 
-Bound after these changes: resident volumes ≈ 6 × ~1.3 GB ≈ 8 GB — well under
-24 Gi, with headroom for base process and NFS page cache.
+Bound after these changes: resident volumes ≈ 8 × ~1.3-1.5 GB ≈ 11-12 GB —
+under 24 Gi with ~3 GB base process and room left for NFS page cache.
 
 ## Honest limitations
 

@@ -209,8 +209,10 @@ def _load_mrc_volume(mrc_path: str) -> tuple[np.ndarray, tuple[float, float, flo
 # viewer's volume_manager). It bounds steady-state resident memory on its own:
 # ~maxsize distinct volumes stay resident even after their tabs close, until
 # they age out here. So maxsize is the RAM ceiling — keep it aligned with
-# NEUROGLANCER_MAX_VIEWERS (default 6). Raising that env var means bumping this.
-@lru_cache(maxsize=6)
+# NEUROGLANCER_MAX_VIEWERS (default 8). Raising that env var means bumping this.
+# At ~1.3-1.5 GB/volume, 8 fits the 24 Gi pod with headroom; ~10-12 is the
+# practical ceiling before NFS page-cache reclaim starts to thrash.
+@lru_cache(maxsize=8)
 def _load_mrc_volume_cached(
     mrc_path: str, mtime: float
 ) -> tuple[np.ndarray, tuple[float, float, float], str]:
