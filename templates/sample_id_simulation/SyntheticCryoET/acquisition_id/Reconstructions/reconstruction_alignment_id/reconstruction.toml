@@ -64,3 +64,5 @@
 # [[annotation]]
 # id              = "<FILL IN>"   # text, MUST equal the annotation file's name without extension
 # type            = "<FILL IN>"   # text, e.g. membrane_segmentation | nucleosome_placement | active_zone
+# derived_from    = "<FILL IN>"   # text, id of the tomogram in this group the annotation was derived from
+# bounding_box    = "<FILL IN>"   # text, id of the annotation file (under Annotations/) holding this annotation's bounding box

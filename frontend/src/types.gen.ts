@@ -767,6 +767,10 @@ export interface components {
             reconstruction_alignment_id: string;
             /** Type */
             type?: string | null;
+            /** Derived From */
+            derived_from?: string | null;
+            /** Bounding Box */
+            bounding_box?: string | null;
             /**
              * Files
              * @default []

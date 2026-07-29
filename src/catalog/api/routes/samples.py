@@ -562,6 +562,8 @@ def get_sample(sample_id: str, session: Session = Depends(get_session)):
                         annotation_id=ann.annotation_id,
                         reconstruction_alignment_id=ann.reconstruction_alignment_id,
                         type=ann.type,
+                        derived_from=ann.derived_from,
+                        bounding_box=ann.bounding_box,
                         files=ann.files or [],
                     )
                     for ann in anns

@@ -362,6 +362,8 @@ class AnnotationORM(Base):
         String(_ID_MAX_LEN), nullable=False
     )
     type: Mapped[str | None] = mapped_column(String, nullable=True)
+    derived_from: Mapped[str | None] = mapped_column(String, nullable=True)
+    bounding_box: Mapped[str | None] = mapped_column(String, nullable=True)
     files: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
 
     __table_args__ = (

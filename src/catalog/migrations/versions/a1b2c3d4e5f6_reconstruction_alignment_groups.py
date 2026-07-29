@@ -118,6 +118,8 @@ def upgrade() -> None:
         sa.Column('annotation_id', sa.String(length=128), nullable=False),
         sa.Column('reconstruction_alignment_id', sa.String(length=128), nullable=False),
         sa.Column('type', sa.String(), nullable=True),
+        sa.Column('derived_from', sa.String(), nullable=True),
+        sa.Column('bounding_box', sa.String(), nullable=True),
         sa.Column('files', sa.JSON(), nullable=False),
         sa.ForeignKeyConstraint(*_ACQ_FK),
         sa.PrimaryKeyConstraint(

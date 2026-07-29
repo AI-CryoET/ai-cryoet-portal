@@ -145,6 +145,10 @@ class AnnotationOut(BaseModel):
     # see _TomogramOutBase.reconstruction_alignment_id
     reconstruction_alignment_id: str
     type: str | None = None
+    # tomogram_id in this group the annotation was derived from
+    derived_from: str | None = None
+    # annotation_id (under Annotations/) of the associated bounding box
+    bounding_box: str | None = None
     files: list[str] = []
 
 

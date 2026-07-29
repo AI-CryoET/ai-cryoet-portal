@@ -353,6 +353,12 @@ CATALOG: list[CatalogEntity] = [
             CatalogField("type", "text", "reconstruction.toml [[annotation]]",
                          "e.g. membrane_segmentation, nucleosome_placement, "
                          "nucleosome_orientation, sta_result."),
+            CatalogField("derived_from", "text", "reconstruction.toml [[annotation]]",
+                         "Id of the tomogram in this group the annotation was "
+                         "derived from."),
+            CatalogField("bounding_box", "text", "reconstruction.toml [[annotation]]",
+                         "Id of the annotation file (under Annotations/) holding the "
+                         "bounding box this annotation is associated with."),
             CatalogField("files", "list[text]", "directory",
                          ".star, .mrc, .ome.zarr, .png artifacts sharing this stem."),
             CatalogField("renamed_from", "text", "reconstruction.toml [[annotation]]",

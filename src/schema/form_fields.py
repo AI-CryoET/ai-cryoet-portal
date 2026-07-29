@@ -457,6 +457,11 @@ FORM_FIELDS: list[FormField] = [
     ),
     FormField("acquisition", "annotation", "type", "Type", "text",
               help="e.g. membrane_segmentation | nucleosome_placement | active_zone"),
+    FormField("acquisition", "annotation", "derived_from", "Derived from", "text",
+              help="Id of the tomogram in this group the annotation was derived from."),
+    FormField("acquisition", "annotation", "bounding_box", "Bounding box", "text",
+              help="Id of the annotation file (under Annotations/) holding the "
+                   "bounding box this annotation is associated with."),
     *_derived("acquisition", "annotation", "reconstruction_alignment_id", "files"),
 
     # ---- sample / [sample] ------------------------------------------------
@@ -657,6 +662,11 @@ FORM_FIELDS: list[FormField] = [
     ),
     FormField("reconstruction", "annotation", "type", "Type", "text",
               help="e.g. membrane_segmentation | nucleosome_placement | active_zone"),
+    FormField("reconstruction", "annotation", "derived_from", "Derived from", "text",
+              help="Id of the tomogram in this group the annotation was derived from."),
+    FormField("reconstruction", "annotation", "bounding_box", "Bounding box", "text",
+              help="Id of the annotation file (under Annotations/) holding the "
+                   "bounding box this annotation is associated with."),
     *_derived("reconstruction", "annotation", "reconstruction_alignment_id", "files"),
 ]
 

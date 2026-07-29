@@ -373,10 +373,15 @@ class Annotation(_Base):
     # scan-time directive, not stored (§08c); see Sample.renamed_from.
     renamed_from: str | None = None
     type: str | None = None
-    # No target_tomogram: an annotation belongs to the whole
-    # Reconstructions/{reconstruction_alignment_id}/ group (structural, via
-    # the folder it lives under) — every tomogram in that group represents
-    # the same inferred biological structure.
+    # Optional per-annotation lineage links. An annotation still belongs to the
+    # whole Reconstructions/{reconstruction_alignment_id}/ group (structural, via
+    # the folder it lives under), but may additionally name a specific sibling it
+    # was derived from / relates to.
+    # tomogram_id (in this group) the annotation was derived from.
+    derived_from: str | None = None
+    # annotation_id (another file under Annotations/) holding the bounding box
+    # this annotation is associated with.
+    bounding_box: str | None = None
     # directory scan (artifacts discovered in the annotation folder)
     files: list[str] = Field(default_factory=list)
 

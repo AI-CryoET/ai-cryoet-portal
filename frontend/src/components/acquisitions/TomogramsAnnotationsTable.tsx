@@ -123,6 +123,16 @@ function AnnotationsSubTable(props: {
                   {a.type}
                 </Typography>
               ) : null}
+              {a.derived_from ? (
+                <Typography variant="caption" color="text.secondary" display="block">
+                  derived from: {a.derived_from}
+                </Typography>
+              ) : null}
+              {a.bounding_box ? (
+                <Typography variant="caption" color="text.secondary" display="block">
+                  bounding box: {a.bounding_box}
+                </Typography>
+              ) : null}
             </TableCell>
             <TableCell>{dash}</TableCell>
             <TableCell>{dash}</TableCell>

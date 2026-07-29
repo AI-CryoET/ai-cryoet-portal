@@ -252,6 +252,8 @@ export const SCHEMA: SchemaEntity[] = [
         { field: 'sample_id', type: 'text', source: 'directory', kind: 'derived', notes: 'Parent sample folder name.' },
         { field: 'reconstruction_alignment_id', type: 'text', source: 'directory', kind: 'derived', notes: 'Enclosing Reconstructions/{id}/ folder — the 3D-alignment group this belongs to. Part of the key: two groups may hold the same file stem.' },
         { field: 'type', type: 'text', source: 'reconstruction.toml [[annotation]]', kind: 'authored', notes: 'e.g. membrane_segmentation, nucleosome_placement, nucleosome_orientation, sta_result.' },
+        { field: 'derived_from', type: 'text', source: 'reconstruction.toml [[annotation]]', kind: 'authored', notes: 'Id of the tomogram in this group the annotation was derived from.' },
+        { field: 'bounding_box', type: 'text', source: 'reconstruction.toml [[annotation]]', kind: 'authored', notes: 'Id of the annotation file (under Annotations/) holding the bounding box this annotation is associated with.' },
         { field: 'files', type: 'list[text]', source: 'directory', kind: 'derived', notes: '.star, .mrc, .ome.zarr, .png artifacts sharing this stem.' },
         { field: 'renamed_from', type: 'text', source: 'reconstruction.toml [[annotation]]', kind: 'authored', notes: 'Scan-time-only rename directive; not stored in the DB.' },
             ],

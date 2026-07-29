@@ -134,6 +134,14 @@
           "title": "Type",
           "type": "string"
         },
+        "derived_from": {
+          "title": "Derived From",
+          "type": "string"
+        },
+        "bounding_box": {
+          "title": "Bounding Box",
+          "type": "string"
+        },
         "files": {
           "items": {
             "type": "string"

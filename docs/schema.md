@@ -231,6 +231,8 @@ _one per imaging position_
 | `sample_id` | text | `directory` | derived | Parent sample folder name. |
 | `reconstruction_alignment_id` | text | `directory` | derived | Enclosing Reconstructions/{id}/ folder — the 3D-alignment group this belongs to. Part of the key: two groups may hold the same file stem. |
 | `type` | text | `reconstruction.toml [[annotation]]` | researcher authored | e.g. membrane_segmentation, nucleosome_placement, nucleosome_orientation, sta_result. |
+| `derived_from` | text | `reconstruction.toml [[annotation]]` | researcher authored | Id of the tomogram in this group the annotation was derived from. |
+| `bounding_box` | text | `reconstruction.toml [[annotation]]` | researcher authored | Id of the annotation file (under Annotations/) holding the bounding box this annotation is associated with. |
 | `files` | list[text] | `directory` | derived | .star, .mrc, .ome.zarr, .png artifacts sharing this stem. |
 | `renamed_from` | text | `reconstruction.toml [[annotation]]` | researcher authored | Scan-time-only rename directive; not stored in the DB. |
 
