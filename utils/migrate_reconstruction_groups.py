@@ -156,7 +156,7 @@ def _entity_files(id_dir: Path, allowed_exts: set[str]):
     return by_ext, None
 
 
-def _expand_entity_folder(id_dir: Path, allowed_exts: set[str], dest_dir: Path):
+def _expand_entity_folder(id_dir: Path, allowed_exts: set[str], dest_dir: Path, prepend_folder: bool = False):
     """Return (moves, warnings) flattening one Tomograms/{id}/ or
     Annotations/{id}/ folder into dest_dir, treating the folder's contents as
     separate entities rather than as one entity's artifacts:
@@ -166,6 +166,12 @@ def _expand_entity_folder(id_dir: Path, allowed_exts: set[str], dest_dir: Path):
       - otherwise -> each leaf keeps its own filename, and each nested subfolder
         (e.g. ctf/even/odd) collapses its single leaf to {subfolder.name}{ext}
 
+    prepend_folder (used for Tomograms) preserves each file's own name and
+    prefixes it with the source folder name -> {id_dir.name}_{filename}, so the
+    descriptive recon filename isn't discarded by the collapse. With it set the
+    single-leaf collapse no longer applies (the folder name is already carried
+    in the prefix).
+
     Nested subfolders that don't collapse to one file, and destination-name
     collisions, are warned and skipped rather than silently overwritten.
     """
@@ -173,12 +179,13 @@ def _expand_entity_folder(id_dir: Path, allowed_exts: set[str], dest_dir: Path):
     leaves = [e for e in entries if _is_leaf(e, allowed_exts)]
     subdirs = [e for e in entries if e.is_dir() and not _is_leaf(e, allowed_exts)]
 
-    if len(leaves) == 1 and not subdirs:
+    if not prepend_folder and len(leaves) == 1 and not subdirs:
         return [(leaves[0], dest_dir / f"{id_dir.name}{_ext_of(leaves[0])}")], []
 
+    prefix = f"{id_dir.name}_" if prepend_folder else ""
     moves, warnings = [], []
     for leaf in leaves:
-        moves.append((leaf, dest_dir / leaf.name))
+        moves.append((leaf, dest_dir / f"{prefix}{leaf.name}"))
     for sub in subdirs:
         by_ext, warning = _entity_files(sub, allowed_exts)
         if warning:
@@ -188,7 +195,7 @@ def _expand_entity_folder(id_dir: Path, allowed_exts: set[str], dest_dir: Path):
             warnings.append(f"{sub}: expected one file to collapse to '{sub.name}', found {len(by_ext)}; skipping")
             continue
         (ext, entry), = by_ext.items()
-        moves.append((entry, dest_dir / f"{sub.name}{ext}"))
+        moves.append((entry, dest_dir / f"{prefix}{sub.name}{ext}"))
 
     seen: dict[Path, Path] = {}
     deduped = []
@@ -228,7 +235,7 @@ def _plan_folder_as_group(recon_dir: Path, gid: str):
         id_dir = recon_dir / kind / gid
         if not id_dir.is_dir():
             continue
-        m, w = _expand_entity_folder(id_dir, allowed_exts, group_dir / kind)
+        m, w = _expand_entity_folder(id_dir, allowed_exts, group_dir / kind, prepend_folder=(kind == "Tomograms"))
         moves += m
         warnings += w
     return moves, [group_dir / "Alignment"], warnings
@@ -300,7 +307,10 @@ def plan_reconstructions(recon_dir: Path, group_id: str | None, exclude_ids: fro
 
     A ``{id}/`` folder normally collapses onto its own name: every file in it is
     one entity's artifact, so ``recon.mrc`` + ``recon.ome.zarr`` become
-    ``{id}.mrc`` + ``{id}.ome.zarr``. When two files share an extension that is
+    ``{id}.mrc`` + ``{id}.ome.zarr``. Tomograms are the exception: they keep
+    their descriptive filename prefixed with the folder name, so
+    ``{id}/some_name.mrc`` becomes ``{id}_some_name.mrc`` rather than
+    discarding ``some_name``. When two files share an extension that is
     impossible — one name, two files — so the folder's contents are treated as
     *separate* entities keeping their own filenames, the same policy
     :func:`_plan_folder_as_group` applies. Either way the authored block for
@@ -332,7 +342,7 @@ def plan_reconstructions(recon_dir: Path, group_id: str | None, exclude_ids: fro
                 # folder's name, so they are separate entities. Keep each
                 # filename and let its stem be the id.
                 expanded, expand_warnings = _expand_entity_folder(
-                    id_dir, allowed_exts, group_dir / kind
+                    id_dir, allowed_exts, group_dir / kind, prepend_folder=(kind == "Tomograms")
                 )
                 moves += expanded
                 warnings += expand_warnings
@@ -344,7 +354,10 @@ def plan_reconstructions(recon_dir: Path, group_id: str | None, exclude_ids: fro
                 )
                 continue
             for ext, entry in by_ext.items():
-                dest = group_dir / kind / f"{entity_id}{ext}"
+                # Tomograms keep their descriptive filename, prefixed with the
+                # source folder name; other kinds collapse onto the folder name.
+                stem = f"{entity_id}_{_stem_of(entry)}" if kind == "Tomograms" else entity_id
+                dest = group_dir / kind / f"{stem}{ext}"
                 moves.append((entry, dest))
 
     if group_dir is not None:
