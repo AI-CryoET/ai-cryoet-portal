@@ -1363,7 +1363,7 @@
           "toml"
         ],
         "summary": "Load Toml",
-        "description": "Seed mode: pull-from-API (ADR-0004). Load an existing record's authored\nfields by id from the catalog DB. The data may lag the on-disk file \u2014 the\nrenderer surfaces a staleness warning for this mode.",
+        "description": "Seed mode: pull-from-API (ADR-0004). Load an existing record's authored\nfields for editing.\n\nThe DB reconstruction locates the record's on-disk directory (``path``, null\nif unknown). When the live ``{path}/{kind}.toml`` is readable under the data\nroot, the form seeds from the *file* (fresh content) and its raw text is\nreturned as ``baseline`` with ``source='disk'`` \u2014 the baseline lets a later\n\"save to file share\" refuse to clobber a file that changed since load\n(optimistic concurrency). When the file can't be read, load falls back to the\ncatalog reconstruction (``source='catalog'``, ``baseline=None``) \u2014 this data\nmay lag the on-disk file, so the renderer surfaces a staleness warning.\n``path`` is always the directory to write back to.",
         "operationId": "load_toml_toml__kind__load__record_id__get",
         "parameters": [
           {
