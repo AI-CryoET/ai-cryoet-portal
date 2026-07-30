@@ -241,19 +241,16 @@ export function mdPreviewUrl(filename: string): string {
 }
 
 // Resolve an MD preview from a simulation sample without knowing the exact
-// cached filename. The portal-cache name starts with {data_type}_{sampleId}
-// (e.g. "Slab_12mer_25_0.073") — data_type is the parent dir of the sample
-// path (".../MdSimulation/Slab/12mer_25_0.073" → "Slab"). The backend globs
-// the unpredictable suffix. Returns null if the path can't yield a prefix.
+// cached filename. Simulation sample ids are subdir-namespaced (e.g.
+// "Slab_12mer_25_0.073"), which already matches the portal-cache filename
+// prefix "{SubDir}_{name}"; the backend globs the unpredictable suffix. The
+// `path` gate keeps the previous contract (no path → no preview).
 export function mdPreviewBySampleUrl(
   sampleId: string,
   path?: string | null,
 ): string | null {
   if (!path) return null
-  const segs = path.split('/').filter(Boolean)
-  const dataType = segs[segs.length - 2]
-  if (!dataType) return null
-  return `/api/md-previews/by-prefix/${encodeURIComponent(`${dataType}_${sampleId}`)}`
+  return `/api/md-previews/by-prefix/${encodeURIComponent(sampleId)}`
 }
 
 // On-demand median/middle tilt-series image (rendered fresh at higher

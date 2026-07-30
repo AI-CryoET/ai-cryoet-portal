@@ -79,13 +79,11 @@ spec:
             periodSeconds: 20
           resources:
             requests:
-              cpu: 250m
-              memory: 512Mi
+              cpu: "1"
+              memory: 6Gi
             limits:
-              # Tomogram volumes are read into memory for Neuroglancer launches;
-              # give the API generous headroom relative to the other services.
-              cpu: "2"
-              memory: 4Gi
+              cpu: "4"
+              memory: 24Gi
       terminationGracePeriodSeconds: 10
       volumes:
         - name: catalog-data

@@ -44,7 +44,7 @@ def test_record_and_load_sample_state(session, tmp_path):
     session.commit()
     loaded = state.load_sample_state(session, "sample_a")
     assert f in loaded
-    assert loaded[f] == f.stat().st_mtime
+    assert loaded[f][0] == f.stat().st_mtime
 
 
 def test_is_file_changed(session, tmp_path):
@@ -58,6 +58,35 @@ def test_is_file_changed(session, tmp_path):
     new_mtime = mtime + 10
     os.utime(f, (new_mtime, new_mtime))
     assert state.is_file_changed(s, f) is True
+
+
+def test_is_file_changed_same_mtime_new_content(session, tmp_path):
+    """Content rewritten but mtime reset to the recorded value still counts as
+    changed — the mtime-preserving-sync case that stuck stale scan warnings."""
+    f = tmp_path / "sample.toml"
+    f.write_text("salt_mM = 1\n")
+    mtime = f.stat().st_mtime
+    state.record_file_scan(session, f, "sample_a", mtime)
+    session.commit()
+    s = state.load_sample_state(session, "sample_a")
+    assert state.is_file_changed(s, f) is False
+    # Rewrite content, then reset mtime to the recorded value.
+    f.write_text("")
+    os.utime(f, (mtime, mtime))
+    assert state.is_file_changed(s, f) is True
+
+
+def test_is_file_changed_null_hash_falls_back_to_mtime(session, tmp_path):
+    """A row with no recorded hash (pre-migration / oversized file) gates on
+    mtime alone — an unchanged mtime is treated as unchanged."""
+    f = tmp_path / "x.txt"
+    f.write_text("hello")
+    mtime = f.stat().st_mtime
+    s = {f: (mtime, None)}
+    assert state.is_file_changed(s, f) is False
+    f.write_text("changed but same mtime")
+    os.utime(f, (mtime, mtime))
+    assert state.is_file_changed(s, f) is False  # no hash → can't detect
 
 
 def test_is_file_changed_missing_path(session, tmp_path):
@@ -196,4 +225,4 @@ def test_record_file_scan_updates_existing(session, tmp_path):
     state.record_file_scan(session, f, "sample_a", 200.0)
     session.commit()
     loaded = state.load_sample_state(session, "sample_a")
-    assert loaded[f] == 200.0
+    assert loaded[f][0] == 200.0

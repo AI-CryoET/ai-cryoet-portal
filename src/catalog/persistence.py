@@ -1377,7 +1377,10 @@ def soft_delete_missing_samples(
     floor accounting and the ordinary deletion event are suppressed for them.
 
     Child entities are intentionally NOT touched: soft delete preserves
-    history so a sample can be resurrected by a later upsert.
+    history so a sample can be resurrected by a later upsert. The sample's
+    *outstanding issues* ARE resolved, though — a tombstoned sample no longer
+    emits them, so they must not keep showing as active; a resurrecting upsert
+    re-opens them via ``reconcile_sample_issues``.
     """
     live_rows = (
         session.execute(
@@ -1439,6 +1442,16 @@ def soft_delete_missing_samples(
         update(orm.SampleORM)
         .where(orm.SampleORM.sample_id.in_(to_delete))
         .values(deleted_at=now)
+    )
+    # Resolve the soft-deleted samples' outstanding issues: a tombstoned sample
+    # emits nothing, so its warnings must stop counting as active (the manage
+    # summary/issues list and stats overview all key off resolved_at IS NULL).
+    # A resurrecting upsert re-opens them via reconcile_sample_issues.
+    session.execute(
+        update(orm.IssueORM)
+        .where(orm.IssueORM.sample_id.in_(to_delete))
+        .where(orm.IssueORM.resolved_at.is_(None))
+        .values(resolved_at=now, resolved_run_id=run_id)
     )
     if report is not None:
         report.soft_deleted = getattr(report, "soft_deleted", 0) + len(to_delete)
