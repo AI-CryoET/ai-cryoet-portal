@@ -152,6 +152,7 @@ def view_neuroglancer(
             ])
         if initial_position is not None:
             s.position = initial_position
+        s.dimensions = dimensions # make the dimension global
     return viewer
 
 
@@ -192,3 +193,9 @@ def neuroglancer_url(viewer) -> str:
             parsed._replace(netloc=f"{hostname_override}:{parsed.port}")
         )
     return url
+
+
+def add_json_layer(viewer, name: str, json_data: dict):
+    """Add JSON layer to viewer with a dict of ``json_data`` """
+    with viewer.txn() as s:
+        s.layers.append(name, json_data)
