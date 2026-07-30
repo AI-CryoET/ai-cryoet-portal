@@ -387,7 +387,9 @@ export interface paths {
         put?: never;
         /**
          * Annotation Neuroglancer
-         * @description Launch a Neuroglancer viewer over the annotation's ``.mrc`` volume.
+         * @description Launch a Neuroglancer viewer over the annotation's ``.mrc`` volume, or a
+         *     Neuroglancer view + bounding box overlay if ``.json`` files are in the ``annotation_id``
+         *     dir.
          *
          *     Mirrors the tomogram launch route — same registry, same dev-side hostname
          *     rewrite on the frontend. 422 for an annotation with no ``.mrc`` artifact.
