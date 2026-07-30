@@ -4,6 +4,11 @@ import {
   Autocomplete,
   Box,
   Button,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogContentText,
+  DialogTitle,
   FormControl,
   FormControlLabel,
   FormLabel,
@@ -34,7 +39,7 @@ import {
   SectionDivider,
   StaleValuesWarning,
 } from './authoringBanners'
-import { SaveToShareButton } from './SaveToShareButton'
+import { SaveAndDownloadButtons } from './SaveAndDownloadButtons'
 import {
   buildCompositePayload,
   buildSectionedPayload,
@@ -59,7 +64,7 @@ import {
   type SubmitResult,
   type TomlFieldError,
 } from '~/utils/authoring'
-import { getFileglancerClient, toFileglancerTarget } from '~/utils/fileglancer'
+import { getFileglancerClient } from '~/utils/fileglancer'
 
 type Props = {
   form: FormKind
@@ -360,7 +365,6 @@ function SectionedAuthoringForm({ form, initialId, initialSampleId }: Props) {
   }
 
   const dirPath = recordPath
-  const canSaveToShare = !!dirPath && toFileglancerTarget(dirPath) !== null
 
   // Loaded from the portal → concrete path with the known id; new file →
   // template showing the id the user must assign as the folder name.
@@ -457,24 +461,17 @@ function SectionedAuthoringForm({ form, initialId, initialSampleId }: Props) {
           />
         )}
 
-        <Stack direction="row" spacing={2} alignItems="center" flexWrap="wrap">
-          {canSaveToShare && dirPath && (
-            <SaveToShareButton
-              dirPath={dirPath}
-              filename={meta.filename}
-              baseline={baseline}
-              validate={validate}
-              onInvalid={(errs) => {
-                setDone(false)
-                applyInvalid(errs)
-              }}
-              onValid={clearErrors}
-            />
-          )}
-          <Button type="submit" variant={canSaveToShare ? 'outlined' : 'contained'}>
-            Download {meta.filename}
-          </Button>
-        </Stack>
+        <SaveAndDownloadButtons
+          dirPath={dirPath}
+          filename={meta.filename}
+          baseline={baseline}
+          validate={validate}
+          onInvalid={(errs) => {
+            setDone(false)
+            applyInvalid(errs)
+          }}
+          onValid={clearErrors}
+        />
 
         {done && <Alert severity="success">Downloaded {meta.filename}.</Alert>}
       </Stack>
@@ -554,6 +551,41 @@ function ScalarSection({
   )
 }
 
+// Gate a destructive action behind a confirm dialog. A consumer renders the
+// returned `dialog` once and calls `confirm(message, action)` from its delete
+// handler; `action` runs only if the user confirms. One pending action at a
+// time is enough — the dialog is modal.
+function useConfirmDelete() {
+  const [pending, setPending] = React.useState<{
+    message: string
+    onConfirm: () => void
+  } | null>(null)
+  const confirm = (message: string, onConfirm: () => void) =>
+    setPending({ message, onConfirm })
+  const dialog = (
+    <Dialog open={pending !== null} onClose={() => setPending(null)}>
+      <DialogTitle>Delete?</DialogTitle>
+      <DialogContent>
+        <DialogContentText>{pending?.message}</DialogContentText>
+      </DialogContent>
+      <DialogActions>
+        <Button onClick={() => setPending(null)}>Cancel</Button>
+        <Button
+          color="error"
+          variant="contained"
+          onClick={() => {
+            pending?.onConfirm()
+            setPending(null)
+          }}
+        >
+          Delete
+        </Button>
+      </DialogActions>
+    </Dialog>
+  )
+  return { confirm, dialog }
+}
+
 // Repeatable [[table]] (tilt_series / tomograms / annotations): add/remove
 // entries. Cross-ref fields offer the section literals plus in-form ids from
 // the field's namespace. Loaded entries are read-only; only session-added
@@ -578,6 +610,7 @@ function RepeatableSection({
   onChange: (index: number, field: string, v: string) => void
 }) {
   const idFieldName = fields.find((f) => f.required)?.field
+  const { confirm, dialog } = useConfirmDelete()
   return (
     <Box>
       <SectionDivider />
@@ -602,7 +635,12 @@ function RepeatableSection({
                 {!locked && (
                   <IconButton
                     aria-label={`Remove ${section.title} entry`}
-                    onClick={() => onRemove(i)}
+                    onClick={() =>
+                      confirm(
+                        `Delete this ${section.title} entry?`,
+                        () => onRemove(i),
+                      )
+                    }
                     size="small"
                   >
                     <DeleteOutlineIcon fontSize="small" />
@@ -633,6 +671,7 @@ function RepeatableSection({
       <Button onClick={onAdd} size="small" sx={{ mt: 1 }}>
         Add {section.title.toLowerCase()}
       </Button>
+      {dialog}
     </Box>
   )
 }
@@ -776,9 +815,16 @@ function CustomFields({
   // Human-readable section name, used only in the guidance text below.
   sectionName: string
 }) {
+  const { confirm, dialog } = useConfirmDelete()
   const update = (i: number, patch: Partial<CustomField>) =>
     onChange(fields.map((c, j) => (j === i ? { ...c, ...patch } : c)))
   const remove = (i: number) => onChange(fields.filter((_, j) => j !== i))
+  // Skip the prompt for an untouched (empty) row — nothing to lose.
+  const removeField = (i: number) => {
+    const c = fields[i]
+    if (c.key || c.value) confirm('Delete this custom field?', () => remove(i))
+    else remove(i)
+  }
   const add = () =>
     onChange([...fields, { key: '', value: '', type: 'string' }])
 
@@ -836,7 +882,7 @@ function CustomFields({
             </TextField>
             <IconButton
               aria-label="Remove custom field"
-              onClick={() => remove(i)}
+              onClick={() => removeField(i)}
               size="small"
             >
               <DeleteOutlineIcon fontSize="small" />
@@ -847,6 +893,7 @@ function CustomFields({
       <Button onClick={add} size="small" >
         Add custom field
       </Button>
+      {dialog}
     </Box>
   )
 }
@@ -1167,6 +1214,7 @@ function CompositeAuthoringForm({
       ...prev,
       [section]: (prev[section] as SectionEntry[]).filter((_, i) => i !== idx),
     }))
+  const { confirm, dialog: confirmDialog } = useConfirmDelete()
 
   // Build + validate, shared by Download (handleSubmit) and Save
   // (SaveToShareButton) so both post the same payload. The thin client-side id
@@ -1213,7 +1261,6 @@ function CompositeAuthoringForm({
   }
 
   const dirPath = recordPath
-  const canSaveToShare = !!dirPath && toFileglancerTarget(dirPath) !== null
 
   const fieldKey = (section: string, fieldName: string, idx?: number) =>
     idx === undefined ? `${section}.${fieldName}` : `${section}.${idx}.${fieldName}`
@@ -1307,7 +1354,11 @@ function CompositeAuthoringForm({
                         />
                       </Stack>
                       <Button
-                        onClick={() => removeEntry(s.section, idx)}
+                        onClick={() =>
+                          confirm(`Delete this ${s.title} entry?`, () =>
+                            removeEntry(s.section, idx),
+                          )
+                        }
                         size="small"
                         color="error"
                         startIcon={<DeleteOutlineIcon />}
@@ -1356,27 +1407,21 @@ function CompositeAuthoringForm({
           }
         />
 
-        <Stack direction="row" spacing={2} alignItems="center" flexWrap="wrap">
-          {canSaveToShare && dirPath && (
-            <SaveToShareButton
-              dirPath={dirPath}
-              filename={meta.filename}
-              baseline={baseline}
-              validate={validate}
-              onInvalid={(errs) => {
-                setDone(false)
-                applyInvalid(errs)
-              }}
-              onValid={clearErrors}
-            />
-          )}
-          <Button type="submit" variant={canSaveToShare ? 'outlined' : 'contained'}>
-            Download {meta.filename}
-          </Button>
-        </Stack>
+        <SaveAndDownloadButtons
+          dirPath={dirPath}
+          filename={meta.filename}
+          baseline={baseline}
+          validate={validate}
+          onInvalid={(errs) => {
+            setDone(false)
+            applyInvalid(errs)
+          }}
+          onValid={clearErrors}
+        />
 
         {done && <Alert severity="success">Downloaded {meta.filename}.</Alert>}
       </Stack>
+      {confirmDialog}
     </Box>
   )
 }
