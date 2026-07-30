@@ -1,10 +1,11 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   buildPayload,
   buildSectionedPayload,
   hydrate,
   hydrateSections,
   inferSectionedDataSource,
+  loadToml,
   type SectionState,
   type SectionsState,
 } from '~/utils/authoring'
@@ -73,15 +74,25 @@ describe('buildSectionedPayload (acquisition)', () => {
     }
     // Experimental: md_source omitted even though it has a value.
     expect(
-      buildSectionedPayload(acqSections, acqFields, state, 'experimental'),
+      buildSectionedPayload(acqSections, acqFields, state, 'experimental', 'acquisition'),
     ).toEqual({
       acquisition: { acquisition_id: 'Pos1', resolution: 3.4 },
       tilt_series: [{ tilt_series_id: 'ts_raw', derived_from: 'Frames' }],
     })
     // Simulation: md_source included.
     expect(
-      buildSectionedPayload(acqSections, acqFields, state, 'simulation').md_source,
+      buildSectionedPayload(acqSections, acqFields, state, 'simulation', 'acquisition')
+        .md_source,
     ).toEqual({ md_run_id: 'run01' })
+  })
+
+  it('keeps the required top-level section even when empty', () => {
+    // An unfilled acquisition.toml loads with an empty [acquisition]; the backend
+    // still requires that key ({} validates, but omitting it 422s with
+    // "acquisition required"), so the payload must include it rather than drop it.
+    expect(
+      buildSectionedPayload(acqSections, acqFields, {}, 'experimental', 'acquisition'),
+    ).toEqual({ acquisition: {} })
   })
 
   it('coerces booleans client-side; selects pass through (backend coerces)', () => {
@@ -98,6 +109,7 @@ describe('buildSectionedPayload (acquisition)', () => {
       acqFields,
       state,
       'experimental',
+      'acquisition',
     ).acquisition as Record<string, unknown>
     expect(out.phase_plate).toBe(true)
     // Quality is a string-valued select; pydantic coerces '4' → int 4 + enforces 1–5.
@@ -160,5 +172,37 @@ describe('hydrate', () => {
       { key: 'flag', value: 'false', type: 'boolean' },
     ])
     expect(passthrough).toEqual({ tags: ['a', 'b'] })
+  })
+})
+
+describe('loadToml source + baseline', () => {
+  afterEach(() => vi.restoreAllMocks())
+
+  function mockLoad(body: unknown) {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify(body), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    )
+  }
+
+  it('threads through source + baseline from a disk read', async () => {
+    const baseline = 'seed = 7\n'
+    mockLoad({ fields: { seed: 7 }, path: '/data/x', source: 'disk', baseline })
+    const r = await loadToml('md_run', 'run01')
+    expect(r).toEqual({
+      fields: { seed: 7 },
+      path: '/data/x',
+      source: 'disk',
+      baseline,
+    })
+  })
+
+  it('defaults source to catalog and baseline to null when omitted', async () => {
+    mockLoad({ fields: { seed: 7 }, path: null })
+    const r = await loadToml('md_run', 'run01')
+    expect(r.source).toBe('catalog')
+    expect(r.baseline).toBeNull()
   })
 })

@@ -148,19 +148,42 @@ export async function parseToml(
 
 // Seed mode: pull-from-API. Load an existing record's authored fields by id.
 // Acquisition identity is composite, so a sampleId is passed through as a query
-// param (mirrors the acquisition detail route's sampleId search param).
+// param (mirrors the acquisition detail route's sampleId search param). `path`
+// is the on-disk directory holding the record's TOML (null if unknown) — used
+// by the "save to file share" action to know where to write it back.
+//
+// `source` records where the seed came from: 'disk' means the backend read the
+// live on-disk file (fields are fresh and `baseline` is its raw text, used for
+// the optimistic-concurrency byte-compare on save); 'catalog' means it fell back
+// to the DB reconstruction (may lag the file → the renderer warns; no baseline).
 export async function loadToml(
   form: FormKind,
   id: string,
   sampleId?: string,
-): Promise<Record<string, unknown>> {
+): Promise<{
+  fields: Record<string, unknown>
+  path: string | null
+  source: 'disk' | 'catalog'
+  baseline: string | null
+}> {
   const qs = sampleId ? `?sample_id=${encodeURIComponent(sampleId)}` : ''
   const res = await fetch(
     `/api/toml/${form}/load/${encodeURIComponent(id)}${qs}`,
   )
   if (res.status === 404) throw new Error(`No ${form} found with id "${id}"`)
   if (!res.ok) throw new Error(`load failed: ${res.status}`)
-  return ((await res.json()) as { fields: Record<string, unknown> }).fields
+  const json = (await res.json()) as {
+    fields: Record<string, unknown>
+    path?: string | null
+    source?: 'disk' | 'catalog'
+    baseline?: string | null
+  }
+  return {
+    fields: json.fields,
+    path: json.path ?? null,
+    source: json.source ?? 'catalog',
+    baseline: json.baseline ?? null,
+  }
 }
 
 export async function postToml(
@@ -310,6 +333,7 @@ export function buildSectionedPayload(
   fieldsFor: (section: string) => FormField[],
   state: SectionsState,
   dataSource: DataSource,
+  form: FormKind,
 ): Record<string, unknown> {
   const out: Record<string, unknown> = {}
   for (const s of sections) {
@@ -325,7 +349,11 @@ export function buildSectionedPayload(
       const st = (state[s.section] as SectionState | undefined) ?? emptySection()
       const obj = buildPayload(fields, st.values, st.customFields, st.passthrough)
       if (s.root) Object.assign(out, obj)
-      else if (Object.keys(obj).length) out[s.section] = obj
+      // The form's self-named section is its required top-level table in the
+      // backend model (e.g. acquisition.toml's [acquisition]); emit it even when
+      // empty ({} validates) so an unfilled record doesn't 422 with "acquisition
+      // required". Optional sub-sections are still dropped when empty.
+      else if (s.section === form || Object.keys(obj).length) out[s.section] = obj
     }
   }
   return out

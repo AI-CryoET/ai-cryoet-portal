@@ -43,6 +43,7 @@ def seeded_client(tmp_path):
                 project=Project.chromatin,
                 lab_name=None,
                 description="a sample",
+                path="/data/samp1",
             )
         )
         s.add(orm.ChromatinORM(sample_id="samp1", buffer="2mM MgCl2", linker_pattern=[20, 50]))
@@ -175,13 +176,128 @@ def test_section_extra_preserved(client):
 def test_load_sample_by_id_returns_nested_fields(seeded_client):
     resp = seeded_client.get("/toml/sample/load/samp1")
     assert resp.status_code == 200
-    fields = resp.json()["fields"]
+    body = resp.json()
+    fields = body["fields"]
     assert fields["sample"]["project"] == "chromatin"
     assert fields["sample"]["data_source"] == "experimental"  # for arm lock
     assert fields["sample"]["sample_id"] == "samp1"  # placement hint
     assert fields["chromatin"] == {"buffer": "2mM MgCl2", "linker_pattern": [20, 50]}
     assert [lbl["label_target"] for lbl in fields["label"]] == ["AMPAR", "NMDAR"]
+    assert body["path"] == "/data/samp1"
+
+
+def test_load_sample_path_is_null_when_unset(seeded_client):
+    from sqlalchemy.orm import sessionmaker
+
+    Session = sessionmaker(
+        bind=seeded_client.app.state.engine, future=True, expire_on_commit=False
+    )
+    s = Session()
+    try:
+        s.add(
+            orm.SampleORM(
+                sample_id="samp_nopath",
+                data_source=DataSource.experimental,
+                project=Project.chromatin,
+            )
+        )
+        s.commit()
+    finally:
+        s.close()
+
+    resp = seeded_client.get("/toml/sample/load/samp_nopath")
+    assert resp.status_code == 200
+    assert resp.json()["path"] is None
 
 
 def test_load_unknown_sample_returns_404(seeded_client):
     assert seeded_client.get("/toml/sample/load/nope").status_code == 404
+
+
+# ── Fresh on-disk read at load + OCC baseline (source disk vs catalog) ───────
+
+
+def test_load_sample_reads_live_disk_file(seeded_client, tmp_path):
+    # When the live sample.toml is readable under the data root, load returns its
+    # parsed fields + exact text as baseline (source='disk'), not the DB row —
+    # the file's description wins over the catalog's.
+    from sqlalchemy.orm import sessionmaker
+
+    seeded_client.app.state.data_root_resolved = tmp_path.resolve()
+    sample_dir = tmp_path / "Experimental" / "S99"
+    sample_dir.mkdir(parents=True)
+    text = '[sample]\nproject = "chromatin"\ndescription = "from_disk"\n'
+    (sample_dir / "sample.toml").write_text(text)
+
+    Session = sessionmaker(
+        bind=seeded_client.app.state.engine, future=True, expire_on_commit=False
+    )
+    s = Session()
+    try:
+        s.add(
+            orm.SampleORM(
+                sample_id="S99",
+                data_source=DataSource.experimental,
+                project=Project.chromatin,
+                description="from_db",
+                path=str(sample_dir),
+            )
+        )
+        s.commit()
+    finally:
+        s.close()
+
+    body = seeded_client.get("/toml/sample/load/S99").json()
+    assert body["source"] == "disk"
+    assert body["baseline"] == text
+    # Fields come from the FILE (description from_disk), not the DB row (from_db).
+    assert body["fields"]["sample"]["description"] == "from_disk"
+    assert body["fields"]["sample"]["project"] == "chromatin"
+    assert body["path"] == str(sample_dir)
+
+
+def test_load_sample_baseline_preserves_crlf(seeded_client, tmp_path):
+    # The baseline must be the file's raw bytes decoded as UTF-8 (no CRLF->LF
+    # translation), so it matches Fileglancer's Response.text() byte-for-byte on
+    # save and the OCC byte-compare doesn't false-positive for CRLF files.
+    from sqlalchemy.orm import sessionmaker
+
+    seeded_client.app.state.data_root_resolved = tmp_path.resolve()
+    sample_dir = tmp_path / "Experimental" / "S_CRLF"
+    sample_dir.mkdir(parents=True)
+    raw = b'[sample]\r\nproject = "chromatin"\r\ndescription = "crlf"\r\n'
+    (sample_dir / "sample.toml").write_bytes(raw)
+
+    Session = sessionmaker(
+        bind=seeded_client.app.state.engine, future=True, expire_on_commit=False
+    )
+    s = Session()
+    try:
+        s.add(
+            orm.SampleORM(
+                sample_id="S_CRLF",
+                data_source=DataSource.experimental,
+                project=Project.chromatin,
+                description="from_db",
+                path=str(sample_dir),
+            )
+        )
+        s.commit()
+    finally:
+        s.close()
+
+    body = seeded_client.get("/toml/sample/load/S_CRLF").json()
+    assert body["source"] == "disk"
+    # Exact bytes preserved — CRLF intact, no newline translation.
+    assert body["baseline"] == raw.decode("utf-8")
+    assert "\r\n" in body["baseline"]
+
+
+def test_load_sample_falls_back_to_catalog_without_data_root(seeded_client):
+    # No data_root_resolved configured → the guarded disk read raises and load
+    # falls back to the DB reconstruction, flagged source='catalog', no baseline.
+    body = seeded_client.get("/toml/sample/load/samp1").json()
+    assert body["source"] == "catalog"
+    assert body["baseline"] is None
+    assert body["fields"]["sample"]["project"] == "chromatin"
+    assert body["fields"]["chromatin"] == {"buffer": "2mM MgCl2", "linker_pattern": [20, 50]}

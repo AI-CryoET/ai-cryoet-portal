@@ -4,6 +4,11 @@ import {
   Autocomplete,
   Box,
   Button,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogContentText,
+  DialogTitle,
   FormControl,
   FormControlLabel,
   FormLabel,
@@ -34,6 +39,7 @@ import {
   SectionDivider,
   StaleValuesWarning,
 } from './authoringBanners'
+import { SaveAndDownloadButtons } from './SaveAndDownloadButtons'
 import {
   buildCompositePayload,
   buildSectionedPayload,
@@ -55,7 +61,10 @@ import {
   type SectionEntry,
   type SectionsState,
   type SectionState,
+  type SubmitResult,
+  type TomlFieldError,
 } from '~/utils/authoring'
+import { getFileglancerClient } from '~/utils/fileglancer'
 
 type Props = {
   form: FormKind
@@ -75,6 +84,15 @@ function isProjectGated(form: FormKind): boolean {
 // Dispatch to the renderer matching the form's shape. Both consume the same
 // authored-field registry (ADR-0002); they differ only in section semantics.
 export function AuthoringForm({ form, initialId, initialSampleId }: Props) {
+  // Pre-warm the Fileglancer session on mount (hidden iframe, no popup) so a
+  // logged-in user's "Save to file share" is popup-free. Runs once for whichever
+  // renderer is dispatched below; failures are ignored (Save's connect() retries
+  // from a user gesture).
+  React.useEffect(() => {
+    getFileglancerClient()
+      .connectSilently()
+      .catch(() => {})
+  }, [])
   return isProjectGated(form) ? (
     <CompositeAuthoringForm form={form} autoLoadId={initialId} />
   ) : (
@@ -140,12 +158,23 @@ function SectionedAuthoringForm({ form, initialId, initialSampleId }: Props) {
   const [errors, setErrors] = React.useState<Record<string, string>>({})
   const [recordErrors, setRecordErrors] = React.useState<string[]>([])
   const [done, setDone] = React.useState(false)
-  // Set on pull-from-API load: data may lag the on-disk file (ADR-0004).
+  // Set on pull-from-API load: data may lag the on-disk file (ADR-0004). Drives
+  // apiLoaded/isId-disable/placement/arm-lock — kept overloaded on `fromApi`.
   const [stale, setStale] = React.useState(false)
+  // Set only when a portal load fell back to the catalog DB (source='catalog');
+  // gates the "may lag the on-disk file" warning, which is moot for a disk read.
+  const [catalogFallback, setCatalogFallback] = React.useState(false)
+  // Raw text of the on-disk file at load (optimistic-concurrency baseline);
+  // non-null only for a disk-sourced portal load. Threaded into Save.
+  const [baseline, setBaseline] = React.useState<string | null>(null)
   // True whenever an existing record is loaded (disk upload OR portal); drives
   // the "not saved to disk" banner. Cleared to empty resets it.
   const [loaded, setLoaded] = React.useState(false)
   const [seedError, setSeedError] = React.useState<string | undefined>()
+  // On-disk directory of a portal-loaded record (ADR-0004 `path`); drives the
+  // "Save to file share" destination. Null for upload/parse/clear (no known
+  // location) — Save is hidden then.
+  const [recordPath, setRecordPath] = React.useState<string | null>(null)
 
   // In-form id namespaces feeding cross-ref dropdowns: each section's
   // required-id field contributes to its namespace ("tomogram" pools raw +
@@ -167,8 +196,16 @@ function SectionedAuthoringForm({ form, initialId, initialSampleId }: Props) {
     return ns
   }, [sections, sectionFields, state])
 
-  // Replace form state from a seeded source (upload / API load).
-  const seed = (seeded: Record<string, unknown>, fromApi: boolean) => {
+  // Replace form state from a seeded source (upload / API load). A portal load
+  // (fromApi) carries the record's on-disk directory so Save can target it;
+  // upload/parse/clear have no known location.
+  const seed = (
+    seeded: Record<string, unknown>,
+    fromApi: boolean,
+    path: string | null = null,
+    source?: 'disk' | 'catalog',
+    baseline: string | null = null,
+  ) => {
     setState(hydrateSections(sections, sectionFields, seeded))
     setDataSource(inferSectionedDataSource(sections, seeded))
     setErrors({})
@@ -176,14 +213,20 @@ function SectionedAuthoringForm({ form, initialId, initialSampleId }: Props) {
     setDone(false)
     setSeedError(undefined)
     setStale(fromApi)
+    // Only a catalog-sourced load can lag the file; a disk read is fresh.
+    setCatalogFallback(fromApi && source === 'catalog')
+    setBaseline(fromApi ? baseline : null)
     setLoaded(Object.keys(seeded).length > 0)
+    setRecordPath(fromApi ? path : null)
   }
 
   // Auto-load once on mount when the route supplies an id (edit links).
   React.useEffect(() => {
     if (!initialId) return
     loadToml(form, initialId, initialSampleId)
-      .then((seeded) => seed(seeded, true))
+      .then((result) =>
+        seed(result.fields, true, result.path, result.source, result.baseline),
+      )
       .catch((err) =>
         setSeedError(err instanceof Error ? err.message : String(err)),
       )
@@ -214,7 +257,8 @@ function SectionedAuthoringForm({ form, initialId, initialSampleId }: Props) {
     const id = loadId.trim()
     if (!id) return
     try {
-      seed(await loadToml(form, id, sampleId.trim() || undefined), true)
+      const result = await loadToml(form, id, sampleId.trim() || undefined)
+      seed(result.fields, true, result.path, result.source, result.baseline)
     } catch (err) {
       setSeedError(toErrorMessage(err))
     }
@@ -277,14 +321,16 @@ function SectionedAuthoringForm({ form, initialId, initialSampleId }: Props) {
       ]?.trim()) ||
     ''
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault()
-    setDone(false)
+  // Build + validate via the backend (backend-authoritative, ADR-0001). Shared
+  // by Download (handleSubmit) and Save (SaveToShareButton) so both post the
+  // same payload and receive identical bytes.
+  async function validate(): Promise<SubmitResult> {
     const payload = buildSectionedPayload(
       sections,
       sectionFields,
       state,
       dataSource,
+      form,
     )
     // The directory-identity id is no longer a form field (it IS the folder
     // name), but a flat form's model still requires it (md_run). Inject a
@@ -292,19 +338,33 @@ function SectionedAuthoringForm({ form, initialId, initialSampleId }: Props) {
     if (idField && idSection?.root && payload[idField.field] === undefined) {
       payload[idField.field] = 'placeholder'
     }
-    const result = await postToml(form, payload, meta.filename)
-    if (result.status === 'invalid') {
-      setErrors(errorsByField(result.errors))
-      setRecordErrors(
-        result.errors.filter((er) => er.loc.length === 0).map((er) => er.msg),
-      )
-      return
-    }
+    return postToml(form, payload, meta.filename)
+  }
+
+  // Surface a 422 exactly as before: inline field errors + a record-level list.
+  const applyInvalid = (errs: TomlFieldError[]) => {
+    setErrors(errorsByField(errs))
+    setRecordErrors(errs.filter((er) => er.loc.length === 0).map((er) => er.msg))
+  }
+  const clearErrors = () => {
     setErrors({})
     setRecordErrors([])
+  }
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    setDone(false)
+    const result = await validate()
+    if (result.status === 'invalid') {
+      applyInvalid(result.errors)
+      return
+    }
+    clearErrors()
     triggerDownload(result.blob, result.filename)
     setDone(true)
   }
+
+  const dirPath = recordPath
 
   // Loaded from the portal → concrete path with the known id; new file →
   // template showing the id the user must assign as the folder name.
@@ -347,7 +407,7 @@ function SectionedAuthoringForm({ form, initialId, initialSampleId }: Props) {
         )}
 
         {seedError && <Alert severity="error">{seedError}</Alert>}
-        {stale && <StaleValuesWarning />}
+        {catalogFallback && <StaleValuesWarning />}
 
         {sections.map((s) => {
           if (s.requiresDataSource && s.requiresDataSource !== dataSource)
@@ -401,11 +461,17 @@ function SectionedAuthoringForm({ form, initialId, initialSampleId }: Props) {
           />
         )}
 
-        <Box>
-          <Button type="submit" variant="contained">
-            Download {meta.filename}
-          </Button>
-        </Box>
+        <SaveAndDownloadButtons
+          dirPath={dirPath}
+          filename={meta.filename}
+          baseline={baseline}
+          validate={validate}
+          onInvalid={(errs) => {
+            setDone(false)
+            applyInvalid(errs)
+          }}
+          onValid={clearErrors}
+        />
 
         {done && <Alert severity="success">Downloaded {meta.filename}.</Alert>}
       </Stack>
@@ -485,6 +551,41 @@ function ScalarSection({
   )
 }
 
+// Gate a destructive action behind a confirm dialog. A consumer renders the
+// returned `dialog` once and calls `confirm(message, action)` from its delete
+// handler; `action` runs only if the user confirms. One pending action at a
+// time is enough — the dialog is modal.
+function useConfirmDelete() {
+  const [pending, setPending] = React.useState<{
+    message: string
+    onConfirm: () => void
+  } | null>(null)
+  const confirm = (message: string, onConfirm: () => void) =>
+    setPending({ message, onConfirm })
+  const dialog = (
+    <Dialog open={pending !== null} onClose={() => setPending(null)}>
+      <DialogTitle>Delete?</DialogTitle>
+      <DialogContent>
+        <DialogContentText>{pending?.message}</DialogContentText>
+      </DialogContent>
+      <DialogActions>
+        <Button onClick={() => setPending(null)}>Cancel</Button>
+        <Button
+          color="error"
+          variant="contained"
+          onClick={() => {
+            pending?.onConfirm()
+            setPending(null)
+          }}
+        >
+          Delete
+        </Button>
+      </DialogActions>
+    </Dialog>
+  )
+  return { confirm, dialog }
+}
+
 // Repeatable [[table]] (tilt_series / tomograms / annotations): add/remove
 // entries. Cross-ref fields offer the section literals plus in-form ids from
 // the field's namespace. Loaded entries are read-only; only session-added
@@ -509,6 +610,7 @@ function RepeatableSection({
   onChange: (index: number, field: string, v: string) => void
 }) {
   const idFieldName = fields.find((f) => f.required)?.field
+  const { confirm, dialog } = useConfirmDelete()
   return (
     <Box>
       <SectionDivider />
@@ -533,7 +635,12 @@ function RepeatableSection({
                 {!locked && (
                   <IconButton
                     aria-label={`Remove ${section.title} entry`}
-                    onClick={() => onRemove(i)}
+                    onClick={() =>
+                      confirm(
+                        `Delete this ${section.title} entry?`,
+                        () => onRemove(i),
+                      )
+                    }
                     size="small"
                   >
                     <DeleteOutlineIcon fontSize="small" />
@@ -564,6 +671,7 @@ function RepeatableSection({
       <Button onClick={onAdd} size="small" sx={{ mt: 1 }}>
         Add {section.title.toLowerCase()}
       </Button>
+      {dialog}
     </Box>
   )
 }
@@ -707,9 +815,16 @@ function CustomFields({
   // Human-readable section name, used only in the guidance text below.
   sectionName: string
 }) {
+  const { confirm, dialog } = useConfirmDelete()
   const update = (i: number, patch: Partial<CustomField>) =>
     onChange(fields.map((c, j) => (j === i ? { ...c, ...patch } : c)))
   const remove = (i: number) => onChange(fields.filter((_, j) => j !== i))
+  // Skip the prompt for an untouched (empty) row — nothing to lose.
+  const removeField = (i: number) => {
+    const c = fields[i]
+    if (c.key || c.value) confirm('Delete this custom field?', () => remove(i))
+    else remove(i)
+  }
   const add = () =>
     onChange([...fields, { key: '', value: '', type: 'string' }])
 
@@ -767,7 +882,7 @@ function CustomFields({
             </TextField>
             <IconButton
               aria-label="Remove custom field"
-              onClick={() => remove(i)}
+              onClick={() => removeField(i)}
               size="small"
             >
               <DeleteOutlineIcon fontSize="small" />
@@ -778,6 +893,7 @@ function CustomFields({
       <Button onClick={add} size="small" >
         Add custom field
       </Button>
+      {dialog}
     </Box>
   )
 }
@@ -954,12 +1070,21 @@ function CompositeAuthoringForm({
   const [generalError, setGeneralError] = React.useState<string | undefined>()
   const [done, setDone] = React.useState(false)
   const [stale, setStale] = React.useState(false)
+  // Set only when a portal load fell back to the catalog DB (source='catalog');
+  // gates the "may lag the on-disk file" warning, which is moot for a disk read.
+  const [catalogFallback, setCatalogFallback] = React.useState(false)
+  // Raw text of the on-disk file at load (optimistic-concurrency baseline);
+  // non-null only for a disk-sourced portal load. Threaded into Save.
+  const [baseline, setBaseline] = React.useState<string | null>(null)
   // True whenever an existing record is loaded (disk upload OR portal); drives
   // the "not saved to disk" banner. Cleared to empty resets it.
   const [loaded, setLoaded] = React.useState(false)
   const [conflict, setConflict] = React.useState(false)
   const [seedError, setSeedError] = React.useState<string | undefined>()
   const [loadId, setLoadId] = React.useState(autoLoadId ?? '')
+  // On-disk directory of a portal-loaded record (ADR-0004 `path`); drives the
+  // "Save to file share" destination. Null for upload/clear (Save hidden then).
+  const [recordPath, setRecordPath] = React.useState<string | null>(null)
 
   const sampleEntry = state['sample'] as SectionEntry
   const project = sampleEntry.values['project'] ?? ''
@@ -968,8 +1093,15 @@ function CompositeAuthoringForm({
   const armDisabled = Boolean(requiredArm) || armLocked
   const idValue = (sampleEntry.values['sample_id'] ?? '').trim()
 
-  // Replace form state from a seeded source (upload / API load).
-  const seed = (seeded: Record<string, unknown>, fromApi: boolean) => {
+  // Replace form state from a seeded source (upload / API load). A portal load
+  // (fromApi) carries the record's on-disk directory so Save can target it.
+  const seed = (
+    seeded: Record<string, unknown>,
+    fromApi: boolean,
+    path: string | null = null,
+    source?: 'disk' | 'catalog',
+    baseline: string | null = null,
+  ) => {
     const h = hydrateComposite(form, seeded)
     setState(h.state)
     setPassthrough(h.passthrough)
@@ -978,6 +1110,10 @@ function CompositeAuthoringForm({
     setDone(false)
     setSeedError(undefined)
     setLoaded(Object.keys(seeded).length > 0)
+    setRecordPath(fromApi ? path : null)
+    // Only a catalog-sourced load can lag the file; a disk read is fresh.
+    setCatalogFallback(fromApi && source === 'catalog')
+    setBaseline(fromApi ? baseline : null)
     if (fromApi) {
       // API-seeded: locked from the record + staleness warning (ADR-0004).
       setStale(true)
@@ -1017,7 +1153,8 @@ function CompositeAuthoringForm({
     const trimmed = id.trim()
     if (!trimmed) return
     try {
-      seed(await loadToml(form, trimmed), true)
+      const result = await loadToml(form, trimmed)
+      seed(result.fields, true, result.path, result.source, result.baseline)
     } catch (err) {
       setSeedError(toErrorMessage(err))
     }
@@ -1077,29 +1214,53 @@ function CompositeAuthoringForm({
       ...prev,
       [section]: (prev[section] as SectionEntry[]).filter((_, i) => i !== idx),
     }))
+  const { confirm, dialog: confirmDialog } = useConfirmDelete()
+
+  // Build + validate, shared by Download (handleSubmit) and Save
+  // (SaveToShareButton) so both post the same payload. The thin client-side id
+  // gate (full IdStr rules run on the backend) is modelled as a synthetic 422 so
+  // it flows through the same invalid-handling path.
+  async function validate(): Promise<SubmitResult> {
+    if (idValue && !ID_PATTERN.test(idValue)) {
+      return {
+        status: 'invalid',
+        errors: [
+          {
+            loc: ['sample', 'sample_id'],
+            msg: 'Invalid id: letters, digits, . _ - only',
+            type: 'value_error',
+          },
+        ],
+      }
+    }
+    const payload = buildCompositePayload(form, state, passthrough)
+    return postToml(form, payload, meta.filename)
+  }
+
+  const applyInvalid = (errs: TomlFieldError[]) => {
+    const byPath = errorsByPath(errs)
+    setErrors(byPath)
+    setGeneralError(byPath[''])
+  }
+  const clearErrors = () => {
+    setErrors({})
+    setGeneralError(undefined)
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     setDone(false)
-    // Thin id check (full IdStr rules run on the backend); id is optional here.
-    if (idValue && !ID_PATTERN.test(idValue)) {
-      setErrors({ 'sample.sample_id': 'Invalid id: letters, digits, . _ - only' })
-      setGeneralError(undefined)
-      return
-    }
-    const payload = buildCompositePayload(form, state, passthrough)
-    const result = await postToml(form, payload, meta.filename)
+    const result = await validate()
     if (result.status === 'invalid') {
-      const byPath = errorsByPath(result.errors)
-      setErrors(byPath)
-      setGeneralError(byPath[''])
+      applyInvalid(result.errors)
       return
     }
-    setErrors({})
-    setGeneralError(undefined)
+    clearErrors()
     triggerDownload(result.blob, result.filename)
     setDone(true)
   }
+
+  const dirPath = recordPath
 
   const fieldKey = (section: string, fieldName: string, idx?: number) =>
     idx === undefined ? `${section}.${fieldName}` : `${section}.${idx}.${fieldName}`
@@ -1164,7 +1325,7 @@ function CompositeAuthoringForm({
             source manually, then remove whichever blocks don't belong.
           </Alert>
         )}
-        {stale && <StaleValuesWarning />}
+        {catalogFallback && <StaleValuesWarning />}
         {generalError && <Alert severity="error">{generalError}</Alert>}
 
         {sections.map((s) => {
@@ -1193,7 +1354,11 @@ function CompositeAuthoringForm({
                         />
                       </Stack>
                       <Button
-                        onClick={() => removeEntry(s.section, idx)}
+                        onClick={() =>
+                          confirm(`Delete this ${s.title} entry?`, () =>
+                            removeEntry(s.section, idx),
+                          )
+                        }
                         size="small"
                         color="error"
                         startIcon={<DeleteOutlineIcon />}
@@ -1242,14 +1407,21 @@ function CompositeAuthoringForm({
           }
         />
 
-        <Box>
-          <Button type="submit" variant="contained">
-            Download {meta.filename}
-          </Button>
-        </Box>
+        <SaveAndDownloadButtons
+          dirPath={dirPath}
+          filename={meta.filename}
+          baseline={baseline}
+          validate={validate}
+          onInvalid={(errs) => {
+            setDone(false)
+            applyInvalid(errs)
+          }}
+          onValid={clearErrors}
+        />
 
         {done && <Alert severity="success">Downloaded {meta.filename}.</Alert>}
       </Stack>
+      {confirmDialog}
     </Box>
   )
 }

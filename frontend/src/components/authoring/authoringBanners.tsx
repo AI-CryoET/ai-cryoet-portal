@@ -4,12 +4,13 @@ import { Alert, Divider } from '@mui/material'
 // (both the sectioned and composite renderers use them).
 
 // Shown whenever an existing record is loaded: edits stay in the browser until
-// the file is downloaded and saved back over the original on disk.
+// they are written back to the file share (or downloaded and copied there).
 export function NotSavedToDiskWarning() {
   return (
     <Alert severity="warning">
-      Changes made in this form are not saved to disk. Download the updated file
-      and save it to disk to apply your changes.
+      Changes made in this form live only in your browser until you save them.
+      Use “Save to file share” to write them back, or download the updated file
+      and copy it to the file share manually.
     </Alert>
   )
 }
