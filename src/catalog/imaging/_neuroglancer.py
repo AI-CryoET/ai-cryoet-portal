@@ -167,10 +167,3 @@ def add_json_layer(viewer, name: str, json_data: dict):
     """Add JSON layer to viewer with a dict of ``json_data`` """
     with viewer.txn() as s:
         s.layers.append(name, json_data)
-
-
-def bare_view_neuroglancer():
-    """Blank neuroglancer viewer useful for viewing bboxes """
-    import neuroglancer
-    _ensure_bind_address()
-    return neuroglancer.Viewer()
