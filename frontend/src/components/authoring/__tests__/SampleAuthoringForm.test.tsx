@@ -165,6 +165,8 @@ describe('AuthoringForm (sample) repeatable labels', () => {
     await userEvent.click(
       screen.getByRole('button', { name: /Remove Gold-nanoparticle labels/ }),
     )
+    // Removal is gated behind a confirm dialog; confirm it.
+    await userEvent.click(screen.getByRole('button', { name: 'Delete' }))
     expect(screen.queryByLabelText(/Label target/)).not.toBeInTheDocument()
   })
 })
@@ -285,7 +287,7 @@ describe('AuthoringForm (sample) save to file share', () => {
     // findByRole so it retries past the dialog's exit transition (which leaves
     // the form aria-hidden until it unmounts, hiding the link from getByRole).
     expect(await screen.findByText(/Saved to/)).toBeInTheDocument()
-    const link = await screen.findByRole('link', { name: /View in Fileglancer/ })
+    const link = await screen.findByRole('link', { name: /View now in Fileglancer/ })
     expect(link).toHaveAttribute(
       'href',
       'https://fileglancer.int.janelia.org/browse/groups_cryoet_cryoet/samp1/sample.toml',

@@ -218,6 +218,8 @@ describe('AuthoringForm (acquisition)', () => {
     await userEvent.click(
       screen.getByRole('button', { name: /Remove Tilt series entry/ }),
     )
+    // Removal is gated behind a confirm dialog; confirm it.
+    await userEvent.click(screen.getByRole('button', { name: 'Delete' }))
     expect(screen.queryByLabelText(/Tilt series id/)).not.toBeInTheDocument()
   })
 
