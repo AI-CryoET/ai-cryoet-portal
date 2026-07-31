@@ -1,7 +1,8 @@
 # The catalog scanner runs as a CronJob: it walks the data tree, (re)builds the
-# SQLite catalog DB and regenerates thumbnails, then exits. `scan --init` (the
-# image's default command) is idempotent, so the same invocation works for the
-# first run and steady state.
+# SQLite catalog DB and regenerates thumbnails, then exits. `scan --init --prune`
+# (the image's default command) is idempotent, so the same invocation works for
+# the first run and steady state; --prune tombstones samples whose folders have
+# been deleted from disk so those deletions propagate to the site.
 #
 # Schedule: hourly, on the hour. Adjust to taste. concurrencyPolicy Forbid
 # prevents a long scan from overlapping with the next scheduled run.
