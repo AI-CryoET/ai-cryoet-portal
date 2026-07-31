@@ -18,7 +18,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: frontend
-          image: ghcr.io/janeliascicomp/ai-cryoet-frontend:latest
+          image: ghcr.io/ai-cryoet/ai-cryoet-frontend:latest
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:

@@ -48,7 +48,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/janeliascicomp/${{ matrix.image }}
+          images: ghcr.io/ai-cryoet/${{ matrix.image }}
           tags: |
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
@@ -68,6 +68,6 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: |
-            type=registry,ref=ghcr.io/janeliascicomp/${{ matrix.image }}:latest
-            type=registry,ref=ghcr.io/janeliascicomp/${{ matrix.image }}:buildcache
-          cache-to: type=registry,ref=ghcr.io/janeliascicomp/${{ matrix.image }}:buildcache,mode=max
+            type=registry,ref=ghcr.io/ai-cryoet/${{ matrix.image }}:latest
+            type=registry,ref=ghcr.io/ai-cryoet/${{ matrix.image }}:buildcache
+          cache-to: type=registry,ref=ghcr.io/ai-cryoet/${{ matrix.image }}:buildcache,mode=max

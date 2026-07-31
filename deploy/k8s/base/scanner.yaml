@@ -42,7 +42,7 @@ spec:
               type: RuntimeDefault
           containers:
             - name: scanner
-              image: ghcr.io/janeliascicomp/ai-cryoet-scanner:latest
+              image: ghcr.io/ai-cryoet/ai-cryoet-scanner:latest
               securityContext:
                 allowPrivilegeEscalation: false
                 capabilities:

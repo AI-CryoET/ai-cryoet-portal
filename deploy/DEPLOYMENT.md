@@ -272,7 +272,7 @@ git push origin v1.0.0
 ```
 
 This builds and pushes all three images (`ai-cryoet-api`, `ai-cryoet-frontend`,
-`ai-cryoet-scanner`) to `ghcr.io/janeliascicomp/`.
+`ai-cryoet-scanner`) to `ghcr.io/ai-cryoet/`.
 
 Then pin the new tag in the overlay's `kustomization.yaml`. Note: the build
 workflow's `metadata-action` strips the leading `v`, so a `v1.0.0` git tag
@@ -280,11 +280,11 @@ publishes image tag `1.0.0` (without the `v`) — use that here:
 
 ```yaml
 images:
-  - name: ghcr.io/janeliascicomp/ai-cryoet-api
+  - name: ghcr.io/ai-cryoet/ai-cryoet-api
     newTag: "1.0.0"
-  - name: ghcr.io/janeliascicomp/ai-cryoet-frontend
+  - name: ghcr.io/ai-cryoet/ai-cryoet-frontend
     newTag: "1.0.0"
-  - name: ghcr.io/janeliascicomp/ai-cryoet-scanner
+  - name: ghcr.io/ai-cryoet/ai-cryoet-scanner
     newTag: "1.0.0"
 ```
 
