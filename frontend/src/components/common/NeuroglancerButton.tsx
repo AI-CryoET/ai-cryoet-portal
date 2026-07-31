@@ -66,8 +66,18 @@ export function NeuroglancerButton(props: NeuroglancerButtonProps) {
     setLaunchError(null)
     // Open blank window synchronously to avoid popup blocker.
     const w = window.open('about:blank', '_blank')
-    mutation.mutate(source as Extract<NeuroglancerSource, { kind: 'launch' }>, {
+    const launchSource = source as Extract<NeuroglancerSource, { kind: 'launch' }>
+    mutation.mutate(launchSource, {
       onSuccess(data) {
+        // Tomograms return a fully-formed external viewer URL (Fileglancer-hosted
+        // Neuroglancer + a precomputed:// source served by mrc-server) — open it
+        // as-is. The re-rooting below only applies to the tilt-series / annotation
+        // launches still served by the API's own in-process Neuroglancer port.
+        // ponytail: drop this branch once those two routes go stateless too.
+        if (launchSource.entity === 'tomogram') {
+          w!.location.href = data.url
+          return
+        }
         // DEV-ONLY same-origin re-rooting (pairs with the Neuroglancer reverse
         // proxy in vite.config.ts).
         //
