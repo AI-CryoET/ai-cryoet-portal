@@ -32,8 +32,13 @@ COPY src ./src
 # `chmod g=u` grants the group the same access as the owner.
 RUN chgrp -R 0 /app && chmod -R g=u /app
 
+# MRCNG_CACHE_ROOT is the shared Neuroglancer pyramid cache. When set, the scan
+# runs `mrc-pyramid build` into it after cataloguing (catalog/cli.py
+# `_run_precompute`); mrc-ng-server reads the same path. Must match the
+# mrc-cache mountPath here and MRCNG_CACHE_ROOT in the mrc-ng-server ConfigMap.
 ENV CATALOG_DATA_ROOT=/groups/cryoet/cryoet/data \
     CATALOG_DB_URL=sqlite:////db/catalog.db \
-    CATALOG_THUMBNAIL_DIR=/thumbnails
+    CATALOG_THUMBNAIL_DIR=/thumbnails \
+    MRCNG_CACHE_ROOT=/cache
 
 CMD ["pixi", "run", "-e", "catalog", "scan", "--init"]

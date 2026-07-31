@@ -60,6 +60,13 @@ spec:
                   mountPath: /db
                 - name: thumbnails
                   mountPath: /thumbnails
+                # Shared Neuroglancer pyramid cache. Written here by the
+                # post-scan `mrc-pyramid build` step and read by mrc-ng-server.
+                # mrc-cache-pvc is declared by the mrc-ng-server deployment (same
+                # namespace); apply that before this CronJob runs. Must match
+                # MRCNG_CACHE_ROOT in Dockerfile.scanner / config.env.
+                - name: mrc-cache
+                  mountPath: /cache
               resources:
                 requests:
                   cpu: 250m
@@ -78,3 +85,6 @@ spec:
             - name: thumbnails
               persistentVolumeClaim:
                 claimName: thumbnails-pvc
+            - name: mrc-cache
+              persistentVolumeClaim:
+                claimName: mrc-cache-pvc
