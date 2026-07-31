@@ -88,6 +88,15 @@ tifffile = ">=2024.1"
 
 [tool.pixi.feature.catalog.pypi-dependencies]
 eerfile = "*"
+# Provides the `mrc-pyramid` CLI the scanner runs to precompute the Neuroglancer
+# pyramid cache (see catalog/cli.py `_run_precompute`). REQUIRES a mrc-ng-server
+# version that has `mrc-pyramid build --from-file` — the scanner feeds it the
+# catalog's tomogram list. Pin to a release tag that includes that option before
+# deploying; `main` here is a moving target and, until the --from-file change
+# lands there, a real precompute run degrades gracefully (logs a warning, no
+# cache built). Requires `pixi lock` (with network access to the repo) to record
+# it in pixi.lock before an image build, since Dockerfile.scanner installs `--locked`.
+mrc-ng-server = { git = "https://github.com/JaneliaSciComp/mrc-ng-server.git", branch = "main" }
 
 [tool.pixi.feature.catalog.tasks]
 migrate = "alembic -c src/catalog/migrations/alembic.ini upgrade head"
