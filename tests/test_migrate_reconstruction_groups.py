@@ -276,14 +276,16 @@ def test_placeholder_folders_are_cleaned_up(tmp_path):
 
 def test_stray_file_keeps_its_folder(tmp_path):
     """The converse: a file the allowlist does NOT cover is real content the
-    migration can't place, so its folder (and the flat dir) must survive rather
-    than be silently deleted."""
+    migration can't collapse to a bare file, so the whole folder relocates
+    verbatim (folder-preserve) rather than being flattened or dropped."""
     acq = _make_acq(tmp_path)
     keep = acq / "Reconstructions" / "Annotations" / "notes"
     keep.mkdir()
     (keep / "readme.txt").write_text("hand-written")
     _run(tmp_path, apply=True)
-    assert (keep / "readme.txt").read_text() == "hand-written"
+    dest = acq / "Reconstructions" / "ts_1" / "Annotations" / "notes"
+    assert (dest / "readme.txt").read_text() == "hand-written"
+    assert not keep.exists()
 
 
 def test_nested_variant_subdir_prepends_folder_to_filename(tmp_path, capsys):
@@ -301,3 +303,53 @@ def test_nested_variant_subdir_prepends_folder_to_filename(tmp_path, capsys):
     tomos = acq / "Reconstructions" / "bp_3dctf_bin4" / "Tomograms"
     assert (tomos / "ctf_s207_8.00Apx.mrc").read_bytes() == b"ctf"
     assert not (tomos / "ctf.mrc").exists()
+
+
+def test_multi_file_annotation_folder_is_preserved(tmp_path):
+    """An annotation of several files (two sharing an extension) keeps its folder;
+    the id is the folder name and every file survives."""
+    acq = _make_acq(tmp_path)
+    az = acq / "Reconstructions" / "Annotations" / "activezone_0_liza_az0"
+    az.mkdir(parents=True)
+    (az / "activezone_0.star").write_text("s")
+    (az / "active_zonogram_0.png").write_bytes(b"p1")
+    (az / "active_zonogram_0_selected_aunps.png").write_bytes(b"p2")  # 2nd .png
+    _run(tmp_path, apply=True)
+
+    dest = acq / "Reconstructions" / "ts_1" / "Annotations" / "activezone_0_liza_az0"
+    assert dest.is_dir()
+    assert {p.name for p in dest.iterdir()} == {
+        "activezone_0.star",
+        "active_zonogram_0.png",
+        "active_zonogram_0_selected_aunps.png",
+    }
+    # the single-file membrain annotation still collapses to a bare file
+    assert (
+        acq / "Reconstructions" / "ts_1" / "Annotations" / "membrain_seg_v10.mrc"
+    ).is_file()
+    assert not (acq / "Reconstructions" / "Annotations").exists()
+
+
+def test_migrated_multi_file_annotation_loads(tmp_path):
+    from schema.loader import load_sample_record
+
+    acq = _make_acq(tmp_path)
+    (acq.parent / "sample.toml").write_text('[sample]\nproject = "chromatin"\n')
+    az = acq / "Reconstructions" / "Annotations" / "activezone_0_liza_az0"
+    az.mkdir(parents=True)
+    (az / "a.png").write_bytes(b"1")
+    (az / "a_selected.png").write_bytes(b"2")
+    # declare the annotation so the loader reconciles id -> folder
+    toml = (acq / "acquisition.toml").read_text().replace(
+        '[[annotation]]\nid = "membrain_seg_v10"\n',
+        '[[annotation]]\nid = "activezone_0_liza_az0"\ntype = "gold_points"\n\n'
+        '[[annotation]]\nid = "membrain_seg_v10"\n',
+    )
+    (acq / "acquisition.toml").write_text(toml)
+    _run(tmp_path, apply=True)
+
+    result = load_sample_record(acq.parent)
+    rf = result.record.reconstructions["Position_86"]["ts_1"]
+    ann_ids = {a.annotation_id for a in rf.annotation}
+    assert "activezone_0_liza_az0" in ann_ids
+    assert result.warnings == []

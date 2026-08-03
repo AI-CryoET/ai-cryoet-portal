@@ -211,6 +211,25 @@ def _expand_entity_folder(id_dir: Path, allowed_exts: set[str], dest_dir: Path, 
     return deduped, warnings
 
 
+def _plan_annotation_folder(id_dir: Path, dest_dir: Path) -> list[tuple[Path, Path]]:
+    """Folder-preserve planner for ONE Annotations/{id}/ folder.
+
+    A single allowlisted leaf with no non-junk subdirs collapses to a bare
+    ``dest_dir/{id}.ext`` (the mixed single-file rule). Otherwise the WHOLE
+    folder is relocated verbatim to ``dest_dir/{id}/`` — the annotation's files
+    (same-extension pairs, sidecars, nested content, junk) stay together and the
+    id is the folder name. Relocate, never rename or split.
+    """
+    entries = [e for e in id_dir.iterdir() if e.name not in IGNORED_JUNK]
+    leaves = [e for e in entries if _is_leaf(e, ANNOTATION_FILE_EXTENSIONS)]
+    subdirs = [
+        e for e in entries if e.is_dir() and not _is_leaf(e, ANNOTATION_FILE_EXTENSIONS)
+    ]
+    if len(leaves) == 1 and not subdirs:
+        return [(leaves[0], dest_dir / f"{id_dir.name}{_ext_of(leaves[0])}")]
+    return [(id_dir, dest_dir / id_dir.name)]
+
+
 def shared_name_groups(recon_dir: Path) -> list[str]:
     """Return ids that appear as BOTH a Tomograms/{id}/ and Annotations/{id}/
     folder under one acquisition's Reconstructions/.
@@ -237,6 +256,9 @@ def _plan_folder_as_group(recon_dir: Path, gid: str):
     for kind, allowed_exts in (("Tomograms", TOMOGRAM_FILE_EXTENSIONS), ("Annotations", ANNOTATION_FILE_EXTENSIONS)):
         id_dir = recon_dir / kind / gid
         if not id_dir.is_dir():
+            continue
+        if kind == "Annotations":
+            moves += _plan_annotation_folder(id_dir, group_dir / kind)
             continue
         # No prepend here: when the folder itself becomes the group, its name is
         # already preserved as the group dir, so prefixing each file with it too
@@ -342,13 +364,14 @@ def plan_reconstructions(recon_dir: Path, group_id: str | None, exclude_ids: fro
                     "missing tilt series) — leaving in place"
                 )
                 continue
+            if kind == "Annotations":
+                moves += _plan_annotation_folder(id_dir, group_dir / kind)
+                continue
+
             by_ext, _collision = _entity_files(id_dir, allowed_exts)
             if by_ext is None:
-                # Two files share an extension: they cannot both take the
-                # folder's name, so they are separate entities. Keep each
-                # filename and let its stem be the id.
                 expanded, expand_warnings = _expand_entity_folder(
-                    id_dir, allowed_exts, group_dir / kind, prepend_folder=(kind == "Tomograms")
+                    id_dir, allowed_exts, group_dir / kind, prepend_folder=True
                 )
                 moves += expanded
                 warnings += expand_warnings
@@ -360,9 +383,7 @@ def plan_reconstructions(recon_dir: Path, group_id: str | None, exclude_ids: fro
                 )
                 continue
             for ext, entry in by_ext.items():
-                # Tomograms keep their descriptive filename, prefixed with the
-                # source folder name; other kinds collapse onto the folder name.
-                stem = f"{entity_id}_{_stem_of(entry)}" if kind == "Tomograms" else entity_id
+                stem = f"{entity_id}_{_stem_of(entry)}"
                 dest = group_dir / kind / f"{stem}{ext}"
                 moves.append((entry, dest))
 
