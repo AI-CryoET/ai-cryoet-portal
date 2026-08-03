@@ -272,20 +272,20 @@ def test_placeholder_folders_are_cleaned_up(tmp_path):
     _run(tmp_path, apply=True)
     assert not placeholder.exists()
     assert not (acq / "Reconstructions" / "Annotations").exists()
+    # ...and it's pruned, not relocated into the group as a bogus annotation.
+    assert not (acq / "Reconstructions" / "ts_1" / "Annotations" / "annotation_id").exists()
 
 
 def test_stray_file_keeps_its_folder(tmp_path):
     """The converse: a file the allowlist does NOT cover is real content the
-    migration can't collapse to a bare file, so the whole folder relocates
-    verbatim (folder-preserve) rather than being flattened or dropped."""
+    migration can't place, so its folder (and the flat dir) must survive rather
+    than be silently deleted."""
     acq = _make_acq(tmp_path)
     keep = acq / "Reconstructions" / "Annotations" / "notes"
     keep.mkdir()
     (keep / "readme.txt").write_text("hand-written")
     _run(tmp_path, apply=True)
-    dest = acq / "Reconstructions" / "ts_1" / "Annotations" / "notes"
-    assert (dest / "readme.txt").read_text() == "hand-written"
-    assert not keep.exists()
+    assert (keep / "readme.txt").read_text() == "hand-written"
 
 
 def test_nested_variant_subdir_prepends_folder_to_filename(tmp_path, capsys):

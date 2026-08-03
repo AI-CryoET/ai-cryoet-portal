@@ -225,6 +225,11 @@ def _plan_annotation_folder(id_dir: Path, dest_dir: Path) -> list[tuple[Path, Pa
     subdirs = [
         e for e in entries if e.is_dir() and not _is_leaf(e, ANNOTATION_FILE_EXTENSIONS)
     ]
+    if not leaves and not subdirs:
+        # Only junk / stray non-annotation files — not an annotation. Leave it:
+        # a junk-only placeholder gets pruned by the existing cleanup, and a real
+        # stray file keeps its folder, exactly as before folder-preserve.
+        return []
     if len(leaves) == 1 and not subdirs:
         return [(leaves[0], dest_dir / f"{id_dir.name}{_ext_of(leaves[0])}")]
     return [(id_dir, dest_dir / id_dir.name)]
