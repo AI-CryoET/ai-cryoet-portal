@@ -741,6 +741,31 @@ def find_acquisition_dirs(lab_prefix: str, root: Path = ROOT):
                     yield acq_dir
 
 
+def _warning_row(root: Path, acq_dir: Path, recon_dir: Path, w: str) -> list[str]:
+    """Turn one warning string into a warnings-CSV row: [containing_folder,
+    sample_name, acquisition_id, current relative path (within Reconstructions/),
+    warning]. Warnings are formatted ``{path}: {message}``; the leading path is
+    split off into its Reconstructions-relative form (blank when the path is acq-
+    or recon-level, e.g. the multi-tilt-series or gouaux-no-marker notes)."""
+    arm = acq_dir.relative_to(root).parts[0]
+    sample = (
+        acq_dir.parent.name
+        if arm == TOP_LEVEL_EXPERIMENTAL
+        else acq_dir.parent.parent.name  # MdSimulation/{SubDir}/{sample}/SyntheticCryoET/{acq}
+    )
+    path_str, sep, msg = w.partition(": ")
+    rel, text = "", w
+    if sep:
+        text = msg
+        try:
+            rel = str(Path(path_str).relative_to(recon_dir))
+            if rel == ".":
+                rel = ""
+        except ValueError:
+            rel = ""  # path is acq- or recon-level, not under Reconstructions/
+    return [arm, sample, acq_dir.name, rel, text]
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--lab-prefix", default="", help="Only samples starting with this prefix (default: all)")
@@ -754,22 +779,36 @@ def main():
         help="Dry-run only: write the planned moves to this CSV instead of the "
              "terminal (default: %(default)s). Ignored with --apply.",
     )
+    parser.add_argument(
+        "--warnings-csv", type=Path, default=Path("reconstruction_migration_warnings.csv"),
+        help="Dry-run only: also write the warnings to this CSV "
+             "(default: %(default)s). Ignored with --apply.",
+    )
     args = parser.parse_args()
 
     # Dry-run planned moves, one row per (src -> dest), written to --csv at the end.
     plan_rows: list[list[str]] = []
+    # Dry-run warnings, one row each, written to --warnings-csv at the end.
+    warning_rows: list[list[str]] = []
+
+    def _record_warnings(acq_dir: Path, recon_dir: Path, ws: list[str]) -> None:
+        """Print each warning to stderr and collect it as a warnings-CSV row."""
+        for w in ws:
+            print(f"# NOTE: {w}", file=sys.stderr)
+            warning_rows.append(_warning_row(args.root, acq_dir, recon_dir, w))
 
     total_moves = total_mkdirs = total_tomls = total_skipped = 0
     for acq_dir in find_acquisition_dirs(args.lab_prefix, args.root):
+        recon_dir = acq_dir / "Reconstructions"
+        acq_warnings: list[str] = []
+
         group_id, warning = group_id_for(acq_dir)
         if warning:
-            print(f"# NOTE: {warning}", file=sys.stderr)
+            acq_warnings.append(warning)
             # Fall through instead of skipping the acquisition outright — a
             # shared-name group (see shared_name_groups) can still be planned
             # even when the acquisition's main group is ambiguous/missing.
             group_id = None
-
-        recon_dir = acq_dir / "Reconstructions"
 
         is_gouaux = acq_dir.parent.name.startswith("gouauxlab")
         gouaux_plan = plan_gouauxlab(recon_dir) if is_gouaux else None
@@ -782,11 +821,11 @@ def main():
             # Reconstructions/{tilt_series_id}/ group and sweep the
             # deliberately-parked unmarked folders (e.g. bounding_boxes/) into
             # it, corrupting an already-migrated tree on re-run.
-            print(
-                f"# NOTE: {recon_dir}: gouauxlab acquisition with no alignment "
-                "markers (already migrated or none present) — leaving in place",
-                file=sys.stderr,
+            acq_warnings.append(
+                f"{recon_dir}: gouauxlab acquisition with no alignment markers "
+                "(already migrated or none present) — leaving in place"
             )
+            _record_warnings(acq_dir, recon_dir, acq_warnings)
             continue
 
         if gouaux_plan is not None:
@@ -822,10 +861,9 @@ def main():
 
         loose_moves, loose_warnings = plan_loose_files(recon_dir)
         moves += loose_moves
-        warnings += loose_warnings
+        acq_warnings += warnings + loose_warnings
 
-        for w in warnings:
-            print(f"# NOTE: {w}", file=sys.stderr)
+        _record_warnings(acq_dir, recon_dir, acq_warnings)
 
         # Map each old Tomograms/{id}/ and Annotations/{id}/ folder name to the
         # file stems it flattened to, so the authored blocks get renamed to
@@ -953,7 +991,18 @@ def main():
                 "starting_relative_path", "ending_relative_path",
             ])
             writer.writerows(plan_rows)
-        print(f"Wrote {len(plan_rows)} planned move(s) to {args.csv}", file=sys.stderr)
+        with open(args.warnings_csv, "w", newline="") as f:
+            writer = csv.writer(f)
+            writer.writerow([
+                "containing_folder", "sample_name", "acquisition_id",
+                "current_relative_path", "warning",
+            ])
+            writer.writerows(warning_rows)
+        print(
+            f"Wrote {len(plan_rows)} planned move(s) to {args.csv} and "
+            f"{len(warning_rows)} warning(s) to {args.warnings_csv}",
+            file=sys.stderr,
+        )
 
 
 if __name__ == "__main__":

@@ -61,12 +61,20 @@ def _make_acq(root: Path, *, acq_toml: str = _ACQ_TOML) -> Path:
     return acq
 
 
-def _run(root: Path, *, apply: bool, csv: Path | None = None) -> None:
+def _run(
+    root: Path, *, apply: bool, csv: Path | None = None, warnings_csv: Path | None = None
+) -> None:
     argv = ["migrate", "--root", str(root)]
     if apply:
         argv.append("--apply")
-    elif csv is not None:
-        argv += ["--csv", str(csv)]
+    else:
+        # Route both dry-run CSVs to paths under root (siblings of the data
+        # tree) so a bare dry-run in a test never writes into the repo cwd.
+        argv += ["--csv", str(csv if csv is not None else root / "_plan.csv")]
+        argv += [
+            "--warnings-csv",
+            str(warnings_csv if warnings_csv is not None else root / "_warnings.csv"),
+        ]
     old = sys.argv
     sys.argv = argv
     try:
@@ -101,6 +109,36 @@ def test_dry_run_writes_a_csv_and_changes_nothing(tmp_path):
     assert membrain["sample_name"] == "sample_a"
     assert membrain["acquisition_name"] == "Position_86"
     assert membrain["ending_relative_path"] == "ts_1/Annotations/membrain_seg_v10.mrc"
+
+
+def test_dry_run_writes_a_warnings_csv(tmp_path):
+    import csv as _csv
+
+    # Two tilt series -> a "found 2" (acq-level) warning; the denoised variant
+    # folder -> a Tomograms/denoised (Reconstructions-relative) warning.
+    acq_toml = _ACQ_TOML.replace(
+        '[[tilt_series]]\nid = "ts_1"\nis_aligned = true\n',
+        '[[tilt_series]]\nid = "ts_1"\n\n[[tilt_series]]\nid = "ts_2"\n',
+    )
+    _make_acq(tmp_path, acq_toml=acq_toml)
+    wcsv = tmp_path / "warn.csv"
+    _run(tmp_path, apply=False, warnings_csv=wcsv)
+    with open(wcsv, newline="") as f:
+        rows = list(_csv.DictReader(f))
+    assert set(rows[0]) == {
+        "containing_folder", "sample_name", "acquisition_id",
+        "current_relative_path", "warning",
+    }
+    # acq-level note: no Reconstructions-relative path, path stripped from the text
+    tilt = next(r for r in rows if "expected exactly one" in r["warning"])
+    assert tilt["containing_folder"] == "Experimental"
+    assert tilt["sample_name"] == "sample_a"
+    assert tilt["acquisition_id"] == "Position_86"
+    assert tilt["current_relative_path"] == ""
+    assert not tilt["warning"].startswith("/")  # leading path split off
+    # variant-folder note: path is relative to Reconstructions/
+    denoised = next(r for r in rows if "tomogram variant folder" in r["warning"])
+    assert denoised["current_relative_path"] == "Tomograms/denoised"
 
 
 def test_apply_moves_files_into_the_group(tmp_path):
