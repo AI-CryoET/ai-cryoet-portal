@@ -687,7 +687,11 @@ def group_id_for(acquisition_dir: Path):
         if id_match:
             ts_ids.append(id_match.group(1))
     if len(ts_ids) != 1:
-        return None, f"{acquisition_dir}: expected exactly one [[tilt_series]] id, found {len(ts_ids)}; skipping"
+        return None, (
+            f"{acquisition_dir}: expected exactly one [[tilt_series]] id, found "
+            f"{len(ts_ids)}; skipping authoring raw_tomogram.derived_from — "
+            "researcher should fill it in later in the group's reconstruction.toml"
+        )
     return ts_ids[0], None
 
 
