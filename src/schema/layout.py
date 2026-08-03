@@ -80,14 +80,19 @@ def is_zarr_dir(path: Path) -> bool:
     return any(path.name.endswith(suffix) for suffix in ZARR_DIR_SUFFIXES)
 
 
-def entity_ids_in_dir(directory: Path, file_extensions: frozenset[str]) -> set[str]:
+def entity_ids_in_dir(
+    directory: Path,
+    file_extensions: frozenset[str],
+    include_dirs: bool = False,
+) -> set[str]:
     """Return entity ids (file stems) directly under ``directory``.
 
     A child counts when it is a file whose suffix is in ``file_extensions``
-    (case-insensitive) or a ``.zarr`` / ``.ome.zarr`` store dir; everything else
-    (stray ``notes.txt`` / ``.gitkeep``) is ignored. Mirrors the per-leaf
-    grouping in ``catalog.discovery`` so the loader and scanner agree on which
-    files map to an entity id. A missing ``directory`` yields the empty set.
+    (case-insensitive) or a ``.zarr`` / ``.ome.zarr`` store dir. With
+    ``include_dirs=True`` (annotations only) a plain non-zarr subdir also counts
+    as one id equal to its folder name — an annotation is one folder holding
+    several files. Everything else (stray ``notes.txt`` / ``.gitkeep``) is
+    ignored. A missing ``directory`` yields the empty set.
     """
     ids: set[str] = set()
     if not directory.is_dir():
@@ -97,6 +102,8 @@ def entity_ids_in_dir(directory: Path, file_extensions: frozenset[str]) -> set[s
             ids.add(entity_id_from_path(entry))
         elif entry.is_dir() and is_zarr_dir(entry):
             ids.add(entity_id_from_path(entry))
+        elif include_dirs and entry.is_dir():
+            ids.add(entry.name)
     return ids
 
 
@@ -176,6 +183,17 @@ if __name__ == "__main__":
         (leaf / "a.ome.zarr").mkdir()  # same stem -> one id
         (leaf / "b.zarr").mkdir()
         (leaf / "notes.txt").touch()  # ignored
+        assert entity_ids_in_dir(leaf, TOMOGRAM_FILE_EXTENSIONS) == {"a", "b"}
+
+        # include_dirs=True: a plain subdir is ONE annotation id (folder name);
+        # a .zarr dir is still grouped by stem; files still count.
+        (leaf / "ann_folder").mkdir()
+        (leaf / "ann_folder" / "a.png").touch()
+        (leaf / "ann_folder" / "b.png").touch()
+        assert entity_ids_in_dir(
+            leaf, ANNOTATION_FILE_EXTENSIONS, include_dirs=True
+        ) == {"a", "b", "ann_folder"}
+        # default (tomogram behavior): the plain subdir is NOT counted.
         assert entity_ids_in_dir(leaf, TOMOGRAM_FILE_EXTENSIONS) == {"a", "b"}
     assert entity_ids_in_dir(Path(d), TOMOGRAM_FILE_EXTENSIONS) == set()  # gone
     print("schema.layout self-check OK")

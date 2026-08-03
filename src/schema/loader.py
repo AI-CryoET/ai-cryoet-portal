@@ -222,7 +222,11 @@ def _reconstruction_ids_on_disk(
     for group_dir in sorted(recon.iterdir()):
         if not group_dir.is_dir():
             continue
-        ids.update(entity_ids_in_dir(group_dir / leaf, file_extensions))
+        ids.update(
+            entity_ids_in_dir(
+                group_dir / leaf, file_extensions, include_dirs=(leaf == "Annotations")
+            )
+        )
     return ids
 
 
@@ -391,7 +395,7 @@ def _check_reconstruction_files(
             group_dir / "Tomograms", TOMOGRAM_FILE_EXTENSIONS
         )
         ann_on_disk = entity_ids_in_dir(
-            group_dir / "Annotations", ANNOTATION_FILE_EXTENSIONS
+            group_dir / "Annotations", ANNOTATION_FILE_EXTENSIONS, include_dirs=True
         )
         tomo_candidates = sorted(tomo_on_disk)
         ann_candidates = sorted(ann_on_disk)
