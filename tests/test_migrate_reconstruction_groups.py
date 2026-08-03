@@ -353,3 +353,79 @@ def test_migrated_multi_file_annotation_loads(tmp_path):
     ann_ids = {a.annotation_id for a in rf.annotation}
     assert "activezone_0_liza_az0" in ann_ids
     assert result.warnings == []
+
+
+import pytest as _pytest
+
+
+@_pytest.mark.parametrize("name,expected", [
+    ("activezone_1_liza_az0", "cryosnail_az0"),
+    ("activezone_0_liza_az2", "cryosnail_az2"),
+    ("membrain_seg_v10_az1", "cryosnail_az1"),
+    ("activezone_0_liza_az0_rerun", "cryosnail_az0"),
+    ("bp_3dctf_bin4_warp", "warp"),
+    ("activezone_1_best_alignment", "best_alignment"),
+    ("membrain_seg_v10", None),
+    ("bounding_boxes", None),
+])
+def test_gouauxlab_group_for(name, expected):
+    assert migrate._gouauxlab_group_for(name) == expected
+
+
+def _make_gouaux(root: Path, *, markers: dict) -> Path:
+    """markers: {tomo_or_ann_folder_name: is_single_file(bool)} under one acq."""
+    acq = root / "Experimental" / "gouauxlab_20260127_x" / "Position_13_3"
+    recon = acq / "Reconstructions"
+    (acq / "TiltSeries" / "Position_13_3").mkdir(parents=True)
+    (acq / "acquisition.toml").write_text(
+        '[acquisition]\n\n[[tilt_series]]\nid = "Position_13_3"\n'
+    )
+    return acq
+
+
+def test_plan_gouauxlab_multi_alignment_splits_and_warns(tmp_path):
+    acq = _make_gouaux(tmp_path, markers={})
+    recon = acq / "Reconstructions"
+    for folder, files in {
+        "Tomograms/bp_3dctf_bin4_liza_az0": ["r.mrc"],
+        "Tomograms/bp_3dctf_bin4_liza_az2": ["r.mrc"],
+        "Annotations/activezone_1_liza_az0": ["a.star", "p.png", "p2.png"],
+        "Annotations/activezone_1_liza_az2": ["a.star", "p.png", "p2.png"],
+        "Annotations/membrain_seg_v10_liza_az0": ["seg.mrc"],
+        "Annotations/bounding_boxes": ["b.json", "b_ng.json"],  # unmarked
+    }.items():
+        d = recon / folder
+        d.mkdir(parents=True)
+        for f in files:
+            (d / f).write_bytes(b"")
+    _run(tmp_path, apply=True)
+
+    # az0 / az2 groups get their marked folders
+    assert (recon / "cryosnail_az0" / "Annotations" / "activezone_1_liza_az0").is_dir()
+    assert (recon / "cryosnail_az2" / "Annotations" / "activezone_1_liza_az2").is_dir()
+    assert (recon / "cryosnail_az0" / "Annotations" / "membrain_seg_v10_liza_az0.mrc").is_file()
+    assert (recon / "cryosnail_az0" / "Tomograms" / "bp_3dctf_bin4_liza_az0_r.mrc").is_file()
+    # unmarked bounding_boxes stays put
+    assert (recon / "Annotations" / "bounding_boxes").is_dir()
+
+
+def test_plan_gouauxlab_single_alignment_absorbs_unmarked(tmp_path):
+    acq = _make_gouaux(tmp_path, markers={})
+    recon = acq / "Reconstructions"
+    for folder, files in {
+        "Tomograms/bp_3dctf_bin4_liza_az0": ["r.mrc"],
+        "Annotations/activezone_0_liza_az0": ["a.star", "p.png", "p2.png"],
+        "Annotations/membrain_seg_v10": ["seg.mrc"],  # unmarked
+        "Annotations/bounding_boxes": ["b.json"],       # unmarked, single file
+    }.items():
+        d = recon / folder
+        d.mkdir(parents=True)
+        for f in files:
+            (d / f).write_bytes(b"")
+    _run(tmp_path, apply=True)
+
+    # single alignment az0 -> unmarked folders come along too
+    assert (recon / "cryosnail_az0" / "Annotations" / "activezone_0_liza_az0").is_dir()
+    assert (recon / "cryosnail_az0" / "Annotations" / "membrain_seg_v10.mrc").is_file()
+    assert (recon / "cryosnail_az0" / "Annotations" / "bounding_boxes.json").is_file()
+    assert not (recon / "Annotations").exists()

@@ -583,6 +583,79 @@ def strip_processing_log(acq_text: str) -> str:
     return re.sub(r"\n{3,}", "\n\n", text)
 
 
+def _gouauxlab_group_for(name: str) -> str | None:
+    """Map a gouauxlab Tomograms/Annotations folder name to its reconstruction
+    group by alignment marker: ``_az{N}`` / ``_liza_az{N}`` (``_rerun`` allowed
+    after) -> ``cryosnail_az{N}`` (literal N); ``_warp`` -> ``warp``;
+    ``_best_alignment`` -> ``best_alignment``; otherwise None (unmarked). The
+    group is the alignment marker, not the leading ``activezone_M`` index."""
+    m = re.search(r"_(?:liza_)?az(\d+)", name)
+    if m:
+        return f"cryosnail_az{m.group(1)}"
+    if "_warp" in name:
+        return "warp"
+    if "_best_alignment" in name:
+        return "best_alignment"
+    return None
+
+
+def _plan_gouaux_one(kind: str, exts: set[str], id_dir: Path, dest_dir: Path):
+    """Route one folder into its group: annotations folder-preserve, tomograms
+    flatten+prepend. Returns (moves, warnings)."""
+    if kind == "Annotations":
+        return _plan_annotation_folder(id_dir, dest_dir), []
+    return _expand_entity_folder(id_dir, exts, dest_dir, prepend_folder=True)
+
+
+def plan_gouauxlab(recon_dir: Path):
+    """Split a gouauxlab acquisition's Reconstructions/ into per-alignment
+    groups (see _gouauxlab_group_for). Single alignment -> every folder (marked
+    and unmarked) into the one group; multiple -> marked folders split, unmarked
+    (bounding_boxes) left in place + warned. Returns
+    (moves, mkdirs, warnings, group_ids), or None if no marker is present at all
+    (caller falls back to the generic path)."""
+    kinds = (
+        ("Tomograms", TOMOGRAM_FILE_EXTENSIONS),
+        ("Annotations", ANNOTATION_FILE_EXTENSIONS),
+    )
+    folders = []  # (kind, exts, id_dir, group_or_None)
+    for kind, exts in kinds:
+        src = recon_dir / kind
+        if not src.is_dir():
+            continue
+        for id_dir in sorted(p for p in src.iterdir() if p.is_dir()):
+            folders.append((kind, exts, id_dir, _gouauxlab_group_for(id_dir.name)))
+
+    marked = sorted({g for _, _, _, g in folders if g is not None})
+    if not marked:
+        return None
+
+    moves, mkdirs, warnings = [], [], []
+    if len(marked) == 1:
+        single = marked[0]
+        for kind, exts, id_dir, _g in folders:
+            m, w = _plan_gouaux_one(kind, exts, id_dir, recon_dir / single / kind)
+            moves += m
+            warnings += w
+        group_ids = [single]
+    else:
+        for kind, exts, id_dir, g in folders:
+            if g is None:
+                warnings.append(
+                    f"{id_dir}: no alignment marker (az/warp/best_alignment) and "
+                    "this acquisition has multiple alignments — leaving in place"
+                )
+                continue
+            m, w = _plan_gouaux_one(kind, exts, id_dir, recon_dir / g / kind)
+            moves += m
+            warnings += w
+        group_ids = marked
+
+    for g in group_ids:
+        mkdirs.append(recon_dir / g / "Alignment")
+    return moves, mkdirs, warnings, group_ids
+
+
 def group_id_for(acquisition_dir: Path):
     """Extract the acquisition's tilt_series id via regex, not tomllib — some
     real acquisition.toml files are already invalid TOML (e.g. a duplicated
@@ -651,13 +724,22 @@ def main():
 
         recon_dir = acq_dir / "Reconstructions"
 
-        if group_id is None:
+        is_gouaux = acq_dir.parent.name.startswith("gouauxlab")
+        gouaux_plan = plan_gouauxlab(recon_dir) if is_gouaux else None
+
+        if gouaux_plan is not None:
+            # gouauxlab: groups are alignment markers, not the tilt-series id.
+            moves, mkdirs, warnings, all_group_ids = gouaux_plan
+            derived_from_id = group_id  # tilt-series id for raw_tomogram.derived_from
+        elif group_id is None:
             # No usable tilt-series group id (missing or 2+ tilt series): every
             # Tomograms/{id}/ + matching Annotations/{id}/ folder becomes its own
             # group, named after the folder. group_id stays None so no
             # raw_tomogram derived_from gets a bogus tilt-series ref; the groups
             # are declared only as extra reconstruction_alignment blocks.
             moves, mkdirs, warnings, extra_ids = plan_folder_groups(recon_dir)
+            all_group_ids = extra_ids
+            derived_from_id = None
         else:
             # Single tilt series: it names the acquisition's main group; a
             # shared Tomograms+Annotations name (e.g. Missalignment) still splits
@@ -673,6 +755,8 @@ def main():
             moves += m
             mkdirs += k
             warnings += w
+            all_group_ids = ([group_id] if group_id is not None else []) + extra_ids
+            derived_from_id = group_id
 
         warnings += loose_file_warnings(recon_dir)
 
@@ -686,7 +770,6 @@ def main():
         # Reconstructions/), since one old folder name can belong to any one
         # group (a plain entity id under the main group, or a group-named
         # folder for a shared-name/no-tilt-series group).
-        all_group_ids = ([group_id] if group_id is not None else []) + extra_ids
         group_tomo_renames: dict[str, dict[str, list[str]]] = {gid: {} for gid in all_group_ids}
         group_ann_renames: dict[str, dict[str, list[str]]] = {gid: {} for gid in all_group_ids}
         for src, dest in moves:
@@ -717,7 +800,7 @@ def main():
         new_toml = None
         if toml_path.is_file():
             orig_text = toml_path.read_text()
-            prepared = prepare_processing_log(orig_text, group_id)
+            prepared = prepare_processing_log(orig_text, derived_from_id)
             prepared = _rewrite_derived_from(prepared, tomo_id_map)
             for gid in all_group_ids:
                 recon_tomls[gid] = build_reconstruction_toml(
