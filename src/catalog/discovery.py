@@ -355,20 +355,42 @@ def iter_tomograms(acq: AcquisitionLocation) -> Iterator[TomogramLocation]:
 
 
 def iter_annotations(acq: AcquisitionLocation) -> Iterator[AnnotationLocation]:
-    """Yield one AnnotationLocation per file-stem under the Annotations folder(s).
+    """Yield one AnnotationLocation per annotation under the Annotations folder(s).
 
-    Annotations are files (not folders): each entity's ``id`` is the filename
-    stem, so differently-suffixed files sharing a stem (``ann.json`` +
-    ``ann.mrc``) collapse to one annotation. File children are filtered by the
-    extension allowlist; ``.zarr`` / ``.ome.zarr`` dirs count as a single entry.
+    An annotation is either a plain subfolder (``Annotations/{id}/`` — id is the
+    folder name, ``files`` are the allowlisted files inside it, recursively) or a
+    bare file / ``.zarr`` store whose id is the stem (differently-suffixed files
+    sharing a stem, ``ann.json`` + ``ann.mrc``, collapse to one). Folders are
+    yielded before bare stems; both are sorted. A ``.zarr`` dir is a store, not a
+    container, so it is a single-file annotation, not a folder.
     """
     for leaf_dir, group_id in _reconstruction_leaf_dirs(acq, "Annotations"):
+        folders: list[Path] = []
         by_stem: dict[str, list[Path]] = {}
         for entry in leaf_dir.iterdir():
-            if entry.is_file() and entry.suffix.lower() in ANNOTATION_FILE_EXTENSIONS:
+            if entry.is_dir() and not is_zarr_dir(entry):
+                folders.append(entry)
+            elif entry.is_file() and entry.suffix.lower() in ANNOTATION_FILE_EXTENSIONS:
                 by_stem.setdefault(entity_id_from_path(entry), []).append(entry)
             elif entry.is_dir() and is_zarr_dir(entry):
                 by_stem.setdefault(entity_id_from_path(entry), []).append(entry)
+        for folder in sorted(folders, key=lambda p: p.name):
+            files = tuple(
+                sorted(
+                    (
+                        p
+                        for p in folder.rglob("*")
+                        if p.is_file() and p.suffix.lower() in ANNOTATION_FILE_EXTENSIONS
+                    ),
+                    key=lambda p: str(p),
+                )
+            )
+            yield AnnotationLocation(
+                path=folder,
+                annotation_id=folder.name,
+                files=files,
+                reconstruction_alignment_id=group_id,
+            )
         for stem in sorted(by_stem):
             yield AnnotationLocation(
                 path=leaf_dir,

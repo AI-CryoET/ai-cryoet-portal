@@ -257,6 +257,33 @@ def _acq_loc(acq_dir: Path) -> AcquisitionLocation:
     )
 
 
+def test_iter_annotations_reads_a_subfolder_as_one_annotation(tmp_path):
+    anns = tmp_path / "acq" / "Reconstructions" / "cryosnail_az0" / "Annotations"
+    folder = anns / "activezone_1_liza_az0"
+    folder.mkdir(parents=True)
+    (folder / "activezone_1.star").write_text("")
+    (folder / "active_zonogram_1.png").write_bytes(b"")
+    (folder / "active_zonogram_1_selected_aunps.png").write_bytes(b"")  # 2nd .png
+    (anns / "membrain_seg_v10_liza_az0.mrc").write_bytes(b"")  # bare single file
+
+    acq = _acq_loc(tmp_path / "acq")
+    anns_out = list(iter_annotations(acq))
+    by_id = {a.annotation_id: a for a in anns_out}
+    assert set(by_id) == {"activezone_1_liza_az0", "membrain_seg_v10_liza_az0"}
+    # the folder is ONE annotation holding all three files (both .png kept)
+    folder_ann = by_id["activezone_1_liza_az0"]
+    assert {p.name for p in folder_ann.files} == {
+        "activezone_1.star",
+        "active_zonogram_1.png",
+        "active_zonogram_1_selected_aunps.png",
+    }
+    assert folder_ann.reconstruction_alignment_id == "cryosnail_az0"
+    # the bare file is still a single-file annotation
+    assert [p.name for p in by_id["membrain_seg_v10_liza_az0"].files] == [
+        "membrain_seg_v10_liza_az0.mrc"
+    ]
+
+
 def test_iter_tomograms_groups_by_stem_under_the_alignment_group(tmp_path):
     # Two tomograms + two annotations under one group folder; ids are the file
     # stems and the group id is the enclosing folder name.
