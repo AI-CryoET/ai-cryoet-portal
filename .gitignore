@@ -43,3 +43,7 @@ thumbnails/
 *.png.tmp
 # local migration/scan sandbox (see .claude/plans/*dev-testing*)
 _sandbox/
+
+# migration script default dry-run outputs
+reconstruction_migration_plan.csv
+reconstruction_migration_warnings.csv
