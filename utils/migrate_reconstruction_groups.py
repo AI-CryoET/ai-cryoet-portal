@@ -306,29 +306,43 @@ def plan_folder_groups(recon_dir: Path):
     return moves, mkdirs, warnings, group_ids
 
 
-def loose_file_warnings(recon_dir: Path) -> list[str]:
-    """Warn about files sitting DIRECTLY under Reconstructions/Tomograms/ or
-    Reconstructions/Annotations/ instead of inside an {id}/ subfolder.
+def plan_loose_files(recon_dir: Path):
+    """Handle files sitting DIRECTLY under Reconstructions/Tomograms/ or
+    Reconstructions/Annotations/ instead of inside an {id}/ subfolder. Returns
+    (moves, warnings).
 
-    The group migration only relocates {id}/ subdirs, so a loose file is left
-    in place — which keeps the flat Tomograms/Annotations dir alive, and the
-    scanner then reads that leftover dir as a bogus reconstruction group. A
-    loose file can't be placed automatically (no {id}/ folder says which group
-    it belongs to), so surface it for manual filing rather than guessing.
+    A loose file under Annotations/ is moved into the Missalignment group's
+    Annotations/ when this acquisition forms a Missalignment group (a
+    Tomograms/Missalignment/ or Annotations/Missalignment/ folder exists — see
+    plan_folder_groups). Real case: rosenlab s2xx.catm.star alignment metadata
+    that belongs with the Missalignment reconstruction; without this it would
+    keep the flat Annotations/ dir alive (a bogus empty group to the scanner).
+
+    Every other loose file — under Tomograms/, or under Annotations/ with no
+    Missalignment group — can't be placed automatically (no {id}/ folder says
+    which group it belongs to), so it is surfaced for manual filing.
     """
-    warnings = []
+    has_missalignment = (
+        (recon_dir / "Tomograms" / "Missalignment").is_dir()
+        or (recon_dir / "Annotations" / "Missalignment").is_dir()
+    )
+    moves, warnings = [], []
     for kind in ("Tomograms", "Annotations"):
         d = recon_dir / kind
         if not d.is_dir():
             continue
         for entry in sorted(d.iterdir()):
-            if entry.is_file() and entry.name not in IGNORED_JUNK:
+            if not (entry.is_file() and entry.name not in IGNORED_JUNK):
+                continue
+            if kind == "Annotations" and has_missalignment:
+                moves.append((entry, recon_dir / "Missalignment" / "Annotations" / entry.name))
+            else:
                 warnings.append(
                     f"{entry}: loose file directly under {kind}/ (not in an "
                     f"{{id}}/ folder) — NOT migrated; move it under "
                     f"Reconstructions/{{group}}/{kind}/ manually"
                 )
-    return warnings
+    return moves, warnings
 
 
 def plan_reconstructions(recon_dir: Path, group_id: str | None, exclude_ids: frozenset[str] = frozenset()):
@@ -782,7 +796,9 @@ def main():
             all_group_ids = ([group_id] if group_id is not None else []) + extra_ids
             derived_from_id = group_id
 
-        warnings += loose_file_warnings(recon_dir)
+        loose_moves, loose_warnings = plan_loose_files(recon_dir)
+        moves += loose_moves
+        warnings += loose_warnings
 
         for w in warnings:
             print(f"# NOTE: {w}", file=sys.stderr)

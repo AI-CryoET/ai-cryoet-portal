@@ -498,3 +498,50 @@ def test_gouauxlab_multi_alignment_second_apply_is_a_noop(tmp_path):
     # unmarked bounding_boxes must still be parked in place, not swept into
     # a bogus tilt-series-id group on re-run
     assert (recon / "Annotations" / "bounding_boxes").is_dir()
+
+
+def test_loose_annotation_file_moves_into_missalignment_group(tmp_path, capsys):
+    """A loose file directly under Annotations/ is filed into the Missalignment
+    group's Annotations/ when that group forms (real case: rosenlab
+    s2xx.catm.star). It keeps its filename, is not warned about, and the flat
+    Annotations/ dir is pruned. Re-running is a no-op."""
+    # Two tilt series -> folder-as-group, so Tomograms/Missalignment/ becomes a
+    # Reconstructions/Missalignment/ group.
+    acq_toml = _ACQ_TOML.replace(
+        '[[tilt_series]]\nid = "ts_1"\nis_aligned = true\n',
+        '[[tilt_series]]\nid = "ts_1"\n\n[[tilt_series]]\nid = "ts_2"\n',
+    )
+    acq = _make_acq(tmp_path, acq_toml=acq_toml)
+    mis = acq / "Reconstructions" / "Tomograms" / "Missalignment"
+    mis.mkdir(parents=True)
+    (mis / "rec.mrc").write_bytes(b"m")
+    loose = acq / "Reconstructions" / "Annotations" / "s200.catm.star"
+    loose.write_text("catm")
+
+    _run(tmp_path, apply=True)
+
+    dest = acq / "Reconstructions" / "Missalignment" / "Annotations" / "s200.catm.star"
+    assert dest.read_text() == "catm"
+    assert not loose.exists()
+    assert "loose file" not in capsys.readouterr().err
+    assert not (acq / "Reconstructions" / "Annotations").exists()
+
+    # idempotent: nothing left to move on a second apply
+    after_first = _snapshot(tmp_path)
+    _run(tmp_path, apply=True)
+    assert _snapshot(tmp_path) == after_first
+
+
+def test_loose_annotation_without_missalignment_is_still_warned(tmp_path, capsys):
+    """No Missalignment group -> no automatic home, so a loose Annotations/ file
+    is left in place and warned about (unchanged behavior)."""
+    acq_toml = _ACQ_TOML.replace(
+        '[[tilt_series]]\nid = "ts_1"\nis_aligned = true\n',
+        '[[tilt_series]]\nid = "ts_1"\n\n[[tilt_series]]\nid = "ts_2"\n',
+    )
+    acq = _make_acq(tmp_path, acq_toml=acq_toml)
+    loose = acq / "Reconstructions" / "Annotations" / "orphan.catm.star"
+    loose.write_text("x")
+    _run(tmp_path, apply=True)
+    assert "loose file" in capsys.readouterr().err
+    assert loose.exists()
