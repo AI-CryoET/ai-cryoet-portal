@@ -311,6 +311,33 @@ A valid id must:
 - start and end with a letter or number,
 - not contain `..`
 
+### Annotation containers
+
+An annotation consists of one or more files and may be organized as either:
+
+1. **Single-file annotation** (bare file): `Annotations/{annotation_id}.ext`, where the file stem is the id.
+   Example: `activezone_1.star`, `membrain_seg_v10.mrc`
+
+2. **Multi-file annotation** (folder): `Annotations/{annotation_id}/`, where the folder name is the id and the folder holds multiple related files.
+   Example: a folder `activezone_1/` containing `activezone_1.star`, `activezone_1_selected_aunps.png`, etc.
+
+Mixed organization is permitted: a single `Reconstructions/{reconstruction_alignment_id}/Annotations/` may contain both bare files and folders.
+
+**Tomograms remain as flat files** under `Tomograms/`. When tomograms originate from nested subdirectories (e.g., `ctf/`, `even/`, `odd/` variants), each is stored as a single flattened file with the subdirectory prefix prepended to the stem: `ctf_{tomogram_id}.mrc`, `even_{tomogram_id}.mrc`, etc.
+
+### Gouaux lab alignment-based reconstruction groups
+
+Acquisitions from `Experimental/gouauxlab_*` samples are automatically sorted into reconstruction groups by the alignment-method suffix on folder names within the acquisition:
+
+- Folders with suffix `_az{N}` or `_liza_az{N}` → placed in group `cryosnail_az{N}`
+- Folders with suffix `_warp` → placed in group `warp`
+- Folders with suffix `_best_alignment` → placed in group `best_alignment`
+- Unmarked folders (e.g., `bounding_boxes`, `membrain_seg_v10`):
+  - **Single-alignment acquisitions**: placed in the one identified group
+  - **Multi-alignment acquisitions**: left under stray `Reconstructions/Annotations/` for manual review and filing
+
+This organization reflects the alignment method used for each group and streamlines multi-method reconstructions within a single acquisition.
+
 ### Ids are scoped to their alignment group
 
 A `tomogram_id` or `annotation_id` is a file stem, unique only within its own `Reconstructions/{reconstruction_alignment_id}/` folder. Two groups in the same acquisition may each hold a `denoised.mrc`:
