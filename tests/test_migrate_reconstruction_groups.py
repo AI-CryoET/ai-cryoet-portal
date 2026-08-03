@@ -429,3 +429,52 @@ def test_plan_gouauxlab_single_alignment_absorbs_unmarked(tmp_path):
     assert (recon / "cryosnail_az0" / "Annotations" / "membrain_seg_v10.mrc").is_file()
     assert (recon / "cryosnail_az0" / "Annotations" / "bounding_boxes.json").is_file()
     assert not (recon / "Annotations").exists()
+
+
+def _snapshot(root: Path) -> dict:
+    return {
+        p.relative_to(root).as_posix(): (p.read_bytes() if p.is_file() else None)
+        for p in root.rglob("*")
+    }
+
+
+def test_gouauxlab_single_alignment_second_apply_is_a_noop(tmp_path):
+    acq = _make_gouaux(tmp_path, markers={})
+    recon = acq / "Reconstructions"
+    for folder, files in {
+        "Tomograms/bp_3dctf_bin4_liza_az0": ["r.mrc"],
+        "Annotations/activezone_0_liza_az0": ["a.star", "p.png", "p2.png"],
+    }.items():
+        d = recon / folder
+        d.mkdir(parents=True)
+        for f in files:
+            (d / f).write_bytes(b"")
+    _run(tmp_path, apply=True)
+    after_first = _snapshot(tmp_path)
+    _run(tmp_path, apply=True)
+    after_second = _snapshot(tmp_path)
+    assert after_first == after_second
+
+
+def test_gouauxlab_multi_alignment_second_apply_is_a_noop(tmp_path):
+    acq = _make_gouaux(tmp_path, markers={})
+    recon = acq / "Reconstructions"
+    for folder, files in {
+        "Tomograms/bp_3dctf_bin4_liza_az0": ["r.mrc"],
+        "Tomograms/bp_3dctf_bin4_liza_az2": ["r.mrc"],
+        "Annotations/activezone_1_liza_az0": ["a.star", "p.png", "p2.png"],
+        "Annotations/activezone_1_liza_az2": ["a.star", "p.png", "p2.png"],
+        "Annotations/bounding_boxes": ["b.json", "b_ng.json"],  # unmarked
+    }.items():
+        d = recon / folder
+        d.mkdir(parents=True)
+        for f in files:
+            (d / f).write_bytes(b"")
+    _run(tmp_path, apply=True)
+    after_first = _snapshot(tmp_path)
+    _run(tmp_path, apply=True)
+    after_second = _snapshot(tmp_path)
+    assert after_first == after_second
+    # unmarked bounding_boxes must still be parked in place, not swept into
+    # a bogus tilt-series-id group on re-run
+    assert (recon / "Annotations" / "bounding_boxes").is_dir()

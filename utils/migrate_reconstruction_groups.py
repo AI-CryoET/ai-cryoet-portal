@@ -727,6 +727,21 @@ def main():
         is_gouaux = acq_dir.parent.name.startswith("gouauxlab")
         gouaux_plan = plan_gouauxlab(recon_dir) if is_gouaux else None
 
+        if is_gouaux and gouaux_plan is None:
+            # No alignment markers left (already migrated) or none present.
+            # gouauxlab acquisitions must NEVER fall through to the generic
+            # tilt-series path: group_id_for still resolves the tilt-series id
+            # here, and the generic path would fabricate a bogus
+            # Reconstructions/{tilt_series_id}/ group and sweep the
+            # deliberately-parked unmarked folders (e.g. bounding_boxes/) into
+            # it, corrupting an already-migrated tree on re-run.
+            print(
+                f"# NOTE: {recon_dir}: gouauxlab acquisition with no alignment "
+                "markers (already migrated or none present) — leaving in place",
+                file=sys.stderr,
+            )
+            continue
+
         if gouaux_plan is not None:
             # gouauxlab: groups are alignment markers, not the tilt-series id.
             moves, mkdirs, warnings, all_group_ids = gouaux_plan
