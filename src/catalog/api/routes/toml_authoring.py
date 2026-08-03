@@ -11,9 +11,10 @@ from __future__ import annotations
 
 import tomllib
 from enum import Enum
+from pathlib import Path
 
 import tomli_w
-from fastapi import APIRouter, Body, Depends, HTTPException
+from fastapi import APIRouter, Body, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse, Response
 from loguru import logger
 from pydantic import BaseModel, ValidationError
@@ -22,6 +23,7 @@ from sqlalchemy.orm import Session
 
 from catalog import orm
 from catalog.api.deps import get_session
+from catalog.api.path_validation import validate_under_data_root
 from catalog.api.schemas import MdRunOut
 from schema.form_fields import FORM_FIELDS, FORM_META, FORM_SECTIONS
 from schema.loader import drop_authored_group_ids
@@ -336,7 +338,7 @@ def _dedupe_by_leaf_id(
     return out
 
 
-def _load_md_run(record_id: str, session: Session) -> dict:
+def _load_md_run(record_id: str, session: Session) -> tuple[dict, str | None]:
     row = (
         session.execute(
             select(orm.MdRunORM).where(orm.MdRunORM.md_run_id == record_id)
@@ -346,14 +348,23 @@ def _load_md_run(record_id: str, session: Session) -> dict:
     )
     if row is None:
         raise HTTPException(404, f"no md_run with id {record_id!r}")
-    return {
+    fields = {
         name: getattr(row, name)
         for name in MdRunOut.model_fields
         if getattr(row, name, None) is not None
     }
+    # md_run has no path column of its own: the on-disk directory is the
+    # owning sample's directory + the MdRuns/{id} convention (mirrors the
+    # scanner's layout). No relationship() exists on the ORM, so look the
+    # sample up explicitly; a missing sample or unset sample.path -> null.
+    sample = session.get(orm.SampleORM, row.sample_id)
+    path = f"{sample.path}/MdRuns/{record_id}" if sample and sample.path else None
+    return fields, path
 
 
-def _load_acquisition(record_id: str, sample_id: str | None, session: Session) -> dict:
+def _load_acquisition(
+    record_id: str, sample_id: str | None, session: Session
+) -> tuple[dict, str | None]:
     """Reconstruct an acquisition's authored fields, shaped per-section like a
     parsed acquisition.toml, for the deep-link editor (ADR-0004). Composite
     identity is (sample_id, acquisition_id), so the edit link / route carries
@@ -478,10 +489,10 @@ def _load_acquisition(record_id: str, sample_id: str | None, session: Session) -
     )
     if annotations:
         fields["annotation"] = annotations
-    return fields
+    return fields, acq.path
 
 
-def _load_sample(record_id: str, session: Session) -> dict:
+def _load_sample(record_id: str, session: Session) -> tuple[dict, str | None]:
     """Reconstruct a sample's authored fields, shaped per-section like a parsed
     sample.toml, for the deep-link editor (ADR-0004). data_source is returned so
     the form locks the arm from the record; the directory-derived sample_id
@@ -523,7 +534,33 @@ def _load_sample(record_id: str, session: Session) -> dict:
     if labels:
         fields["label"] = labels
 
-    return fields
+    return fields, sample.path
+
+
+def _read_disk_toml(
+    request: Request, kind: str, path: str | None
+) -> tuple[dict, str] | None:
+    """Return ``(parsed_fields, raw_text)`` from the live ``{path}/{kind}.toml``,
+    or ``None`` to fall back to the catalog reconstruction.
+
+    Falls back (returns ``None``) when there is no path, the file is missing,
+    resolves outside the data root, is unreadable, or holds invalid TOML — every
+    such failure surfaces here as a caught ``HTTPException``/``OSError``/
+    ``TOMLDecodeError``. The read is bounded by ``validate_under_data_root`` so a
+    DB-recorded path can't be used to escape the configured data root.
+    """
+    if not path:
+        return None
+    try:
+        resolved = validate_under_data_root(request, Path(path) / f"{kind}.toml")
+        # Decode raw bytes as UTF-8 (no universal-newline translation) so the
+        # baseline matches Fileglancer's Response.text() byte-for-byte on save;
+        # read_text() would rewrite CRLF->LF and use the locale encoding, which
+        # would false-positive the save-time byte-compare as "changed".
+        text = resolved.read_bytes().decode("utf-8")
+        return tomllib.loads(text), text
+    except (HTTPException, OSError, UnicodeDecodeError, tomllib.TOMLDecodeError):
+        return None
 
 
 def _load_reconstruction(
@@ -586,23 +623,40 @@ def _load_reconstruction(
 def load_toml(
     kind: str,
     record_id: str,
+    request: Request,
     sample_id: str | None = None,
     acquisition_id: str | None = None,
     session: Session = Depends(get_session),
 ):
     """Seed mode: pull-from-API (ADR-0004). Load an existing record's authored
-    fields by id from the catalog DB. The data may lag the on-disk file — the
-    renderer surfaces a staleness warning for this mode."""
+    fields for editing.
+
+    The DB reconstruction locates the record's on-disk directory (``path``, null
+    if unknown). When the live ``{path}/{kind}.toml`` is readable under the data
+    root, the form seeds from the *file* (fresh content) and its raw text is
+    returned as ``baseline`` with ``source='disk'`` — the baseline lets a later
+    "save to file share" refuse to clobber a file that changed since load
+    (optimistic concurrency). When the file can't be read, load falls back to the
+    catalog reconstruction (``source='catalog'``, ``baseline=None``) — this data
+    may lag the on-disk file, so the renderer surfaces a staleness warning.
+    ``path`` is always the directory to write back to.
+    """
     if kind == "md_run":
-        return {"fields": _load_md_run(record_id, session)}
-    if kind == "acquisition":
-        return {"fields": _load_acquisition(record_id, sample_id, session)}
-    if kind == "sample":
-        return {"fields": _load_sample(record_id, session)}
-    if kind == "reconstruction":
-        return {
-            "fields": _load_reconstruction(
-                record_id, sample_id, acquisition_id, session
-            )
-        }
-    raise HTTPException(404, f"load not supported for toml kind {kind!r}")
+        db_fields, path = _load_md_run(record_id, session)
+    elif kind == "acquisition":
+        db_fields, path = _load_acquisition(record_id, sample_id, session)
+    elif kind == "sample":
+        db_fields, path = _load_sample(record_id, session)
+    elif kind == "reconstruction":
+        # No path column on the alignment group, so no disk-save concurrency:
+        # always falls back to the catalog source below.
+        db_fields = _load_reconstruction(record_id, sample_id, acquisition_id, session)
+        path = None
+    else:
+        raise HTTPException(404, f"load not supported for toml kind {kind!r}")
+
+    disk = _read_disk_toml(request, kind, path)
+    if disk is not None:
+        fields, baseline = disk
+        return {"fields": fields, "path": path, "source": "disk", "baseline": baseline}
+    return {"fields": db_fields, "path": path, "source": "catalog", "baseline": None}

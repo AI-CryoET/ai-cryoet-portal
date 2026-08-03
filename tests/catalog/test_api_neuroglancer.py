@@ -72,6 +72,48 @@ def test_read_mrc_volume_returns_nm_in_array_order(tmp_path):
     assert voxel_size == pytest.approx((3.0, 2.0, 1.0))
 
 
+def test_read_mrc_volume_small_is_in_ram_copy(tmp_path):
+    """Volumes under COPY_MAX_BYTES are read fully into RAM (not a memmap)."""
+    from catalog.imaging import _mrc
+
+    p = tmp_path / "small.mrc"
+    _write_synthetic_mrc(p)
+    data, _voxel, _axes = _mrc.read_mrc_volume(p)
+    assert not isinstance(data, np.memmap)
+
+
+def test_read_mrc_volume_oversize_falls_back_to_mmap(tmp_path, monkeypatch):
+    """Volumes over COPY_MAX_BYTES fall back to mmap so the pod can't OOM."""
+    from catalog.imaging import _mrc
+
+    monkeypatch.setattr(_mrc, "COPY_MAX_BYTES", 1)  # force the tiny file oversize
+    p = tmp_path / "oversize.mrc"
+    _write_synthetic_mrc(p)
+    data, _voxel, _axes = _mrc.read_mrc_volume(p)
+    assert isinstance(data, np.memmap)
+
+
+def test_read_mrc_volume_returns_readonly_array(tmp_path):
+    """The shared cached array is read-only so a stray in-place write can't corrupt other viewers."""
+    from catalog.imaging import _mrc
+
+    p = tmp_path / "ro.mrc"
+    _write_synthetic_mrc(p)
+    data, _voxel, _axes = _mrc.read_mrc_volume(p)
+    assert data.flags.writeable is False
+
+
+def test_read_mrc_volume_shared_cache_returns_same_array(tmp_path):
+    """Two loads of the same unchanged file share one array (no re-read)."""
+    from catalog.imaging import _mrc
+
+    p = tmp_path / "shared.mrc"
+    _write_synthetic_mrc(p)
+    d1, _v1, _a1 = _mrc.read_mrc_volume(p)
+    d2, _v2, _a2 = _mrc.read_mrc_volume(p)
+    assert d1 is d2
+
+
 @pytest.fixture
 def client(tmp_path, monkeypatch):
     data_root = tmp_path / "data"
@@ -174,6 +216,172 @@ def test_lru_relaunch_same_key_moves_to_end_no_evict(client):
     assert keys[-1] == ("tomogram", "sample_a", "acq1", "align1", "t1")
     assert ("tomogram", "sample_a", "acq1", "align1", "t2") in keys
     assert len(keys) == 2
+
+
+def test_teardown_viewer_releases_volume():
+    """Teardown drops every strong ref to the viewer's volume so it can be freed.
+
+    Pins the layer/volume-manager coupling ``teardown_viewer`` relies on: a
+    neuroglancer bump that changed it would silently reintroduce the leak. We
+    assert the semantic invariant (nothing strongly references the volume after
+    teardown → it's collectable) rather than RSS, which is allocator-dependent
+    in a shared test process. RSS return is verified standalone: ~1 GiB volume,
+    RSS 1074 → 51 MB after teardown.
+    """
+    import gc
+    import weakref
+
+    neuroglancer = pytest.importorskip("neuroglancer")
+    from catalog.imaging._neuroglancer import teardown_viewer
+
+    neuroglancer.set_server_bind_address("127.0.0.1", bind_port=0)
+
+    def build():
+        """Build in a helper so the txn-state local (which holds the layer →
+        LocalVolume) is gone when we return — otherwise it pins the volume."""
+        data = np.ones((64, 128, 128), dtype=np.uint16)
+        dims = neuroglancer.CoordinateSpace(
+            names=["z", "y", "x"], scales=[1, 1, 1], units="nm"
+        )
+        lv = neuroglancer.LocalVolume(data, dimensions=dims)
+        viewer = neuroglancer.Viewer()
+        with viewer.txn() as s:
+            s.layers["vol"] = neuroglancer.ImageLayer(
+                source=neuroglancer.LayerDataSource(url=lv)
+            )
+        return viewer, weakref.ref(lv), weakref.ref(data)
+
+    viewer, vol_ref, arr_ref = build()
+    # NB: never put ``vol_ref()`` inside an ``assert`` — pytest's assertion
+    # rewriting binds the returned object to a hidden frame local, keeping it
+    # alive and defeating the weakref check. Evaluate liveness in plain
+    # statements instead.
+    volumes_before = len(viewer.volume_manager.volumes)
+    alive_before = vol_ref() is not None and arr_ref() is not None
+    assert volumes_before == 1
+    assert alive_before
+
+    teardown_viewer(viewer)
+    gc.collect()
+
+    volumes_after = len(viewer.volume_manager.volumes)
+    vol_dead = vol_ref() is None  # LocalVolume no longer referenced → freed
+    arr_dead = arr_ref() is None  # and so is its numpy array
+    assert volumes_after == 0
+    assert vol_dead
+    assert arr_dead
+
+
+def test_teardown_viewer_survives_broken_viewer():
+    """Teardown of a viewer without a usable ``txn`` must not raise (best-effort)."""
+    from catalog.imaging._neuroglancer import teardown_viewer
+
+    teardown_viewer(_FakeViewer())  # _FakeViewer has no .txn(); must be swallowed
+
+
+def test_eviction_tears_down_evicted_viewer(client, monkeypatch):
+    """LRU eviction calls teardown_viewer on the dropped viewer."""
+    import catalog.imaging._neuroglancer as ng_mod
+    from catalog.api.routes.tomograms import launch_viewer_in_registry
+
+    torn = []
+    monkeypatch.setattr(ng_mod, "teardown_viewer", lambda v: torn.append(v.id))
+
+    class FakeRequest:
+        def __init__(self, app):
+            self.app = app
+
+    async def driver():
+        client.app.state.active_viewers_lock = asyncio.Lock()
+        req = FakeRequest(client.app)
+        for i in range(3):  # cap is 2 → the 3rd launch evicts the 1st
+            await launch_viewer_in_registry(
+                req, ("tomogram", "s", "a", f"t{i}"), lambda: _FakeViewer()
+            )
+
+    from collections import OrderedDict
+    client.app.state.active_viewers = OrderedDict()
+    asyncio.run(driver())
+    assert len(torn) == 1  # exactly one viewer evicted + torn down
+
+
+class _GenViewer:
+    """Viewer whose state_generation we can bump to simulate interaction."""
+
+    def __init__(self, gen):
+        self._gen = gen
+
+    @property
+    def config_state(self):
+        outer = self
+
+        class _CS:
+            state_generation = outer._gen
+
+        return _CS()
+
+
+def _run_one_sweep(app, **kw):
+    """Drive ``sweep_idle_viewers`` through a single pass, then cancel it."""
+    from catalog.api.routes.tomograms import sweep_idle_viewers
+
+    async def driver():
+        app.state.active_viewers_lock = asyncio.Lock()
+        task = asyncio.create_task(sweep_idle_viewers(app, interval=0.01, **kw))
+        await asyncio.sleep(0.05)
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+
+    asyncio.run(driver())
+
+
+def test_sweep_reclaims_idle_under_pressure_but_keeps_active(client, monkeypatch):
+    """Under memory pressure, the sweep tears down a stale entry, spares an active one."""
+    import catalog.imaging._neuroglancer as ng_mod
+    import catalog.api.routes.tomograms as tomo_mod
+    from catalog.api.routes.tomograms import ViewerEntry
+
+    torn = []
+    monkeypatch.setattr(ng_mod, "teardown_viewer", lambda v: torn.append(v))
+    monkeypatch.setattr(tomo_mod, "_memory_usage_ratio", lambda: 0.95)  # under pressure
+
+    from collections import OrderedDict
+    idle = _GenViewer(1)
+    active = _GenViewer(1)
+    reg = OrderedDict()
+    reg[("idle",)] = ViewerEntry(idle, last_active=0.0, last_gen=1)  # far in the past
+    reg[("active",)] = ViewerEntry(active, last_active=0.0, last_gen=1)
+    client.app.state.active_viewers = reg
+    active._gen = 2  # active viewer's client pushed new state since last sweep
+
+    _run_one_sweep(client.app, ttl=1.0, pressure_ratio=0.8)
+
+    assert torn == [idle]
+    assert list(reg.keys()) == [("active",)]
+
+
+def test_sweep_keeps_idle_when_no_memory_pressure(client, monkeypatch):
+    """With RAM to spare, an idle viewer is NOT reclaimed (only fires under pressure)."""
+    import catalog.imaging._neuroglancer as ng_mod
+    import catalog.api.routes.tomograms as tomo_mod
+    from catalog.api.routes.tomograms import ViewerEntry
+
+    torn = []
+    monkeypatch.setattr(ng_mod, "teardown_viewer", lambda v: torn.append(v))
+    monkeypatch.setattr(tomo_mod, "_memory_usage_ratio", lambda: 0.10)  # no pressure
+
+    from collections import OrderedDict
+    reg = OrderedDict()
+    reg[("idle",)] = ViewerEntry(_GenViewer(1), last_active=0.0, last_gen=1)
+    client.app.state.active_viewers = reg
+
+    _run_one_sweep(client.app, ttl=1.0, pressure_ratio=0.8)
+
+    assert torn == []
+    assert list(reg.keys()) == [("idle",)]
 
 
 def test_concurrent_launches_dont_crash(client):

@@ -204,6 +204,62 @@ Because the Neuroglancer server is process-global, the API **must** run as a
 single replica with a single uvicorn worker (the image is built this way). Do
 not scale the `api` Deployment above 1.
 
+## Fileglancer write access
+
+"Save to file share" writes authored TOML directly to the data tree through
+[Fileglancer](https://github.com/JaneliaSciComp/fileglancer)'s programmatic JS
+API. This app never handles a token or password for that write — see below —
+but Fileglancer's server does need to be told to trust this app's origin.
+
+### Prerequisite: allowlist this app's origin on Fileglancer
+
+Fileglancer only accepts API calls from origins listed in its own
+`api_allowed_origins` server config. This app's **exact** origins (scheme +
+host + port, no path) must be added there:
+
+```yaml
+api_allowed_origins:
+  - https://ai-cryoet.int.janelia.org        # prod
+  # plus any dev origin, exact scheme+host+port, e.g.:
+  # - https://<dev-host>.int.janelia.org:<port>
+```
+
+This is a change to **Fileglancer's** server configuration, not to anything in
+this repo — it's an ops prerequisite for whoever administers the Fileglancer
+deployment, and needs to happen before Save will work from a new environment.
+
+**Symptom if this is missed:** every Fileglancer API call fails with a `403
+ForbiddenError`, and the app surfaces a message naming the allowlist as the
+likely cause. If Save fails with a permission error, check this first.
+
+### Local dev on `localhost` can't use Save
+
+Fileglancer's session cookie is scoped to the `janelia.org` domain
+(`SameSite=Lax`), so the browser will never attach it to a `localhost` origin
+— no allowlist entry can fix this. Local dev relies on the **Download**
+button, which stays available as a fallback on every environment (including
+production, for any user who hits a 403 or prefers a manual copy).
+
+### No secrets or credentials live in this app
+
+Authentication is Fileglancer's own session cookie — this app stores no
+tokens, passwords, or API keys of its own. If the user isn't already logged
+into Fileglancer, clicking Save opens a short-lived login popup; once they
+authenticate there, the save proceeds using that session.
+
+### `VITE_FILEGLANCER_URL` build arg
+
+The frontend image bakes in the Fileglancer base URL at build time (Vite
+inlines `VITE_*` vars). It defaults to the production instance
+(`https://fileglancer.int.janelia.org`) via the `FILEGLANCER_URL` Docker build
+arg in `frontend/Dockerfile`. Only override it when standing up an allowlisted
+dev origin that should talk to a different Fileglancer instance:
+
+```bash
+docker build --build-arg FILEGLANCER_URL=https://fileglancer-dev.int.janelia.org \
+  -f frontend/Dockerfile frontend
+```
+
 ## Updating the Application
 
 Push a `v*.*.*` git tag from `main` to build and publish new images (see the
@@ -216,7 +272,7 @@ git push origin v1.0.0
 ```
 
 This builds and pushes all three images (`ai-cryoet-api`, `ai-cryoet-frontend`,
-`ai-cryoet-scanner`) to `ghcr.io/janeliascicomp/`.
+`ai-cryoet-scanner`) to `ghcr.io/ai-cryoet/`.
 
 Then pin the new tag in the overlay's `kustomization.yaml`. Note: the build
 workflow's `metadata-action` strips the leading `v`, so a `v1.0.0` git tag
@@ -224,11 +280,11 @@ publishes image tag `1.0.0` (without the `v`) — use that here:
 
 ```yaml
 images:
-  - name: ghcr.io/janeliascicomp/ai-cryoet-api
+  - name: ghcr.io/ai-cryoet/ai-cryoet-api
     newTag: "1.0.0"
-  - name: ghcr.io/janeliascicomp/ai-cryoet-frontend
+  - name: ghcr.io/ai-cryoet/ai-cryoet-frontend
     newTag: "1.0.0"
-  - name: ghcr.io/janeliascicomp/ai-cryoet-scanner
+  - name: ghcr.io/ai-cryoet/ai-cryoet-scanner
     newTag: "1.0.0"
 ```
 

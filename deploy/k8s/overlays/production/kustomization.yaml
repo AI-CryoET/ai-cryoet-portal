@@ -44,9 +44,9 @@ patches:
 # Pin to the version built by the `v*.*.*` git tag. The metadata-action strips
 # the leading `v`, so git tag `v1.0.0` publishes image tag `1.0.0` (no `v`).
 images:
-  - name: ghcr.io/janeliascicomp/ai-cryoet-api
-    newTag: "1.2.3"
-  - name: ghcr.io/janeliascicomp/ai-cryoet-frontend
-    newTag: "1.2.3"
-  - name: ghcr.io/janeliascicomp/ai-cryoet-scanner
-    newTag: "1.2.3"
+  - name: ghcr.io/ai-cryoet/ai-cryoet-api
+    newTag: "1.4.1"
+  - name: ghcr.io/ai-cryoet/ai-cryoet-frontend
+    newTag: "1.4.1"
+  - name: ghcr.io/ai-cryoet/ai-cryoet-scanner
+    newTag: "1.4.1"

@@ -15,12 +15,15 @@ don't share global state (plan §7.5 / §11.6).
 """
 from __future__ import annotations
 
+import os
+from functools import lru_cache
 from io import BytesIO
 from pathlib import Path
 from typing import Literal
 
 import mrcfile
 import numpy as np
+from loguru import logger
 from matplotlib.backends.backend_agg import FigureCanvasAgg
 from matplotlib.figure import Figure
 
@@ -138,34 +141,100 @@ def render_center_xy_slice_png(mrc_path: Path | str, *, width: int = 1200) -> by
     return _array_to_png_bytes(slice_2d, percentile=(1, 99), width=width)
 
 
-def read_mrc_volume(mrc_path: Path | str) -> tuple[np.ndarray, tuple[float, float, float], str]:
-    """Load the full MRC volume + voxel size + axis order for Neuroglancer.
+# Volumes at or below this size are read fully into RAM so Neuroglancer serves
+# chunks from memory (fast, no per-chunk NFS reads) — this is what keeps
+# concurrent viewers from serializing on blocking NFS reads in the single
+# in-process server. Larger volumes fall back to mmap: slow to serve, but the
+# pod won't OOM. Sized just above the ~1.3 GB production ceiling; a volume that
+# trips the fallback is the signal it's time for Phase 2 (multi-process pool).
+COPY_MAX_BYTES = int(1.5 * 1024**3)
 
-    Returns ``(data, voxel_size_in_array_order, axis_order_string)``.
-    Voxel size is reordered to match the array axes (slowest → fastest), so
-    callers can feed it directly into ``view_neuroglancer``.
 
-    Voxel size is returned in **nm**, unlike the rest of the codebase which
-    carries MRC spacings in Angstrom (``voxel_spacing_angstrom``,
-    ``schema.py`` ``voxel_size``). Don't "fix" this back for consistency:
-    ``view_neuroglancer`` builds a ``CoordinateSpace(units="nm")``, and
-    Neuroglancer only accepts an SI base unit with a standard prefix —
-    ``"angstrom"`` and ``"Å"`` both raise. nm is the nearest unit that can
-    express an MRC spacing at all.
+def _load_mrc_volume(mrc_path: str) -> tuple[np.ndarray, tuple[float, float, float], str]:
+    """Load an MRC into ``(data, voxel_size_nm_in_array_order, axis_order)``.
+
+    ``data`` is an in-RAM copy for volumes ≤ ``COPY_MAX_BYTES`` (fast chunk
+    serving, no per-chunk NFS), or a read-only ``mmap`` for larger volumes
+    (slow serving, but bounded memory so the pod survives).
     """
-    mrc_path = Path(mrc_path)
-    with mrcfile.open(str(mrc_path), mode="r", permissive=True) as mrc:
-        data = mrc.data.copy()
+    size = os.path.getsize(mrc_path)
+    use_copy = size <= COPY_MAX_BYTES
+    if not use_copy:
+        logger.warning(
+            "MRC {} is {:.1f} GB (> {:.1f} GB COPY_MAX_BYTES); serving via mmap "
+            "(slow per-chunk). Large volumes are the Phase 2 trigger.",
+            mrc_path,
+            size / 1024**3,
+            COPY_MAX_BYTES / 1024**3,
+        )
 
-        # MRC headers store spacing in Angstrom; Neuroglancer is told nm.
-        vx = float(mrc.voxel_size.x) / 10.0
-        vy = float(mrc.voxel_size.y) / 10.0
-        vz = float(mrc.voxel_size.z) / 10.0
-        mapc = int(mrc.header.mapc)
-        mapr = int(mrc.header.mapr)
-        maps = int(mrc.header.maps)
+    # Copy path: read into RAM then close. mmap path: keep the handle open —
+    # numpy keeps the map alive via data.base, but closing here would unmap it.
+    mrc = (mrcfile.open if use_copy else mrcfile.mmap)(
+        mrc_path, mode="r", permissive=True
+    )
+    data = mrc.data.copy() if use_copy else mrc.data
+    # This array is shared across viewers via the LRU cache, so make it
+    # read-only: an accidental in-place write now raises loudly instead of
+    # silently corrupting every other viewer's data. Harmless no-op on the
+    # mmap path, which is already opened mode="r".
+    data.setflags(write=False)
+    # MRC headers store spacing in Angstrom; Neuroglancer is told nm.
+    vx = float(mrc.voxel_size.x) / 10.0
+    vy = float(mrc.voxel_size.y) / 10.0
+    vz = float(mrc.voxel_size.z) / 10.0
+    mapc = int(mrc.header.mapc)
+    mapr = int(mrc.header.mapr)
+    maps = int(mrc.header.maps)
+    if use_copy:
+        mrc.close()
+
     axis_names = {1: "x", 2: "y", 3: "z"}
     axis_order = f"{axis_names[maps]}{axis_names[mapr]}{axis_names[mapc]}"
     voxel_map = {"x": vx, "y": vy, "z": vz}
-    voxel_size = (voxel_map[axis_order[0]], voxel_map[axis_order[1]], voxel_map[axis_order[2]])
+    voxel_size = (
+        voxel_map[axis_order[0]],
+        voxel_map[axis_order[1]],
+        voxel_map[axis_order[2]],
+    )
     return data, voxel_size, axis_order
+
+
+# Shared across concurrent viewers: two tabs on the same tomogram share one
+# read-only array instead of each copying it — the dominant memory saving when
+# people view the same dataset. Keyed on (path, mtime) so a re-scan that rewrites
+# the file invalidates automatically.
+#
+# This cache is a SECOND strong holder of every array (the first is each live
+# viewer's volume_manager). It bounds steady-state resident memory on its own:
+# ~maxsize distinct volumes stay resident even after their tabs close, until
+# they age out here. So maxsize is the RAM ceiling — keep it aligned with
+# NEUROGLANCER_MAX_VIEWERS (default 10). Raising that env var means bumping this.
+# At ~1.3-1.5 GB/volume (in-RAM ≈ on-disk; .copy() keeps the native dtype),
+# 10 fits the 24 Gi pod (~16-18 GB anon + base, room left for NFS page cache);
+# ~12 is the practical ceiling before page-cache reclaim starts to thrash.
+@lru_cache(maxsize=10)
+def _load_mrc_volume_cached(
+    mrc_path: str, mtime: float
+) -> tuple[np.ndarray, tuple[float, float, float], str]:
+    return _load_mrc_volume(mrc_path)
+
+
+def read_mrc_volume(
+    mrc_path: Path | str,
+) -> tuple[np.ndarray, tuple[float, float, float], str]:
+    """Load an MRC volume + voxel size (nm, array-axis order) + axis order.
+
+    Returns ``(data, voxel_size, axis_order)``. ``data`` is an in-RAM copy for
+    volumes ≤ ``COPY_MAX_BYTES`` (Neuroglancer serves chunks from memory), or a
+    read-only ``np.memmap`` for larger volumes (bounded memory, slower serving).
+
+    Voxel size is returned in **nm** (MRC headers are Angstrom): ``view_neuroglancer``
+    builds a ``CoordinateSpace(units="nm")``, and Neuroglancer rejects ``"angstrom"``.
+
+    Results are cached process-wide, keyed on ``(path, mtime)`` (see
+    ``_load_mrc_volume_cached``), so concurrent viewers of the same unchanged
+    file share one array instead of each holding a separate copy.
+    """
+    p = str(mrc_path)
+    return _load_mrc_volume_cached(p, os.path.getmtime(p))

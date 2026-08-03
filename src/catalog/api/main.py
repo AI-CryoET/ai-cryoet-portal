@@ -11,7 +11,14 @@ Configuration via environment:
   CATALOG_MD_PREVIEW_DIR     — directory of cached OVITO/MD preview PNGs
                                (aicryoet-tools .portal_cache). Optional; a missing
                                dir just disables the /md-previews route.
-  NEUROGLANCER_MAX_VIEWERS   — bounded LRU size for active viewers (default 8).
+  NEUROGLANCER_MAX_VIEWERS   — bounded LRU size for active viewers (default 10).
+  NEUROGLANCER_VIEWER_TTL_SECONDS      — idle viewers reclaimed after this many
+                               seconds without interaction, but only under
+                               memory pressure (default 3600 = 1 hr).
+  NEUROGLANCER_SWEEP_INTERVAL_SECONDS  — idle-sweep cadence (default 60).
+  NEUROGLANCER_MEMORY_PRESSURE_RATIO   — reclaim idle viewers only once anon
+                               memory reaches this fraction of the cgroup limit
+                               (default 0.8). Below it, idle viewers persist.
 """
 from __future__ import annotations
 import asyncio
@@ -96,6 +103,18 @@ def _install_log_intercept() -> None:
 
 def _parse_origins(raw: str) -> list[str]:
     return [o.strip() for o in raw.split(",") if o.strip()]
+
+
+def _positive_float(var: str, default: float) -> float:
+    """Read a positive float from env, falling back to ``default`` if unset/bad."""
+    raw = os.environ.get(var)
+    if raw is None:
+        return default
+    try:
+        value = float(raw)
+    except ValueError:
+        return default
+    return value if value > 0 else default
 
 
 def _detect_multi_worker() -> int | None:
@@ -205,13 +224,32 @@ async def _lifespan(app: FastAPI):
     if getattr(app.state, "active_viewers_lock", None) is None:
         app.state.active_viewers_lock = asyncio.Lock()
     if getattr(app.state, "neuroglancer_max_viewers", None) is None:
-        raw_max = os.environ.get("NEUROGLANCER_MAX_VIEWERS", "8")
+        raw_max = os.environ.get("NEUROGLANCER_MAX_VIEWERS", "10")
         try:
             app.state.neuroglancer_max_viewers = max(1, int(raw_max))
         except ValueError:
-            app.state.neuroglancer_max_viewers = 8
+            app.state.neuroglancer_max_viewers = 10
+
+    # Idle-sweep background task: reclaims viewers (and their volume RAM) that
+    # have gone untouched past the TTL — the only mechanism that frees memory
+    # when a user closes a tab (there is no tab-close signal). See
+    # catalog.api.routes.tomograms.sweep_idle_viewers.
+    ttl = _positive_float("NEUROGLANCER_VIEWER_TTL_SECONDS", 3600.0)
+    interval = _positive_float("NEUROGLANCER_SWEEP_INTERVAL_SECONDS", 60.0)
+    pressure = _positive_float("NEUROGLANCER_MEMORY_PRESSURE_RATIO", 0.8)
+    from catalog.api.routes.tomograms import sweep_idle_viewers
+
+    sweep_task = asyncio.create_task(
+        sweep_idle_viewers(app, interval, ttl, pressure)
+    )
 
     yield
+
+    sweep_task.cancel()
+    try:
+        await sweep_task
+    except asyncio.CancelledError:
+        pass
     if not pre_seeded_engine:
         app.state.engine.dispose()
 

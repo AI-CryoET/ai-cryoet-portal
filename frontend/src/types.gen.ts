@@ -387,7 +387,9 @@ export interface paths {
         put?: never;
         /**
          * Annotation Neuroglancer
-         * @description Launch a Neuroglancer viewer over the annotation's ``.mrc`` volume.
+         * @description Launch a Neuroglancer viewer over the annotation's ``.mrc`` volume, or a
+         *     Neuroglancer view + bounding box overlay if ``.json`` files are in the ``annotation_id``
+         *     dir.
          *
          *     Mirrors the tomogram launch route — same registry, same dev-side hostname
          *     rewrite on the frontend. 422 for an annotation with no ``.mrc`` artifact.
@@ -607,8 +609,17 @@ export interface paths {
         /**
          * Load Toml
          * @description Seed mode: pull-from-API (ADR-0004). Load an existing record's authored
-         *     fields by id from the catalog DB. The data may lag the on-disk file — the
-         *     renderer surfaces a staleness warning for this mode.
+         *     fields for editing.
+         *
+         *     The DB reconstruction locates the record's on-disk directory (``path``, null
+         *     if unknown). When the live ``{path}/{kind}.toml`` is readable under the data
+         *     root, the form seeds from the *file* (fresh content) and its raw text is
+         *     returned as ``baseline`` with ``source='disk'`` — the baseline lets a later
+         *     "save to file share" refuse to clobber a file that changed since load
+         *     (optimistic concurrency). When the file can't be read, load falls back to the
+         *     catalog reconstruction (``source='catalog'``, ``baseline=None``) — this data
+         *     may lag the on-disk file, so the renderer surfaces a staleness warning.
+         *     ``path`` is always the directory to write back to.
          */
         get: operations["load_toml_toml__kind__load__record_id__get"];
         put?: never;

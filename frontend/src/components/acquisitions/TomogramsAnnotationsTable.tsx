@@ -140,7 +140,7 @@ function AnnotationsSubTable(props: {
             <TableCell align="right">
               <NeuroglancerButton
                 source={
-                  a.files.some((f) => f.toLowerCase().endsWith('.mrc'))
+                  a.files.some((f) => f.toLowerCase().endsWith('.mrc') || f.toLowerCase().endsWith('.json'))
                     ? {
                         kind: 'launch',
                         entity: 'annotation',
