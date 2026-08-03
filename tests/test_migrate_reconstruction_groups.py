@@ -61,8 +61,12 @@ def _make_acq(root: Path, *, acq_toml: str = _ACQ_TOML) -> Path:
     return acq
 
 
-def _run(root: Path, *, apply: bool) -> None:
-    argv = ["migrate", "--root", str(root)] + (["--apply"] if apply else [])
+def _run(root: Path, *, apply: bool, csv: Path | None = None) -> None:
+    argv = ["migrate", "--root", str(root)]
+    if apply:
+        argv.append("--apply")
+    elif csv is not None:
+        argv += ["--csv", str(csv)]
     old = sys.argv
     sys.argv = argv
     try:
@@ -71,16 +75,32 @@ def _run(root: Path, *, apply: bool) -> None:
         sys.argv = old
 
 
-def test_dry_run_changes_nothing(tmp_path, capsys):
-    acq = _make_acq(tmp_path)
-    before = sorted(p.relative_to(tmp_path).as_posix() for p in tmp_path.rglob("*"))
-    _run(tmp_path, apply=False)
-    after = sorted(p.relative_to(tmp_path).as_posix() for p in tmp_path.rglob("*"))
-    assert before == after
-    # …but it does say what it would do.
-    out = capsys.readouterr().out
-    assert "mv " in out
-    assert str(acq / "Reconstructions" / "ts_1") in out
+def test_dry_run_writes_a_csv_and_changes_nothing(tmp_path):
+    import csv as _csv
+
+    _make_acq(tmp_path)
+    # Snapshot only the data subtree (Experimental/) so the CSV, written to a
+    # sibling path under tmp_path, doesn't count as a change to the tree.
+    data = tmp_path / "Experimental"
+    before = sorted(p.relative_to(tmp_path).as_posix() for p in data.rglob("*"))
+    csv_path = tmp_path / "plan.csv"
+    _run(tmp_path, apply=False, csv=csv_path)
+    after = sorted(p.relative_to(tmp_path).as_posix() for p in data.rglob("*"))
+    assert before == after  # the data tree is untouched
+
+    # The plan lands in the CSV, not on the terminal.
+    with open(csv_path, newline="") as f:
+        rows = list(_csv.DictReader(f))
+    assert rows
+    # The single-file membrain annotation collapses to a bare {id}.ext in group ts_1.
+    membrain = next(
+        r for r in rows
+        if r["starting_relative_path"] == "Annotations/membrain_seg_v10/seg.mrc"
+    )
+    assert membrain["containing_folder"] == "Experimental"
+    assert membrain["sample_name"] == "sample_a"
+    assert membrain["acquisition_name"] == "Position_86"
+    assert membrain["ending_relative_path"] == "ts_1/Annotations/membrain_seg_v10.mrc"
 
 
 def test_apply_moves_files_into_the_group(tmp_path):

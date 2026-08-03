@@ -25,13 +25,14 @@ Tomograms/ and Annotations/ dirs to move).
 
 Usage
 -----
-    # dry run (prints planned actions, touches nothing)
-    ./utils/migrate_reconstruction_groups.py --root /path/to/data
+    # dry run (writes the planned moves to a CSV, touches nothing)
+    ./utils/migrate_reconstruction_groups.py --root /path/to/data --csv plan.csv
 
     # perform the moves + TOML rewrite
     ./utils/migrate_reconstruction_groups.py --root /path/to/data --apply
 """
 import argparse
+import csv
 import os
 import re
 import sys
@@ -710,7 +711,15 @@ def main():
         help=f"Two-arm data root, holding Experimental/ and MdSimulation/ (default: {ROOT})",
     )
     parser.add_argument("--apply", action="store_true", help="Perform the moves + TOML rewrite (default: dry-run)")
+    parser.add_argument(
+        "--csv", type=Path, default=Path("reconstruction_migration_plan.csv"),
+        help="Dry-run only: write the planned moves to this CSV instead of the "
+             "terminal (default: %(default)s). Ignored with --apply.",
+    )
     args = parser.parse_args()
+
+    # Dry-run planned moves, one row per (src -> dest), written to --csv at the end.
+    plan_rows: list[list[str]] = []
 
     total_moves = total_mkdirs = total_tomls = total_skipped = 0
     for acq_dir in find_acquisition_dirs(args.lab_prefix, args.root):
@@ -825,14 +834,23 @@ def main():
             new_toml = stripped if stripped != orig_text else None
 
         if not args.apply:
+            # Collect this acquisition's planned moves as CSV rows. The arm,
+            # sample and acquisition come from the path under the data root;
+            # start/end paths are relative WITHIN Reconstructions/.
+            arm = acq_dir.relative_to(args.root).parts[0]
+            sample = (
+                acq_dir.parent.name
+                if arm == TOP_LEVEL_EXPERIMENTAL
+                else acq_dir.parent.parent.name  # MdSimulation/{SubDir}/{sample}/SyntheticCryoET/{acq}
+            )
             for src, dest in moves:
-                print(f"mv {src} -> {dest}")
-            for d in mkdirs:
-                print(f"mkdir {d}")
-            for gid in recon_tomls:
-                print(f"# would write {recon_dir / gid / 'reconstruction.toml'}")
-            if new_toml is not None:
-                print(f"# would rewrite {toml_path} (processing log moved to reconstruction.toml)")
+                plan_rows.append([
+                    arm,
+                    sample,
+                    acq_dir.name,
+                    str(src.relative_to(recon_dir)),
+                    str(dest.relative_to(recon_dir)),
+                ])
             continue
 
         # Apply per acquisition, isolating failures: an acquisition owned by
@@ -887,6 +905,15 @@ def main():
             f"wrote {total_tomls} toml file(s){skipped}.",
             file=sys.stderr,
         )
+    else:
+        with open(args.csv, "w", newline="") as f:
+            writer = csv.writer(f)
+            writer.writerow([
+                "containing_folder", "sample_name", "acquisition_name",
+                "starting_relative_path", "ending_relative_path",
+            ])
+            writer.writerows(plan_rows)
+        print(f"Wrote {len(plan_rows)} planned move(s) to {args.csv}", file=sys.stderr)
 
 
 if __name__ == "__main__":
