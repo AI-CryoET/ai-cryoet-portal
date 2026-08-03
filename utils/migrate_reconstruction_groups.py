@@ -164,7 +164,7 @@ def _expand_entity_folder(id_dir: Path, allowed_exts: set[str], dest_dir: Path, 
       - a single leaf, no nested subfolders -> collapse to {id_dir.name}{ext}
         (folder name becomes the entity id, as in the normal per-folder path)
       - otherwise -> each leaf keeps its own filename, and each nested subfolder
-        (e.g. ctf/even/odd) collapses its single leaf to {subfolder.name}{ext}
+        (e.g. ctf/even/odd) collapses its single leaf to {sub.name}_{filename}
 
     prepend_folder (used for Tomograms) preserves each file's own name and
     prefixes it with the source folder name -> {id_dir.name}_{filename}, so the
@@ -195,7 +195,10 @@ def _expand_entity_folder(id_dir: Path, allowed_exts: set[str], dest_dir: Path, 
             warnings.append(f"{sub}: expected one file to collapse to '{sub.name}', found {len(by_ext)}; skipping")
             continue
         (ext, entry), = by_ext.items()
-        moves.append((entry, dest_dir / f"{prefix}{sub.name}{ext}"))
+        # Keep the original filename, prefixed with the variant subfolder name
+        # (ctf/s207_8.00Apx.mrc -> ctf_s207_8.00Apx.mrc), so provenance survives
+        # the collapse. entry.name already carries the extension.
+        moves.append((entry, dest_dir / f"{prefix}{sub.name}_{entry.name}"))
 
     seen: dict[Path, Path] = {}
     deduped = []

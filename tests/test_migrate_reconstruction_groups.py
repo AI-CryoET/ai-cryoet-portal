@@ -284,3 +284,20 @@ def test_stray_file_keeps_its_folder(tmp_path):
     (keep / "readme.txt").write_text("hand-written")
     _run(tmp_path, apply=True)
     assert (keep / "readme.txt").read_text() == "hand-written"
+
+
+def test_nested_variant_subdir_prepends_folder_to_filename(tmp_path, capsys):
+    """A nested variant subdir keeps the original filename, prefixed with the
+    subfolder name: ctf/inner.mrc -> ctf_inner.mrc (not ctf.mrc)."""
+    acq_toml = _ACQ_TOML.replace(
+        '[[tilt_series]]\nid = "ts_1"\nis_aligned = true\n',
+        '[[tilt_series]]\nid = "ts_1"\n\n[[tilt_series]]\nid = "ts_2"\n',
+    )
+    acq = _make_acq(tmp_path, acq_toml=acq_toml)  # 2 tilt series -> folder-as-group
+    ctf = acq / "Reconstructions" / "Tomograms" / "bp_3dctf_bin4" / "ctf"
+    ctf.mkdir(parents=True)
+    (ctf / "s207_8.00Apx.mrc").write_bytes(b"ctf")
+    _run(tmp_path, apply=True)
+    tomos = acq / "Reconstructions" / "bp_3dctf_bin4" / "Tomograms"
+    assert (tomos / "ctf_s207_8.00Apx.mrc").read_bytes() == b"ctf"
+    assert not (tomos / "ctf.mrc").exists()
