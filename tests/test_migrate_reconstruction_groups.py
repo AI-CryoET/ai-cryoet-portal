@@ -190,7 +190,8 @@ def test_ambiguous_tilt_series_falls_back_to_folder_named_groups(tmp_path, capsy
     )
     acq = _make_acq(tmp_path, acq_toml=acq_toml)
     _run(tmp_path, apply=True)
-    assert "found 2" in capsys.readouterr().err
+    err = capsys.readouterr().err
+    assert "found 2" in err
     recon = acq / "Reconstructions"
     # A folder that becomes the GROUP hands its entity ids to the files it
     # holds, so bp_3dctf_bin4's recon.mrc + recon.ome.zarr become tomogram
@@ -198,10 +199,14 @@ def test_ambiguous_tilt_series_falls_back_to_folder_named_groups(tmp_path, capsy
     # collapses to the folder name.
     assert (recon / "bp_3dctf_bin4" / "Tomograms" / "recon.mrc").is_file()
     assert (recon / "bp_3dctf_bin4" / "Tomograms" / "recon.ome.zarr").is_dir()
-    assert (recon / "denoised" / "Tomograms" / "denoised.mrc").is_file()
     assert (
         recon / "membrain_seg_v10" / "Annotations" / "membrain_seg_v10.mrc"
     ).is_file()
+    # denoised is a post-processing variant, not a 3D-alignment group: it is
+    # left in place under Tomograms/ and warned about, not turned into a group.
+    assert (recon / "Tomograms" / "denoised" / "out.mrc").read_bytes() == b"denoised"
+    assert not (recon / "denoised").exists()
+    assert "'denoised' is a tomogram variant folder" in err
     assert not (recon / "ts_1").exists()
 
 
@@ -545,3 +550,35 @@ def test_loose_annotation_without_missalignment_is_still_warned(tmp_path, capsys
     _run(tmp_path, apply=True)
     assert "loose file" in capsys.readouterr().err
     assert loose.exists()
+
+
+def test_tomogram_variant_folders_are_left_in_place_and_warned(tmp_path, capsys):
+    """denoised / gaussian / reconstruct_halves are post-processing variants, not
+    3D-alignment groups: in the folder-as-group (multi-tilt-series) case they are
+    left under Tomograms/ and warned about, while a real group (Missalignment)
+    still migrates."""
+    acq_toml = _ACQ_TOML.replace(
+        '[[tilt_series]]\nid = "ts_1"\nis_aligned = true\n',
+        '[[tilt_series]]\nid = "ts_1"\n\n[[tilt_series]]\nid = "ts_2"\n',
+    )
+    acq = _make_acq(tmp_path, acq_toml=acq_toml)  # already has Tomograms/denoised/out.mrc
+    tomos = acq / "Reconstructions" / "Tomograms"
+    (tomos / "gaussian").mkdir()
+    (tomos / "gaussian" / "g.mrc").write_bytes(b"g")
+    (tomos / "reconstruct_halves").mkdir()
+    (tomos / "reconstruct_halves" / "h1.mrc").write_bytes(b"h")
+    (tomos / "Missalignment").mkdir()
+    (tomos / "Missalignment" / "m.mrc").write_bytes(b"m")
+    _run(tmp_path, apply=True)
+
+    err = capsys.readouterr().err
+    recon = acq / "Reconstructions"
+    # variant folders untouched, and no bogus Reconstructions/{variant}/ group made
+    assert (tomos / "denoised" / "out.mrc").read_bytes() == b"denoised"
+    assert (tomos / "gaussian" / "g.mrc").read_bytes() == b"g"
+    assert (tomos / "reconstruct_halves" / "h1.mrc").read_bytes() == b"h"
+    for variant in ("denoised", "gaussian", "reconstruct_halves"):
+        assert not (recon / variant).exists()
+        assert f"'{variant}' is a tomogram variant folder" in err
+    # a real group still migrates (single leaf collapses onto the folder name)
+    assert (recon / "Missalignment" / "Tomograms" / "Missalignment.mrc").read_bytes() == b"m"

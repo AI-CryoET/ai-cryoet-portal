@@ -58,6 +58,13 @@ ANNOTATION_FILE_EXTENSIONS = {".star", ".mrc", ".png", ".tiff", ".tif", ".csv", 
 # then reads that leftover dir as a bogus (empty) reconstruction group.
 IGNORED_JUNK = {".DS_Store", "Thumbs.db", ".gitkeep"}
 
+# Top-level Tomograms/ subfolders that are post-processing VARIANTS, not distinct
+# 3D-alignment groups (rosenlab data). In the no-single-tilt-series case they
+# would otherwise each be turned into their own bogus Reconstructions/{name}/
+# group; instead they are left in place and the researcher is warned to file them
+# under the correct reconstruction group by hand.
+LEAVE_IN_PLACE_TOMOGRAM_FOLDERS = frozenset({"denoised", "gaussian", "reconstruct_halves"})
+
 
 def _atomic_write(path: Path, text: str) -> None:
     """Write text to path via a temp file + os.replace. os.replace repoints the
@@ -288,15 +295,28 @@ def plan_folder_groups(recon_dir: Path):
     Reconstructions/{id}/ group, named after the folder.
 
     Used when the acquisition has no single tilt series to name the group
-    (group_id_for -> None): a lone tomogram, a QC "Missalignment" tomogram +
-    matching annotation, and per-variant tomogram folders (denoised, gaussian,
-    reconstruct_halves) each resolve to their own group unambiguously.
+    (group_id_for -> None): a lone tomogram or a QC "Missalignment" tomogram +
+    matching annotation resolves to its own group unambiguously. Post-processing
+    variant folders (denoised, gaussian, reconstruct_halves) are NOT groups —
+    they are left in place and warned about (see LEAVE_IN_PLACE_TOMOGRAM_FOLDERS).
     """
     moves, mkdirs, warnings = [], [], []
     tomos_dir = recon_dir / "Tomograms"
     anns_dir = recon_dir / "Annotations"
     tomo_ids = {p.name for p in tomos_dir.iterdir() if p.is_dir()} if tomos_dir.is_dir() else set()
     ann_ids = {p.name for p in anns_dir.iterdir() if p.is_dir()} if anns_dir.is_dir() else set()
+
+    # A tomogram variant folder is a post-processing output, not a 3D-alignment
+    # group — the researcher must decide which group it belongs to. Leave it under
+    # Tomograms/ and warn rather than fabricating a Reconstructions/{name}/ group.
+    for name in sorted(tomo_ids & LEAVE_IN_PLACE_TOMOGRAM_FOLDERS):
+        warnings.append(
+            f"{tomos_dir / name}: '{name}' is a tomogram variant folder, not a "
+            "reconstruction group — left in place; move it under "
+            "Reconstructions/{group}/Tomograms/ manually"
+        )
+    tomo_ids -= LEAVE_IN_PLACE_TOMOGRAM_FOLDERS
+
     group_ids = sorted(tomo_ids | ann_ids)
     for gid in group_ids:
         m, k, w = _plan_folder_as_group(recon_dir, gid)
