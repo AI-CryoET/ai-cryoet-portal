@@ -149,6 +149,14 @@ def client(tmp_path, monkeypatch):
     import catalog.imaging._neuroglancer as ng_mod
     monkeypatch.setattr(ng_mod, "view_neuroglancer", lambda data, **kw: _FakeViewer())
 
+    # A bounding-box annotation: a *_neuroglancer.json overlay, no derived_from,
+    # so the launch must fall back to a tomogram in its alignment group.
+    import json as _json
+    bbox_json = data_root / "sample_a" / "acq1" / "bbox_neuroglancer.json"
+    bbox_json.write_text(_json.dumps([{"type": "annotation", "name": "bb", "annotations": []}]))
+    import catalog.imaging._neuroglancer as ng_mod
+    monkeypatch.setattr(ng_mod, "add_json_layer", lambda viewer, name, data: None)
+
     s = Session()
     try:
         s.add(orm.SampleORM(
@@ -160,7 +168,13 @@ def client(tmp_path, monkeypatch):
                 sample_id="sample_a", acquisition_id="acq1",
                 reconstruction_alignment_id="align1", tomogram_id=tid,
                 mrc_path=str(mrc_path),
+                image_size_x=8, image_size_y=8, image_size_z=4,
             ))
+        s.add(orm.AnnotationORM(
+            sample_id="sample_a", acquisition_id="acq1",
+            reconstruction_alignment_id="align1", annotation_id="bounding_boxes",
+            derived_from=None, files=[str(bbox_json)],
+        ))
         s.commit()
     finally:
         s.close()
@@ -183,6 +197,17 @@ def test_launch_returns_url(client):
     assert r.status_code == 200, r.text
     body = r.json()
     assert body["url"].startswith("http://fake-host")
+
+
+def test_bbox_annotation_falls_back_to_group_tomogram(client):
+    """A bbox annotation with no derived_from launches over a group tomogram.
+
+    Regression: the route used a stale ``target_tomogram`` attribute (500), and
+    even renamed it would 422 since scanned annotations rarely set derived_from.
+    """
+    r = client.post("/annotations/sample_a/acq1/align1/bounding_boxes/neuroglancer")
+    assert r.status_code == 200, r.text
+    assert r.json()["url"].startswith("http://fake-host")
 
 
 def test_lru_evicts_oldest_at_capacity(client):
