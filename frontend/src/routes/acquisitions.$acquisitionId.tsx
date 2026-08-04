@@ -15,7 +15,6 @@ import {
 import { FileglancerPathSection } from '~/components/common/FileglancerPathSection'
 import { DetailHero } from '~/components/common/DetailHero'
 import { DetailPageHeader } from '~/components/common/DetailPageHeader'
-import { SectionHeading } from '~/components/common/SectionHeading'
 import { QualityBadge } from '~/components/common/QualityBadge'
 import { MetadataDrawer } from '~/components/common/MetadataDrawer'
 import { MetadataSectionList } from '~/components/common/MetadataSectionList'
@@ -340,14 +339,9 @@ function AcquisitionDetailRoute() {
 
       <Divider />
 
-      {/* ── Tomograms and annotations ──────────────────────────────── */}
-      <Box>
-        <SectionHeading>Tomograms and annotations</SectionHeading>
-        <TomogramsAnnotationsTable
-          sampleId={sampleId}
-          acquisition={acquisition}
-        />
-      </Box>
+      {/* ── Reconstructions ────────────────────────────────────────── */}
+      {/* Title + collapse controls live inside the component. */}
+      <TomogramsAnnotationsTable sampleId={sampleId} acquisition={acquisition} />
 
       <MetadataDrawer
         open={metadataOpen}
