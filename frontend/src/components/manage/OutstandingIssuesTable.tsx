@@ -4,6 +4,7 @@ import {
   MenuItem,
   Stack,
   TextField,
+  Typography,
   alpha,
 } from '@mui/material'
 import {
@@ -14,6 +15,7 @@ import {
 } from 'material-react-table'
 import type { IssueGroup } from '~/types'
 import { useDebounce } from '~/hooks/useDebounce'
+import { SectionHeader } from './SectionHeader'
 import {
   type IssueFilters,
   useOutstandingIssuesQuery,
@@ -91,6 +93,12 @@ export function OutstandingIssuesTable({
   const debouncedQ = useDebounce(q, 300)
   const filters: IssueFilters = { ...local, ...(debouncedQ ? { q: debouncedQ } : {}) }
   const { data = [], isFetching, isError } = useOutstandingIssuesQuery(filters)
+  // Unfiltered denominator (same query key as the component's filtered fetch
+  // when no filters are set, so they dedupe). Rows are *grouped* issues, so we
+  // sum each group's issues to count actual warnings/errors, not table rows.
+  const { data: allIssues = [] } = useOutstandingIssuesQuery({})
+  const totalIssues = allIssues.reduce((n, g) => n + g.issues.length, 0)
+  const matchCount = data.reduce((n, g) => n + g.issues.length, 0)
   const columns = useColumns()
 
   const setFilter = <K extends keyof LocalFilters>(
@@ -186,5 +194,16 @@ export function OutstandingIssuesTable({
     ),
   })
 
-  return <MaterialReactTable table={table} />
+  return (
+    <Box>
+      <SectionHeader
+        count={totalIssues}
+        title="Outstanding data warnings & errors"
+      />
+      <Typography variant="body1" color="text.secondary" sx={{ mb: 2 }}>
+        {matchCount.toLocaleString()} match the selected filters
+      </Typography>
+      <MaterialReactTable table={table} />
+    </Box>
+  )
 }

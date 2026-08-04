@@ -26,6 +26,9 @@ export const Route = createFileRoute('/manage/warnings')({
     Promise.all([
       queryClient.ensureQueryData(manageSummaryQueryOptions),
       queryClient.ensureQueryData(outstandingIssuesQueryOptions({ q: deps.q })),
+      // Unfiltered list primes the "X out of Y total" denominator so a
+      // deep-linked (?q=…) table shows the right total immediately.
+      queryClient.ensureQueryData(outstandingIssuesQueryOptions({})),
       queryClient.ensureQueryData(recentlyResolvedQueryOptions(24)),
     ]),
   component: ManageRoute,
