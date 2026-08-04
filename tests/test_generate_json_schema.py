@@ -5,11 +5,12 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from schema import AcquisitionFile, MdRun, SampleRecord
+from schema import AcquisitionFile, MdRun, ReconstructionFile, SampleRecord
 from schema.generate_json_schema import (
     _ACQUISITION_FILENAME,
     _DEFAULT_OUT,
     _MD_RUN_FILENAME,
+    _RECONSTRUCTION_FILENAME,
     main,
     strip_nullable,
 )
@@ -159,4 +160,46 @@ def test_committed_md_run_schema_matches_pydantic_models():
     assert committed == expected, (
         "schema/md_run.schema.json is out of sync with MdRun. "
         "Run `pixi run json-schema` to regenerate."
+    )
+
+
+def test_writes_reconstruction_schema_alongside(tmp_path):
+    out = tmp_path / "schema.json"
+    rc = main([str(out)])
+    assert rc == 0
+    reconstruction_out = tmp_path / _RECONSTRUCTION_FILENAME
+    assert reconstruction_out.is_file()
+    assert json.loads(reconstruction_out.read_text()) == strip_nullable(
+        ReconstructionFile.model_json_schema()
+    )
+
+
+def test_reconstruction_schema_has_no_required_fields(tmp_path):
+    """Every section of reconstruction.toml is optional — the folder name
+    supplies the group's identity, so an empty file is valid."""
+    out = tmp_path / "schema.json"
+    main([str(out)])
+    schema = json.loads((tmp_path / _RECONSTRUCTION_FILENAME).read_text())
+    assert "required" not in schema
+    for section in (
+        "reconstruction_alignment",
+        "raw_tomogram",
+        "post_processed_tomogram",
+        "annotation",
+    ):
+        assert section in schema["properties"], section
+
+
+def test_committed_reconstruction_schema_matches_pydantic_models():
+    """Guard against drift between reconstruction.schema.json and
+    ReconstructionFile.
+
+    Regenerate with: `pixi run json-schema`.
+    """
+    committed_path = Path(_DEFAULT_OUT).parent / _RECONSTRUCTION_FILENAME
+    committed = json.loads(committed_path.read_text())
+    expected = strip_nullable(ReconstructionFile.model_json_schema())
+    assert committed == expected, (
+        "schema/reconstruction.schema.json is out of sync with "
+        "ReconstructionFile. Run `pixi run json-schema` to regenerate."
     )

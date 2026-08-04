@@ -46,6 +46,8 @@ from schema.schema import (
     PostProcessedTomogram,
     Project,
     RawTomogram,
+    ReconstructionAlignment,
+    ReconstructionFile,
     Sample,
     SampleRecord,
     TiltSeries,
@@ -150,16 +152,24 @@ FORM_META: list[FormMeta] = [
         filename="sample.toml",
         composite=True,
     ),
+    FormMeta(
+        "reconstruction",
+        "Reconstruction",
+        "{sample_id}/{acquisition_id}/Reconstructions/{id}/reconstruction.toml",
+        "reconstruction.toml",
+        composite=True,
+    ),
 ]
 
 
 # Top-level fields of a composite form's model that are not authored as form
-# sections. ``acquisitions`` is the acquisition form's domain; ``simulation``
-# (only the derived dataset_type) and ``md_run`` (its own md_run.toml file) are
-# not authored in sample.toml. Pinned so a *new* sub-model can't slip in
+# sections. ``acquisitions`` is the acquisition form's domain; ``reconstructions``
+# is the per-folder reconstruction.toml's domain; ``simulation`` (only the
+# derived dataset_type) and ``md_run`` (its own md_run.toml file) are not
+# authored in sample.toml. Pinned so a *new* sub-model can't slip in
 # unclassified (test_form_fields_drift).
 EXCLUDED_TOP_FIELDS: dict[str, set[str]] = {
-    "sample": {"simulation", "md_run", "acquisitions"},
+    "sample": {"simulation", "md_run", "acquisitions", "reconstructions"},
 }
 
 
@@ -179,11 +189,17 @@ FORM_SECTIONS: list[FormSection] = [
         repeatable=True, cross_ref_literals=("Frames",),
         id_namespace="tilt_series", immutable_on_load=True,
     ),
-    # Processing log (ADR-0004): raw + post-processed tomograms share one id
-    # namespace ("tomogram") that derived_from / target_tomogram reference.
     FormSection(
-        "acquisition", "raw_tomogram", "Raw tomogram", model=RawTomogram,
-        id_namespace="tomogram", immutable_on_load=True,
+        "acquisition", "reconstruction_alignment", "3D alignment",
+        model=ReconstructionAlignment, repeatable=True,
+        id_namespace="reconstruction_alignment", immutable_on_load=True,
+    ),
+    # Processing log (ADR-0004): raw + post-processed tomograms share one id
+    # namespace ("tomogram") that post_processed_tomogram.derived_from
+    # references.
+    FormSection(
+        "acquisition", "raw_tomogram", "Raw tomograms", model=RawTomogram,
+        repeatable=True, id_namespace="tomogram", immutable_on_load=True,
     ),
     FormSection(
         "acquisition", "post_processed_tomogram", "Post-processed tomograms",
@@ -216,6 +232,26 @@ FORM_SECTIONS: list[FormSection] = [
     FormSection(
         "sample", "milling", "Milling", model=Milling,
         requires_data_source="experimental",
+    ),
+
+    # ---- reconstruction.toml — one file per Reconstructions/{id}/ group. The
+    #      folder name IS the group id, so [reconstruction_alignment] is a
+    #      single table (unlike acquisition's repeatable version).
+    FormSection(
+        "reconstruction", "reconstruction_alignment", "3D alignment",
+        model=ReconstructionAlignment,
+    ),
+    FormSection(
+        "reconstruction", "raw_tomogram", "Raw tomograms", model=RawTomogram,
+        repeatable=True, id_namespace="tomogram",
+    ),
+    FormSection(
+        "reconstruction", "post_processed_tomogram", "Post-processed tomograms",
+        model=PostProcessedTomogram, repeatable=True, id_namespace="tomogram",
+    ),
+    FormSection(
+        "reconstruction", "annotation", "Annotations", model=Annotation,
+        repeatable=True,
     ),
 ]
 
@@ -326,32 +362,53 @@ FORM_FIELDS: list[FormField] = [
         "alignment_files", "mtime",
     ),
 
-    # ---- acquisition [raw_tomogram] — at most one reconstruction off frames --
+    # ---- acquisition [[reconstruction_alignment]] — one per 3D alignment group --
+    FormField(
+        "acquisition", "reconstruction_alignment", "reconstruction_alignment_id",
+        "3D alignment id", "text", required=True, alias="id",
+        help="MUST equal the folder name under Reconstructions/. Does NOT have "
+             "to match any tilt series id.",
+    ),
+    FormField(
+        "acquisition", "reconstruction_alignment", "renamed_from", "Renamed from",
+        "text",
+        help="Previous 3D alignment id if you renamed this directory, so the "
+             "scanner records a rename instead of a deletion + new group.",
+    ),
+    FormField("acquisition", "reconstruction_alignment", "alignment_software",
+              "Alignment software", "text",
+              help='e.g. "IMOD 4.12", "RELION", "AreTomo3".'),
+    FormField("acquisition", "reconstruction_alignment", "alignment_method",
+              "Alignment method", "text",
+              help="e.g. patch_tracking | fiducial | subtomogram_averaging"),
+    *_derived(
+        "acquisition", "reconstruction_alignment",
+        "sample_id", "acquisition_id", "alignment_files", "mtime",
+    ),
+
+    # ---- acquisition [[raw_tomogram]] — one per reconstruction off a tilt series --
     FormField(
         "acquisition", "raw_tomogram", "tomogram_id", "Tomogram id", "text",
-        required=True, alias="id", help="MUST equal the tomogram's folder name.",
+        required=True, alias="id",
+        help="MUST equal the tomogram file's name without extension.",
     ),
     FormField(
         "acquisition", "raw_tomogram", "renamed_from", "Renamed from", "text",
         help="Previous tomogram id if you renamed this directory, so the "
              "scanner records a rename instead of a deletion + new tomogram.",
     ),
-    FormField(
-        "acquisition", "raw_tomogram", "tilt_series_id", "Tilt series", "select",
-        cross_ref="tilt_series",
-        help="The tilt series this tomogram was reconstructed from.",
-    ),
     FormField("acquisition", "raw_tomogram", "pipeline", "Pipeline", "text",
               help='e.g. "backprojection + 3D CTF correction".'),
     FormField("acquisition", "raw_tomogram", "software", "Software", "text",
               help='e.g. "IMOD 4.12 + novaCTF".'),
     FormField(
-        "acquisition", "raw_tomogram", "derived_from", "Derived from", "multiselect",
-        cross_ref="tomogram",
-        help="Other tomograms in this acquisition this one was derived from.",
+        "acquisition", "raw_tomogram", "derived_from", "Derived from", "select",
+        cross_ref="tilt_series",
+        help="The tilt series (under TiltSeries/) this was reconstructed from.",
     ),
     *_derived(
         "acquisition", "raw_tomogram",
+        "reconstruction_alignment_id",
         "image_size_x", "image_size_y", "image_size_z", "voxel_size",
         "mrc_path", "zarr_path", "zarr_axes", "zarr_scale",
     ),
@@ -360,18 +417,13 @@ FORM_FIELDS: list[FormField] = [
     FormField(
         "acquisition", "post_processed_tomogram", "tomogram_id", "Tomogram id",
         "text", required=True, alias="id",
-        help="MUST equal the tomogram's folder name.",
+        help="MUST equal the tomogram file's name without extension.",
     ),
     FormField(
         "acquisition", "post_processed_tomogram", "renamed_from", "Renamed from",
         "text",
         help="Previous tomogram id if you renamed this directory, so the "
              "scanner records a rename instead of a deletion + new tomogram.",
-    ),
-    FormField(
-        "acquisition", "post_processed_tomogram", "tilt_series_id", "Tilt series",
-        "select", cross_ref="tilt_series",
-        help="The tilt series this tomogram was reconstructed from.",
     ),
     FormField("acquisition", "post_processed_tomogram", "denoising_software",
               "Denoising software", "text"),
@@ -382,10 +434,12 @@ FORM_FIELDS: list[FormField] = [
     FormField(
         "acquisition", "post_processed_tomogram", "derived_from", "Derived from",
         "multiselect", cross_ref="tomogram",
-        help="Other tomograms in this acquisition this one was derived from.",
+        help="Id of the single tomogram, or ids of the multiple tomograms, in "
+             "this acquisition this was derived from.",
     ),
     *_derived(
         "acquisition", "post_processed_tomogram",
+        "reconstruction_alignment_id",
         "image_size_x", "image_size_y", "image_size_z", "voxel_size",
         "mrc_path", "zarr_path", "zarr_axes", "zarr_scale", "size_bytes",
     ),
@@ -403,12 +457,12 @@ FORM_FIELDS: list[FormField] = [
     ),
     FormField("acquisition", "annotation", "type", "Type", "text",
               help="e.g. membrane_segmentation | nucleosome_placement | active_zone"),
-    FormField(
-        "acquisition", "annotation", "target_tomogram", "Target tomogram", "select",
-        cross_ref="tomogram",
-        help="The tomogram in this acquisition this annotation segments.",
-    ),
-    *_derived("acquisition", "annotation", "files"),
+    FormField("acquisition", "annotation", "derived_from", "Derived from", "text",
+              help="Id of the tomogram in this group the annotation was derived from."),
+    FormField("acquisition", "annotation", "bounding_box", "Bounding box", "text",
+              help="Id of the annotation file (under Annotations/) holding the "
+                   "bounding box this annotation is associated with."),
+    *_derived("acquisition", "annotation", "reconstruction_alignment_id", "files"),
 
     # ---- sample / [sample] ------------------------------------------------
     FormField(
@@ -511,6 +565,109 @@ FORM_FIELDS: list[FormField] = [
     FormField("sample", "milling", "date", "Milling date", "date", help="YYYY-MM-DD"),
     FormField("sample", "milling", "quality", "Quality", "text",
               help="Comment on FIB quality."),
+
+    # ---- reconstruction [reconstruction_alignment] — single table; the folder
+    #      name IS the group id (ReconstructionFile has no id of its own) -----
+    FormField(
+        "reconstruction", "reconstruction_alignment", "reconstruction_alignment_id",
+        "3D alignment id", "text", required=True, is_id=True, alias="id",
+        help="Reconstructions/ folder name. Sets identity; not written into the file.",
+    ),
+    FormField(
+        "reconstruction", "reconstruction_alignment", "renamed_from", "Renamed from",
+        "text",
+        help="Previous 3D alignment id if you renamed this directory, so the "
+             "scanner records a rename instead of a deletion + new group.",
+    ),
+    FormField("reconstruction", "reconstruction_alignment", "alignment_software",
+              "Alignment software", "text",
+              help='e.g. "IMOD 4.12", "RELION", "AreTomo3".'),
+    FormField("reconstruction", "reconstruction_alignment", "alignment_method",
+              "Alignment method", "text",
+              help="e.g. patch_tracking | fiducial | subtomogram_averaging"),
+    *_derived(
+        "reconstruction", "reconstruction_alignment",
+        "sample_id", "acquisition_id", "alignment_files", "mtime",
+    ),
+
+    # ---- reconstruction [[raw_tomogram]] — one per reconstruction off a tilt series --
+    FormField(
+        "reconstruction", "raw_tomogram", "tomogram_id", "Tomogram id", "text",
+        required=True, alias="id",
+        help="MUST equal the tomogram file's name without extension.",
+    ),
+    FormField(
+        "reconstruction", "raw_tomogram", "renamed_from", "Renamed from", "text",
+        help="Previous tomogram id if you renamed this file, so the "
+             "scanner records a rename instead of a deletion + new tomogram.",
+    ),
+    FormField("reconstruction", "raw_tomogram", "pipeline", "Pipeline", "text",
+              help='e.g. "backprojection + 3D CTF correction".'),
+    FormField("reconstruction", "raw_tomogram", "software", "Software", "text",
+              help='e.g. "IMOD 4.12 + novaCTF".'),
+    FormField(
+        "reconstruction", "raw_tomogram", "derived_from", "Derived from", "select",
+        api_suggest="tilt_series",
+        help="The tilt series (under TiltSeries/) this was reconstructed from.",
+    ),
+    *_derived(
+        "reconstruction", "raw_tomogram",
+        "reconstruction_alignment_id",
+        "image_size_x", "image_size_y", "image_size_z", "voxel_size",
+        "mrc_path", "zarr_path", "zarr_axes", "zarr_scale",
+    ),
+
+    # ---- reconstruction [[post_processed_tomogram]] — one per processed output --
+    FormField(
+        "reconstruction", "post_processed_tomogram", "tomogram_id", "Tomogram id",
+        "text", required=True, alias="id",
+        help="MUST equal the tomogram file's name without extension.",
+    ),
+    FormField(
+        "reconstruction", "post_processed_tomogram", "renamed_from", "Renamed from",
+        "text",
+        help="Previous tomogram id if you renamed this file, so the "
+             "scanner records a rename instead of a deletion + new tomogram.",
+    ),
+    FormField("reconstruction", "post_processed_tomogram", "denoising_software",
+              "Denoising software", "text"),
+    FormField("reconstruction", "post_processed_tomogram", "ctf_software",
+              "CTF software", "text"),
+    FormField("reconstruction", "post_processed_tomogram", "missing_wedge_software",
+              "Missing-wedge software", "text"),
+    FormField(
+        "reconstruction", "post_processed_tomogram", "derived_from", "Derived from",
+        "multiselect", cross_ref="tomogram",
+        help="Id of the single tomogram, or ids of the multiple tomograms, in "
+             "this acquisition this was derived from.",
+    ),
+    *_derived(
+        "reconstruction", "post_processed_tomogram",
+        "reconstruction_alignment_id",
+        "image_size_x", "image_size_y", "image_size_z", "voxel_size",
+        "mrc_path", "zarr_path", "zarr_axes", "zarr_scale", "size_bytes",
+    ),
+
+    # ---- reconstruction [[annotation]] — one per segmentation --------------
+    FormField(
+        "reconstruction", "annotation", "annotation_id", "Annotation id", "text",
+        required=True, alias="id",
+        help='MUST equal the annotation file\'s name without extension, e.g. '
+             '"membrain_seg_v10".',
+    ),
+    FormField(
+        "reconstruction", "annotation", "renamed_from", "Renamed from", "text",
+        help="Previous annotation id if you renamed this file, so the "
+             "scanner records a rename instead of a deletion + new annotation.",
+    ),
+    FormField("reconstruction", "annotation", "type", "Type", "text",
+              help="e.g. membrane_segmentation | nucleosome_placement | active_zone"),
+    FormField("reconstruction", "annotation", "derived_from", "Derived from", "text",
+              help="Id of the tomogram in this group the annotation was derived from."),
+    FormField("reconstruction", "annotation", "bounding_box", "Bounding box", "text",
+              help="Id of the annotation file (under Annotations/) holding the "
+                   "bounding box this annotation is associated with."),
+    *_derived("reconstruction", "annotation", "reconstruction_alignment_id", "files"),
 ]
 
 
@@ -521,4 +678,5 @@ FORMS = {
     "md_run": MdRun,
     "acquisition": AcquisitionFile,
     "sample": SampleRecord,
+    "reconstruction": ReconstructionFile,
 }

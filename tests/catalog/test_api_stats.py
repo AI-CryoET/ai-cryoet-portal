@@ -53,18 +53,21 @@ def seeded_client(tmp_path):
                 sample_id="chrom_a", acquisition_id=acq_id,
             ))
             s.add(orm.PostProcessedTomogramORM(
-                sample_id="chrom_a", acquisition_id=acq_id, tomogram_id="t1",
+                sample_id="chrom_a", acquisition_id=acq_id,
+                reconstruction_alignment_id="align1", tomogram_id="t1",
                 size_bytes=1000,
             ))
             s.add(orm.PostProcessedTomogramORM(
-                sample_id="chrom_a", acquisition_id=acq_id, tomogram_id="t2",
+                sample_id="chrom_a", acquisition_id=acq_id,
+                reconstruction_alignment_id="align1", tomogram_id="t2",
                 size_bytes=2000,
             ))
             s.add(orm.TiltSeriesORM(
                 sample_id="chrom_a", acquisition_id=acq_id, tilt_series_id="ts1",
             ))
             s.add(orm.AnnotationORM(
-                sample_id="chrom_a", acquisition_id=acq_id, annotation_id="a1",
+                sample_id="chrom_a", acquisition_id=acq_id,
+                reconstruction_alignment_id="align1", annotation_id="a1",
             ))
 
         # chrom_b: 1 acq × (1 tomo with NULL size_bytes + 0 tilt_series + 0 annotations)
@@ -78,7 +81,8 @@ def seeded_client(tmp_path):
             sample_id="chrom_b", acquisition_id="acq1",
         ))
         s.add(orm.PostProcessedTomogramORM(
-            sample_id="chrom_b", acquisition_id="acq1", tomogram_id="t1",
+            sample_id="chrom_b", acquisition_id="acq1",
+            reconstruction_alignment_id="align1", tomogram_id="t1",
             size_bytes=None,  # must coalesce to 0 in by_project size_bytes
         ))
 
@@ -94,7 +98,15 @@ def seeded_client(tmp_path):
             sample_id="syn_a", acquisition_id="acq1",
         ))
         s.add(orm.PostProcessedTomogramORM(
-            sample_id="syn_a", acquisition_id="acq1", tomogram_id="t1",
+            sample_id="syn_a", acquisition_id="acq1",
+            reconstruction_alignment_id="align1", tomogram_id="t1",
+            size_bytes=5000,
+        ))
+        # Same stem "t1"/"a1" in a second alignment group: distinct files on
+        # disk, so distinct rows — this is what the group-scoped PK fixes.
+        s.add(orm.PostProcessedTomogramORM(
+            sample_id="syn_a", acquisition_id="acq1",
+            reconstruction_alignment_id="align2", tomogram_id="t1",
             size_bytes=5000,
         ))
         for ts_id in ("ts1", "ts2"):
@@ -102,7 +114,12 @@ def seeded_client(tmp_path):
                 sample_id="syn_a", acquisition_id="acq1", tilt_series_id=ts_id,
             ))
         s.add(orm.AnnotationORM(
-            sample_id="syn_a", acquisition_id="acq1", annotation_id="a1",
+            sample_id="syn_a", acquisition_id="acq1",
+            reconstruction_alignment_id="align1", annotation_id="a1",
+        ))
+        s.add(orm.AnnotationORM(
+            sample_id="syn_a", acquisition_id="acq1",
+            reconstruction_alignment_id="align2", annotation_id="a1",
         ))
 
         # syn_b: 1 acq, no tomograms / tilt_series / annotations
@@ -128,14 +145,16 @@ def seeded_client(tmp_path):
             sample_id="dead", acquisition_id="acq1",
         ))
         s.add(orm.PostProcessedTomogramORM(
-            sample_id="dead", acquisition_id="acq1", tomogram_id="t1",
+            sample_id="dead", acquisition_id="acq1",
+            reconstruction_alignment_id="align1", tomogram_id="t1",
             size_bytes=99999,  # must NOT contribute to chromatin size_bytes
         ))
         s.add(orm.TiltSeriesORM(
             sample_id="dead", acquisition_id="acq1", tilt_series_id="ts1",
         ))
         s.add(orm.AnnotationORM(
-            sample_id="dead", acquisition_id="acq1", annotation_id="a1",
+            sample_id="dead", acquisition_id="acq1",
+            reconstruction_alignment_id="align1", annotation_id="a1",
         ))
 
         # ── issues (current state; totals.warnings = outstanding count) ──
@@ -187,12 +206,13 @@ def test_totals_match_seeded_counts(seeded_client):
     assert totals["samples"] == 4
     # Live acquisitions: chrom_a×2 + chrom_b×1 + syn_a×1 + syn_b×1 = 5.
     assert totals["acquisitions"] == 5
-    # Live tomograms: chrom_a 2*2 + chrom_b 1 + syn_a 1 = 6.
-    assert totals["tomograms"] == 6
+    # Live tomograms: chrom_a 2*2 + chrom_b 1 + syn_a 2 = 7. syn_a's two
+    # rows share the stem "t1" and differ only by alignment group.
+    assert totals["tomograms"] == 7
     # Live tilt_series: chrom_a 2 + syn_a 2 = 4.
     assert totals["tilt_series"] == 4
-    # Live annotations: chrom_a 2 + syn_a 1 = 3.
-    assert totals["annotations"] == 3
+    # Live annotations: chrom_a 2 + syn_a 2 = 4 (syn_a's "a1" in two groups).
+    assert totals["annotations"] == 4
 
 
 def test_totals_warnings_counts_outstanding_issues(seeded_client):
@@ -222,10 +242,11 @@ def test_by_project_rows_match_seeded_counts(seeded_client):
     assert chrom["size_bytes"] == 6000
 
     syn = next(row for row in rows if row["project"] == "synapse")
-    # syn_a + syn_b → 2 live samples, 2 acquisitions, 1 tomogram, 5000 bytes.
+    # syn_a + syn_b → 2 live samples, 2 acquisitions, 2 tomograms (one stem
+    # per alignment group), 5000 bytes.
     assert syn["samples"] == 2
     assert syn["acquisitions"] == 2
-    assert syn["tomograms"] == 1
+    assert syn["tomograms"] == 2
     assert syn["size_bytes"] == 5000
 
 

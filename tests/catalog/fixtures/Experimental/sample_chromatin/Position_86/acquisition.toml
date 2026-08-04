@@ -2,10 +2,17 @@
 resolution = 3.5
 microscope = "Krios"
 
-[raw_tomogram]
+[[tilt_series]]
+id = "ts_1"
+is_aligned = true
+
+[[reconstruction_alignment]]
+id = "ts_1"
+
+[[raw_tomogram]]
 id = "bp_3dctf_bin4"
+derived_from = "ts_1"
 
 [[annotation]]
 id = "membrain_seg_v10"
 type = "membrane_segmentation"
-target_tomogram = "bp_3dctf_bin4"

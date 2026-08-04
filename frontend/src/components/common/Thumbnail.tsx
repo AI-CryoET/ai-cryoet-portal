@@ -262,17 +262,29 @@ export function tiltSeriesPreviewUrl(s: string, a: string, ts: string): string {
 }
 
 // On-demand tomogram center-XY slice — distinct per tomogram, used in the
-// tomograms table where each row is its own reconstruction.
-export function tomogramPreviewUrl(s: string, a: string, t: string): string {
-  return `/api/tomograms/${enc(s)}/${enc(a)}/${enc(t)}/preview.png`
+// tomograms table where each row is its own reconstruction. `g` is the
+// Reconstructions/{group}/ the tomogram lives in: the id is only a file stem,
+// so two groups can each hold e.g. `denoised`.
+export function tomogramPreviewUrl(
+  s: string,
+  a: string,
+  g: string,
+  t: string,
+): string {
+  return `/api/tomograms/${enc(s)}/${enc(a)}/${enc(g)}/${enc(t)}/preview.png`
 }
 
 // On-demand annotation center-XY slice — the annotation's `.mrc` artifact
 // rendered like a tomogram. Used in the annotations sub-table. Returns 422
 // when the annotation has no `.mrc` (e.g. sparse/point-only annotations), in
 // which case PreviewThumbnail falls back to the grey placeholder.
-export function annotationPreviewUrl(s: string, a: string, ann: string): string {
-  return `/api/annotations/${enc(s)}/${enc(a)}/${enc(ann)}/preview.png`
+export function annotationPreviewUrl(
+  s: string,
+  a: string,
+  g: string,
+  ann: string,
+): string {
+  return `/api/annotations/${enc(s)}/${enc(a)}/${enc(g)}/${enc(ann)}/preview.png`
 }
 
 // First tilt series of an acquisition — the representative used for the

@@ -53,6 +53,27 @@ def _children(parent_key: str) -> list[CatalogEntity]:
     return [e for e in CATALOG if e.parent == parent_key]
 
 
+def _md_subtree(entity: CatalogEntity, number: str, depth: int) -> list[str]:
+    """Heading + field table for ``entity`` and, recursively, its children.
+
+    ``number`` is the section label ("1a", "2b1", …); ``depth`` the heading
+    level. Recursive so a grandchild (tomograms/annotations, which hang off a
+    3D-alignment group rather than off the acquisition) still gets documented.
+    """
+    gate = entity.arm or ("chromatin only" if entity.chromatin_only else "")
+    suffix = f" ({gate})" if gate else ""
+    out = [
+        f"\n{'#' * depth} {number}. {entity.name}{suffix} — "
+        f"_{entity.cardinality}_\n",
+        _rows(entity),
+    ]
+    for k, child in enumerate(_children(entity.key), start=1):
+        # letters at depth 3 (1a, 1b), digits below (2b1, 2b2).
+        label = chr(ord("a") + k - 1) if depth == 2 else str(k)
+        out.extend(_md_subtree(child, f"{number}{label}", depth + 1))
+    return out
+
+
 def render_md() -> str:
     tops = [e for e in CATALOG if e.parent is None]
     out = [_PREAMBLE]
@@ -60,10 +81,9 @@ def render_md() -> str:
         out.append(f"\n---\n\n## {i}. {top.name} entity\n\n_{top.cardinality}_\n")
         out.append(_rows(top))
         for j, child in enumerate(_children(top.key), start=1):
-            gate = child.arm or ("chromatin only" if child.chromatin_only else "")
-            suffix = f" ({gate})" if gate else ""
-            out.append(f"\n### {i}{chr(ord('a') + j - 1)}. {child.name}{suffix} — _{child.cardinality}_\n")
-            out.append(_rows(child))
+            out.extend(
+                _md_subtree(child, f"{i}{chr(ord('a') + j - 1)}", 3)
+            )
     return "\n".join(out) + "\n"
 
 

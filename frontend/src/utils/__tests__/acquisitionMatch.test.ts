@@ -13,7 +13,7 @@ function asAcq(acq: Record<string, unknown>): AcquisitionOut {
     tilt_series: [],
     post_processed_tomograms: [],
     annotations: [],
-    raw_tomogram: null,
+    raw_tomograms: [],
     ...acq,
   } as unknown as AcquisitionOut
 }

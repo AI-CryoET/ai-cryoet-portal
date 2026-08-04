@@ -96,7 +96,7 @@ def test_scan_fixture_root_happy_path(engine):
             .all()
         )
         assert len(anns) == 1
-        assert any(p.endswith("segmentation.mrc") for p in anns[0].files)
+        assert any(p.endswith("membrain_seg_v10.mrc") for p in anns[0].files)
 
         # scan_runs row written, status='completed'
         scans = s.execute(select(orm.ScanRunORM)).scalars().all()

@@ -49,7 +49,7 @@ function deriveSamplePath(sample: SampleDetail): string | null {
 
 function countTomograms(sample: SampleDetail): number {
   return sample.acquisitions.reduce(
-    (sum, a) => sum + (a.raw_tomogram ? 1 : 0) + a.post_processed_tomograms.length,
+    (sum, a) => sum + a.raw_tomograms.length + a.post_processed_tomograms.length,
     0,
   )
 }

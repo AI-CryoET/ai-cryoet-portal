@@ -30,7 +30,11 @@ type TomogramRow =
 
 const dash = '—'
 
-function formatShape(x: number | null, y: number | null, z: number | null) {
+function formatShape(
+  x: number | null | undefined,
+  y: number | null | undefined,
+  z: number | null | undefined,
+) {
   if (x == null || y == null || z == null) return dash
   return `${x}×${y}×${z}`
 }
@@ -54,8 +58,8 @@ function formatBytes(n: number | null | undefined) {
 
 function combinedTomograms(acquisition: AcquisitionOut): TomogramRow[] {
   const rows: TomogramRow[] = []
-  if (acquisition.raw_tomogram) {
-    rows.push({ kind: 'raw', ...acquisition.raw_tomogram })
+  for (const t of acquisition.raw_tomograms) {
+    rows.push({ kind: 'raw', ...t })
   }
   for (const t of acquisition.post_processed_tomograms) {
     rows.push({ kind: 'post', ...t })
@@ -63,7 +67,7 @@ function combinedTomograms(acquisition: AcquisitionOut): TomogramRow[] {
   return rows
 }
 
-// Nested table of the annotations linked to a single tomogram. Plain MUI
+// Nested table of the annotations belonging to one alignment group. Plain MUI
 // `Table` (rather than another MRT instance) keeps the detail panel light;
 // annotations carry no shape/voxel/size metadata in the schema, so those
 // columns render em-dashes for parity with the tomogram header row.
@@ -76,7 +80,7 @@ function AnnotationsSubTable(props: {
   if (annotations.length === 0) {
     return (
       <Typography variant="body2" color="text.secondary">
-        No annotations linked to this tomogram.
+        No annotations in this 3D alignment group.
       </Typography>
     )
   }
@@ -96,10 +100,15 @@ function AnnotationsSubTable(props: {
         {annotations.map((a) => {
           const alt = `Center XY slice of ${a.annotation_id}`
           return (
-          <TableRow key={a.annotation_id}>
+          <TableRow key={`${a.reconstruction_alignment_id}/${a.annotation_id}`}>
             <TableCell sx={{ width: 112 }}>
               <PreviewThumbnail
-                src={annotationPreviewUrl(sampleId, acquisitionId, a.annotation_id)}
+                src={annotationPreviewUrl(
+                  sampleId,
+                  acquisitionId,
+                  a.reconstruction_alignment_id,
+                  a.annotation_id,
+                )}
                 alt={alt}
                 tooltipTitle={alt}
                 width={96}
@@ -112,6 +121,16 @@ function AnnotationsSubTable(props: {
               {a.type ? (
                 <Typography variant="caption" color="text.secondary" display="block">
                   {a.type}
+                </Typography>
+              ) : null}
+              {a.derived_from ? (
+                <Typography variant="caption" color="text.secondary" display="block">
+                  derived from: {a.derived_from}
+                </Typography>
+              ) : null}
+              {a.bounding_box ? (
+                <Typography variant="caption" color="text.secondary" display="block">
+                  bounding box: {a.bounding_box}
                 </Typography>
               ) : null}
             </TableCell>
@@ -127,6 +146,7 @@ function AnnotationsSubTable(props: {
                         entity: 'annotation',
                         sampleId,
                         acquisitionId,
+                        groupId: a.reconstruction_alignment_id,
                         entityId: a.annotation_id,
                       }
                     : null
@@ -147,17 +167,22 @@ export function TomogramsAnnotationsTable(props: {
 }) {
   const { sampleId, acquisition } = props
 
-  // Group annotations under the tomogram they target.
-  const annotationsByTomogram = useMemo(() => {
-    const map = new Map<string, AnnotationOut[]>()
+  // An annotation belongs to its 3D-alignment group (any of the group's sibling
+  // tomograms represents the same inferred biological structure) rather than to
+  // a single tomogram — so a row shows its own group's annotations, not the
+  // acquisition's whole list. An acquisition can hold several groups.
+  const annotationsByGroup = useMemo(() => {
+    const byGroup = new Map<string, AnnotationOut[]>()
     for (const a of acquisition.annotations) {
-      if (!a.target_tomogram) continue
-      const list = map.get(a.target_tomogram) ?? []
-      list.push(a)
-      map.set(a.target_tomogram, list)
+      const list = byGroup.get(a.reconstruction_alignment_id)
+      if (list) list.push(a)
+      else byGroup.set(a.reconstruction_alignment_id, [a])
     }
-    return map
+    return byGroup
   }, [acquisition.annotations])
+
+  const groupAnnotations = (t: TomogramRow) =>
+    annotationsByGroup.get(t.reconstruction_alignment_id) ?? []
 
   const data = useMemo(
     () => combinedTomograms(acquisition),
@@ -179,6 +204,7 @@ export function TomogramsAnnotationsTable(props: {
               src={tomogramPreviewUrl(
                 sampleId,
                 acquisition.acquisition_id,
+                row.original.reconstruction_alignment_id,
                 row.original.tomogram_id,
               )}
               alt={alt}
@@ -229,6 +255,7 @@ export function TomogramsAnnotationsTable(props: {
                     entity: 'tomogram',
                     sampleId,
                     acquisitionId: acquisition.acquisition_id,
+                    groupId: row.original.reconstruction_alignment_id,
                     entityId: row.original.tomogram_id,
                   }
                 : null
@@ -239,18 +266,17 @@ export function TomogramsAnnotationsTable(props: {
       {
         id: 'n_annotations',
         header: 'Annotations',
-        accessorFn: (t) =>
-          annotationsByTomogram.get(t.tomogram_id)?.length ?? 0,
+        accessorFn: (t) => groupAnnotations(t).length,
         size: 120,
       },
     ],
-    [sampleId, acquisition.acquisition_id, annotationsByTomogram],
+    [sampleId, acquisition.acquisition_id, annotationsByGroup],
   )
 
   const table = useMaterialReactTable({
     columns,
     data,
-    getRowId: (t) => t.tomogram_id,
+    getRowId: (t) => `${t.reconstruction_alignment_id}/${t.tomogram_id}`,
     enableExpanding: true,
     enableSorting: true,
     enableColumnActions: false,
@@ -272,15 +298,13 @@ export function TomogramsAnnotationsTable(props: {
     renderDetailPanel: ({ row }) => (
       <Box sx={{ px: 2, py: 1.5, bgcolor: 'action.hover' }}>
         <Typography variant="overline" color="text.secondary">
-          Annotations for {row.original.tomogram_id}
+          Annotations for this 3D alignment group
         </Typography>
         <Box sx={{ mt: 1 }}>
           <AnnotationsSubTable
             sampleId={sampleId}
             acquisitionId={acquisition.acquisition_id}
-            annotations={
-              annotationsByTomogram.get(row.original.tomogram_id) ?? []
-            }
+            annotations={groupAnnotations(row.original)}
           />
         </Box>
       </Box>

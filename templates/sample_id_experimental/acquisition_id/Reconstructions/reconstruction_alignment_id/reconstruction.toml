@@ -1,0 +1,68 @@
+#:schema file:///groups/cryoet/cryoet/data/scratch/src/schema/reconstruction.schema.json
+# reconstruction.toml — researcher-authored metadata for ONE 3D-alignment group.
+# One file per Reconstructions/{reconstruction_alignment_id}/ folder.
+# The folder name IS this group's identity (reconstruction_alignment_id) —
+# not repeated here; the loader injects it from the path at load time.
+#
+# Every [[raw_tomogram]], [[post_processed_tomogram]], and [[annotation]]
+# entry in this file implicitly belongs to this group. A tomogram/annotation
+# `id` MUST equal a file stem under this folder's Tomograms/ or Annotations/.
+#
+# HOW TO USE THIS TEMPLATE
+# ────────────────────────
+# 1. Uncomment the [reconstruction_alignment] section and replace every
+#    "<FILL IN>" placeholder.
+# 2. Append a [[raw_tomogram]] / [[post_processed_tomogram]] block for each
+#    tomogram in this group's Tomograms/ folder. Point each raw tomogram's
+#    `derived_from` at the [[tilt_series]] (in acquisition.toml) it was
+#    reconstructed from; point each post-processed tomogram's `derived_from`
+#    at the tomogram id(s) it was derived from.
+# 3. Append an [[annotation]] block for each annotation in this group's
+#    Annotations/ folder.
+# 4. Entries are immutable once added — reprocessing produces a NEW entry
+#    with a new `id`. Never modify or delete existing entries.
+#
+# EXTRA FIELDS
+# ────────────
+# You may add any key-value pair that is not yet in schema.py. The
+# validator reports it as a warning but the file still passes.
+#
+# VALIDATION
+# ──────────
+# Run from the sample root before committing:
+#   pixi run validate {sample_dir}
+
+
+# ════════════════════════════════════════════════════════════════
+# 3D alignment
+# ════════════════════════════════════════════════════════════════
+
+# [reconstruction_alignment]
+# alignment_software = "<FILL IN>"   # text, e.g. "IMOD 4.12", "RELION", "AreTomo3"
+# alignment_method   = "<FILL IN>"   # text, e.g. patch_tracking | fiducial | subtomogram_averaging
+
+# ════════════════════════════════════════════════════════════════
+# Processing log
+# Append entries below as tomograms and annotations are produced.
+# Copy-paste the [[post_processed_tomogram]] and [[annotation]] blocks so there is one for each produced
+# These start empty — add them as processing happens.
+# ════════════════════════════════════════════════════════════════
+
+# [[raw_tomogram]]
+# id             = "<FILL IN>"   # text, MUST equal the tomogram file's name without extension, e.g. `bp_3dctf_bin4` for `bp_3dctf_bin4.mrc`
+# pipeline       = "<FILL IN>"   # text, e.g. "backprojection + 3D CTF correction"
+# software       = "<FILL IN>"   # text, e.g. "IMOD 4.12 + novaCTF"
+# derived_from   = "<FILL IN>"   # text, MUST equal a [[tilt_series]] id (in acquisition.toml) this was reconstructed from
+
+# [[post_processed_tomogram]]
+# id                        = "<FILL IN>"   # text, MUST equal the tomogram file's name without extension, e.g. `bp_3dctf_bin4` for `bp_3dctf_bin4.mrc`
+# denoising_software        = "<FILL IN>"   # text
+# ctf_software              = "<FILL IN>"   # text
+# missing_wedge_software    = "<FILL IN>"   # text
+# derived_from              = "<FILL IN>"   # list[text], id of the single tomogram, or ids of the multiple tomograms, in this group this was derived from
+
+# [[annotation]]
+# id              = "<FILL IN>"   # text, MUST equal the annotation file's name without extension
+# type            = "<FILL IN>"   # text, e.g. membrane_segmentation | nucleosome_placement | active_zone
+# derived_from    = "<FILL IN>"   # text, id of the tomogram in this group the annotation was derived from
+# bounding_box    = "<FILL IN>"   # text, id of the annotation file (under Annotations/) holding this annotation's bounding box

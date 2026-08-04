@@ -20,7 +20,7 @@ from alembic.runtime.migration import MigrationContext  # noqa: E402
 from alembic.script import ScriptDirectory  # noqa: E402
 from sqlalchemy import inspect, text  # noqa: E402
 
-from catalog import db  # noqa: E402
+from catalog import db, orm  # noqa: E402
 from catalog.orm import Base  # noqa: E402
 
 
@@ -46,6 +46,39 @@ def test_autogenerate_empty_at_head(tmp_path):
 
     assert diff == [], (
         f"ORM has drifted from head revision; pending autogenerate diff: {diff!r}"
+    )
+
+
+@pytest.mark.parametrize(
+    "orm_class",
+    [orm.RawTomogramORM, orm.PostProcessedTomogramORM, orm.AnnotationORM],
+    ids=lambda c: c.__tablename__,
+)
+def test_upgrade_head_pk_column_order(tmp_path, orm_class):
+    """The migrated PK's column ORDER must match the ORM mapper's.
+
+    ``compare_metadata`` (test_autogenerate_empty_at_head) ignores
+    ``PrimaryKeyConstraint`` entirely, and every other test builds the schema
+    with ``create_all``, so nothing else exercises what the migration actually
+    emitted. Order matters here beyond cosmetics: the prune keep-set tuples and
+    ``GuardedChild.pk_cols`` are built in PK order, so a transposed
+    ``reconstruction_alignment_id``/``<leaf>_id`` silently prunes live rows.
+
+    Expected order comes from the mapper (``inspect(cls).primary_key`` yields
+    the columns in constraint order) so the test tracks orm.py instead of
+    pinning a hardcoded list that would need editing alongside a real change.
+    """
+    expected = [c.name for c in inspect(orm_class).primary_key]
+
+    engine = _engine_at(tmp_path)
+    command.upgrade(db._alembic_cfg(engine), "head")
+    actual = inspect(engine).get_pk_constraint(orm_class.__tablename__)[
+        "constrained_columns"
+    ]
+
+    assert actual == expected, (
+        f"{orm_class.__tablename__}: migrated PK order {actual!r} != "
+        f"ORM mapper PK order {expected!r}"
     )
 
 

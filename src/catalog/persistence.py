@@ -248,7 +248,7 @@ def _record_sample_rename(
 
 def _record_acquisition_rename(
     session: Session,
-    exempt_ids: dict[str, set[str]],
+    exempt_ids: dict[str, set[tuple]],
     *,
     sample_id: str,
     acquisition_id: str,
@@ -258,8 +258,11 @@ def _record_acquisition_rename(
 ) -> None:
     """§08c acquisition-level rename bookkeeping: exempt ``old_id`` from the
     §08b floor ratio, and log one rename event unless a previous scan
-    already did."""
-    exempt_ids.setdefault("acquisition", set()).add(old_id)
+    already did.
+
+    The exemption key is the old row's PK below the sample — ``(old_id,)``
+    for an acquisition — matching the read site's ``pk_cols[1:]`` lookup."""
+    exempt_ids.setdefault("acquisition", set()).add((old_id,))
     if _rename_already_recorded(session, orm.AcquisitionORM, (sample_id, old_id)):
         return
     session.add(
@@ -276,9 +279,75 @@ def _record_acquisition_rename(
     )
 
 
+def _locate_old_group(
+    session: Session,
+    orm_cls,
+    *,
+    sample_id: str,
+    acquisition_id: str,
+    entity_id: str,
+    old_id: str,
+    fresh_group: str,
+    keep: set[tuple],
+) -> str:
+    """Which alignment group the row named by a leaf ``renamed_from`` lives in,
+    for the group-scoped leaf tables.
+
+    Usually ``fresh_group`` (a rename in place). But a rename may also *move*
+    the file between ``Reconstructions/`` groups, and then the old row is keyed
+    on its old group — before the group column existed the lookup was
+    ``(sample, acquisition, old_id)``, i.e. "anywhere in the acquisition", so
+    searching across groups restores that behaviour rather than requiring the
+    authored hint to name a group the flat form can't even render.
+
+    Only rows the current scan is *not* keeping are candidates: a row this scan
+    re-merged is alive, so it is not the source of a rename, and letting it into
+    the candidate list would make the answer depend on how far the merge loop
+    had got when this ran (a genuinely new same-stem row in a third group could
+    make the search look ambiguous, or a live row could steal the hint
+    outright). ``keep`` must therefore be the *complete* keep-set for this leaf
+    type, which is why the caller defers rename resolution until after the merge
+    loop.
+
+    Ambiguity is resolved conservatively: the fresh row's own group wins if it
+    holds the old id, and a cross-group match is only believed when exactly one
+    *other* group holds it. Otherwise we fall back to ``fresh_group``, which
+    exempts nothing that is disappearing and logs no rename — the honest answer
+    when the hint can't be resolved to a single row.
+
+    The same-group probe is skipped for a pure move (``old_id == entity_id``,
+    the file kept its stem and only changed group): the row it would find is the
+    fresh row this very upsert just merged.
+    """
+
+    def _disappearing(group: str) -> bool:
+        return (sample_id, acquisition_id, group, old_id) not in keep
+
+    if (
+        old_id != entity_id
+        and _disappearing(fresh_group)
+        and session.get(orm_cls, (sample_id, acquisition_id, fresh_group, old_id))
+        is not None
+    ):
+        return fresh_group
+    leaf_col = list(orm_cls.__table__.primary_key.columns)[-1]
+    groups = [
+        g
+        for g in session.execute(
+            select(orm_cls.reconstruction_alignment_id).where(
+                orm_cls.sample_id == sample_id,
+                orm_cls.acquisition_id == acquisition_id,
+                leaf_col == old_id,
+            )
+        ).scalars()
+        if g != fresh_group and _disappearing(g)
+    ]
+    return groups[0] if len(groups) == 1 else fresh_group
+
+
 def _record_leaf_rename(
     session: Session,
-    exempt_ids: dict[str, set[str]],
+    exempt_ids: dict[str, set[tuple]],
     *,
     orm_cls,
     entity_type: str,
@@ -288,16 +357,54 @@ def _record_leaf_rename(
     old_id: str,
     run_id: str,
     now: float,
+    keep: set[tuple],
+    reconstruction_alignment_id: str | None = None,
 ) -> None:
     """§08c leaf-child rename bookkeeping shared by raw_tomogram/
-    post_processed_tomogram/annotation/tilt_series (identical shape: a
-    fresh-id-keyed row one level under an acquisition): exempt ``old_id``
-    from the §08b floor ratio, and log one rename event unless a previous
-    scan already did."""
-    exempt_ids.setdefault(entity_type, set()).add(old_id)
-    if _rename_already_recorded(
-        session, orm_cls, (sample_id, acquisition_id, old_id)
-    ):
+    post_processed_tomogram/annotation/tilt_series/reconstruction_alignment
+    (identical shape: a fresh-id-keyed row one level under an acquisition):
+    exempt ``old_id`` from the §08b floor ratio, and log one rename event
+    unless a previous scan already did.
+
+    ``reconstruction_alignment_id`` must be passed for the group-scoped leaves
+    (tomograms, annotations) whose PK includes the alignment group; tilt series
+    and alignment groups key on (sample, acquisition, id) and pass nothing.
+
+    The exemption is keyed on the old row's full PK below the sample —
+    ``(acquisition, group, leaf)`` for the group-scoped leaves,
+    ``(acquisition, leaf)`` otherwise — so a rename in one acquisition/group
+    can't exempt a genuinely deleted same-stem row in another. The old row's
+    group may differ from the fresh row's when the rename also moved the file
+    between groups; :func:`_locate_old_group` resolves that.
+
+    ``keep`` is this leaf type's complete keep-set (full PKs, sample included).
+    A row the scan is keeping is alive, so it is not the source of a rename: if
+    the resolved old PK is in ``keep`` we record nothing and exempt nothing.
+    Requiring the *complete* set is why every call site collects its hints and
+    this runs after the merge loop — resolving mid-loop against a half-built
+    keep-set would just relocate the ordering dependency.
+    """
+    if reconstruction_alignment_id is None:
+        old_group = None
+        exempt_key: tuple = (acquisition_id, old_id)
+        pk: tuple = (sample_id, acquisition_id, old_id)
+    else:
+        old_group = _locate_old_group(
+            session,
+            orm_cls,
+            sample_id=sample_id,
+            acquisition_id=acquisition_id,
+            entity_id=entity_id,
+            old_id=old_id,
+            fresh_group=reconstruction_alignment_id,
+            keep=keep,
+        )
+        exempt_key = (acquisition_id, old_group, old_id)
+        pk = (sample_id, acquisition_id, old_group, old_id)
+    if pk in keep:
+        return
+    exempt_ids.setdefault(entity_type, set()).add(exempt_key)
+    if _rename_already_recorded(session, orm_cls, pk):
         return
     session.add(
         _rename_event(
@@ -309,6 +416,8 @@ def _record_leaf_rename(
             entity_id=entity_id,
             old_id=old_id,
             new_id=entity_id,
+            old_group=old_group,
+            new_group=reconstruction_alignment_id,
         )
     )
 
@@ -323,10 +432,20 @@ def _rename_event(
     entity_id: str | None,
     old_id: str,
     new_id: str,
+    old_group: str | None = None,
+    new_group: str | None = None,
 ) -> "orm.DeletionEventORM":
     """Build one rename-kind ``DeletionEventORM`` (§08c) — the audit-feed
     counterpart to an ordinary deletion event, recorded instead of (not in
-    addition to) the suppressed deletion event for ``old_id``."""
+    addition to) the suppressed deletion event for ``old_id``.
+
+    A rename that also moved the file between ``Reconstructions/`` groups
+    additionally records both groups; same-group renames keep the original
+    two-key payload."""
+    detail = {"renamed_from": old_id, "renamed_to": new_id}
+    if old_group is not None and old_group != new_group:
+        detail["renamed_from_group"] = old_group
+        detail["renamed_to_group"] = new_group
     return orm.DeletionEventORM(
         scan_run_id=run_id,
         detected_at=now,
@@ -336,7 +455,7 @@ def _rename_event(
         acquisition_id=acquisition_id,
         entity_id=entity_id,
         last_known_path=None,
-        last_known_json=json.dumps({"renamed_from": old_id, "renamed_to": new_id}),
+        last_known_json=json.dumps(detail),
     )
 
 
@@ -475,8 +594,6 @@ def _check_child_prune_floor(
     """
     if not to_delete or len(existing) < min_count:
         return
-    # §08c will filter renamed-from exemptions out of `to_delete` here before
-    # the ratio is computed — a no-op until 08c ships (nothing exempt yet).
     ratio = len(to_delete) / len(existing)
     if ratio > floor:
         raise ChildPruneSafetyFloorExceeded(
@@ -617,18 +734,35 @@ def upsert_sample_record(
     # ---- Step 5: per-acquisition fan-out -----------------------------------
     keep_acq_pks: set[tuple[str, str]] = set()
     keep_md_source_pks: set[tuple[str, str]] = set()
-    keep_raw_tomo_pks: set[tuple[str, str, str]] = set()
-    keep_post_tomo_pks: set[tuple[str, str, str]] = set()
-    keep_ann_pks: set[tuple[str, str, str]] = set()
+    # Group-scoped leaves: (sample, acquisition, alignment group, leaf id).
+    # MUST stay in lockstep with the matching `guarded_children` pk_cols below
+    # — a mismatch makes every live row look stale to the pruner.
+    keep_raw_tomo_pks: set[tuple[str, str, str, str]] = set()
+    keep_post_tomo_pks: set[tuple[str, str, str, str]] = set()
+    keep_ann_pks: set[tuple[str, str, str, str]] = set()
     keep_ts_pks: set[tuple[str, str, str]] = set()
+    keep_recon_align_pks: set[tuple[str, str, str]] = set()
 
-    # §08c: old ids named by a fresh entity's `renamed_from` at each guarded
+    # §08c: old rows named by a fresh entity's `renamed_from` at each guarded
     # level, keyed by the same `entity_type` strings as `guarded_children`
     # below — used to exempt those old rows from both the ordinary §08a
-    # deletion event and the §08b floor ratio. `acq_renames` (new -> old,
+    # deletion event and the §08b floor ratio. The value is the old row's PK
+    # below the sample (`pk_cols[1:]`): (acquisition, group, leaf) for the
+    # group-scoped leaves, (acquisition, leaf) otherwise, so an exemption can't
+    # leak across acquisitions or alignment groups. `acq_renames` (new -> old,
     # from `derive_rename_hints` above) is returned to the caller for
     # continuity-stamp carry-over (scanner.py).
-    exempt_ids: dict[str, set[str]] = {}
+    exempt_ids: dict[str, set[tuple]] = {}
+
+    # Leaf `renamed_from` hints are collected during the merge loop and resolved
+    # after it (see the `pending_leaf_renames` drain below): resolving a hint
+    # means asking which rows are disappearing, and that question only has a
+    # stable answer once every fresh row has merged and every keep-set is
+    # complete.
+    pending_leaf_renames: list[dict] = []
+
+    def _defer_leaf_rename(**kwargs) -> None:
+        pending_leaf_renames.append(kwargs)
 
     for acq_id, acq_file in record.acquisitions.items():
         acq_payload = acq_file.acquisition.model_dump(
@@ -700,8 +834,7 @@ def upsert_sample_record(
             )
             keep_md_source_pks.add((sample_id, acq_id))
 
-        if acq_file.raw_tomogram is not None:
-            raw = acq_file.raw_tomogram
+        for raw in acq_file.raw_tomogram:
             raw_payload = raw.model_dump(exclude_none=False, by_alias=False)
             raw_payload["sample_id"] = sample_id
             raw_payload["acquisition_id"] = acq_id
@@ -710,11 +843,11 @@ def upsert_sample_record(
                     **_filter_to_columns(raw_payload, orm.RawTomogramORM)
                 )
             )
-            keep_raw_tomo_pks.add((sample_id, acq_id, raw.tomogram_id))
+            keep_raw_tomo_pks.add(
+                (sample_id, acq_id, raw.reconstruction_alignment_id, raw.tomogram_id)
+            )
             if raw.renamed_from:
-                _record_leaf_rename(
-                    session,
-                    exempt_ids,
+                _defer_leaf_rename(
                     orm_cls=orm.RawTomogramORM,
                     entity_type="raw_tomogram",
                     sample_id=sample_id,
@@ -723,6 +856,7 @@ def upsert_sample_record(
                     old_id=raw.renamed_from,
                     run_id=run_id,
                     now=now,
+                    reconstruction_alignment_id=raw.reconstruction_alignment_id,
                 )
 
         for tomo in acq_file.post_processed_tomogram:
@@ -736,11 +870,11 @@ def upsert_sample_record(
                     )
                 )
             )
-            keep_post_tomo_pks.add((sample_id, acq_id, tomo.tomogram_id))
+            keep_post_tomo_pks.add(
+                (sample_id, acq_id, tomo.reconstruction_alignment_id, tomo.tomogram_id)
+            )
             if tomo.renamed_from:
-                _record_leaf_rename(
-                    session,
-                    exempt_ids,
+                _defer_leaf_rename(
                     orm_cls=orm.PostProcessedTomogramORM,
                     entity_type="post_processed_tomogram",
                     sample_id=sample_id,
@@ -749,6 +883,7 @@ def upsert_sample_record(
                     old_id=tomo.renamed_from,
                     run_id=run_id,
                     now=now,
+                    reconstruction_alignment_id=tomo.reconstruction_alignment_id,
                 )
 
         for ann in acq_file.annotation:
@@ -760,11 +895,11 @@ def upsert_sample_record(
                     **_filter_to_columns(ann_payload, orm.AnnotationORM)
                 )
             )
-            keep_ann_pks.add((sample_id, acq_id, ann.annotation_id))
+            keep_ann_pks.add(
+                (sample_id, acq_id, ann.reconstruction_alignment_id, ann.annotation_id)
+            )
             if ann.renamed_from:
-                _record_leaf_rename(
-                    session,
-                    exempt_ids,
+                _defer_leaf_rename(
                     orm_cls=orm.AnnotationORM,
                     entity_type="annotation",
                     sample_id=sample_id,
@@ -773,6 +908,7 @@ def upsert_sample_record(
                     old_id=ann.renamed_from,
                     run_id=run_id,
                     now=now,
+                    reconstruction_alignment_id=ann.reconstruction_alignment_id,
                 )
 
         for ts in acq_file.tilt_series:
@@ -791,9 +927,7 @@ def upsert_sample_record(
             )
             keep_ts_pks.add((sample_id, acq_id, ts.tilt_series_id))
             if ts.renamed_from:
-                _record_leaf_rename(
-                    session,
-                    exempt_ids,
+                _defer_leaf_rename(
                     orm_cls=orm.TiltSeriesORM,
                     entity_type="tilt_series",
                     sample_id=sample_id,
@@ -803,6 +937,166 @@ def upsert_sample_record(
                     run_id=run_id,
                     now=now,
                 )
+
+        for ra in acq_file.reconstruction_alignment:
+            # ``reconstruction_alignment_id`` is required at the DB level
+            # (composite PK) but Optional on the Pydantic model. The scanner
+            # always sets it; defensive skip on None preserves the invariant.
+            if ra.reconstruction_alignment_id is None:
+                continue
+            ra_payload = ra.model_dump(exclude_none=False, by_alias=False)
+            ra_payload["sample_id"] = sample_id
+            ra_payload["acquisition_id"] = acq_id
+            session.merge(
+                orm.ReconstructionAlignmentORM(
+                    **_filter_to_columns(ra_payload, orm.ReconstructionAlignmentORM)
+                )
+            )
+            keep_recon_align_pks.add(
+                (sample_id, acq_id, ra.reconstruction_alignment_id)
+            )
+            if ra.renamed_from:
+                _defer_leaf_rename(
+                    orm_cls=orm.ReconstructionAlignmentORM,
+                    entity_type="reconstruction_alignment",
+                    sample_id=sample_id,
+                    acquisition_id=acq_id,
+                    entity_id=ra.reconstruction_alignment_id,
+                    old_id=ra.renamed_from,
+                    run_id=run_id,
+                    now=now,
+                )
+
+        # reconstruction.toml layout: the assembler puts per-group
+        # tomogram/annotation/reconstruction_alignment metadata on
+        # record.reconstructions[acq_id][group_id] and leaves acq_file.* empty.
+        # Persist those into the SAME ORM tables + keep-sets the legacy
+        # acq_file.* loops above use. The group is part of those tables' PKs, so
+        # two groups sharing a file stem are two distinct rows. The dict key is
+        # authoritative for the group, so it is written onto every payload below.
+        for group_id, rf in record.reconstructions.get(acq_id, {}).items():
+            for raw in rf.raw_tomogram:
+                raw_payload = raw.model_dump(exclude_none=False, by_alias=False)
+                raw_payload["sample_id"] = sample_id
+                raw_payload["acquisition_id"] = acq_id
+                raw_payload["reconstruction_alignment_id"] = group_id
+                session.merge(
+                    orm.RawTomogramORM(
+                        **_filter_to_columns(raw_payload, orm.RawTomogramORM)
+                    )
+                )
+                keep_raw_tomo_pks.add((sample_id, acq_id, group_id, raw.tomogram_id))
+                if raw.renamed_from:
+                    _defer_leaf_rename(
+                        orm_cls=orm.RawTomogramORM,
+                        entity_type="raw_tomogram",
+                        sample_id=sample_id,
+                        acquisition_id=acq_id,
+                        entity_id=raw.tomogram_id,
+                        old_id=raw.renamed_from,
+                        run_id=run_id,
+                        now=now,
+                        reconstruction_alignment_id=group_id,
+                    )
+
+            for tomo in rf.post_processed_tomogram:
+                tomo_payload = tomo.model_dump(exclude_none=False, by_alias=False)
+                tomo_payload["sample_id"] = sample_id
+                tomo_payload["acquisition_id"] = acq_id
+                tomo_payload["reconstruction_alignment_id"] = group_id
+                session.merge(
+                    orm.PostProcessedTomogramORM(
+                        **_filter_to_columns(
+                            tomo_payload, orm.PostProcessedTomogramORM
+                        )
+                    )
+                )
+                keep_post_tomo_pks.add(
+                    (sample_id, acq_id, group_id, tomo.tomogram_id)
+                )
+                if tomo.renamed_from:
+                    _defer_leaf_rename(
+                        orm_cls=orm.PostProcessedTomogramORM,
+                        entity_type="post_processed_tomogram",
+                        sample_id=sample_id,
+                        acquisition_id=acq_id,
+                        entity_id=tomo.tomogram_id,
+                        old_id=tomo.renamed_from,
+                        run_id=run_id,
+                        now=now,
+                        reconstruction_alignment_id=group_id,
+                    )
+
+            for ann in rf.annotation:
+                ann_payload = ann.model_dump(exclude_none=False, by_alias=False)
+                ann_payload["sample_id"] = sample_id
+                ann_payload["acquisition_id"] = acq_id
+                ann_payload["reconstruction_alignment_id"] = group_id
+                session.merge(
+                    orm.AnnotationORM(
+                        **_filter_to_columns(ann_payload, orm.AnnotationORM)
+                    )
+                )
+                keep_ann_pks.add((sample_id, acq_id, group_id, ann.annotation_id))
+                if ann.renamed_from:
+                    _defer_leaf_rename(
+                        orm_cls=orm.AnnotationORM,
+                        entity_type="annotation",
+                        sample_id=sample_id,
+                        acquisition_id=acq_id,
+                        entity_id=ann.annotation_id,
+                        old_id=ann.renamed_from,
+                        run_id=run_id,
+                        now=now,
+                        reconstruction_alignment_id=group_id,
+                    )
+
+            ra = rf.reconstruction_alignment
+            if ra.reconstruction_alignment_id is not None:
+                ra_payload = ra.model_dump(exclude_none=False, by_alias=False)
+                ra_payload["sample_id"] = sample_id
+                ra_payload["acquisition_id"] = acq_id
+                session.merge(
+                    orm.ReconstructionAlignmentORM(
+                        **_filter_to_columns(
+                            ra_payload, orm.ReconstructionAlignmentORM
+                        )
+                    )
+                )
+                keep_recon_align_pks.add(
+                    (sample_id, acq_id, ra.reconstruction_alignment_id)
+                )
+                if ra.renamed_from:
+                    _defer_leaf_rename(
+                        orm_cls=orm.ReconstructionAlignmentORM,
+                        entity_type="reconstruction_alignment",
+                        sample_id=sample_id,
+                        acquisition_id=acq_id,
+                        entity_id=ra.reconstruction_alignment_id,
+                        old_id=ra.renamed_from,
+                        run_id=run_id,
+                        now=now,
+                    )
+
+    # ---- §08c: resolve the deferred leaf renames ---------------------------
+    # After the merge loop (keep-sets complete, every fresh row visible) but
+    # before Step 8 (the old rows a hint names still exist, and `exempt_ids` is
+    # read there). Order-independent: `_record_leaf_rename` only considers rows
+    # outside the keep-set, i.e. rows that are actually disappearing.
+    keep_by_entity_type: dict[str, set[tuple]] = {
+        "raw_tomogram": keep_raw_tomo_pks,
+        "post_processed_tomogram": keep_post_tomo_pks,
+        "annotation": keep_ann_pks,
+        "tilt_series": keep_ts_pks,
+        "reconstruction_alignment": keep_recon_align_pks,
+    }
+    for hint in pending_leaf_renames:
+        _record_leaf_rename(
+            session,
+            exempt_ids,
+            keep=keep_by_entity_type[hint["entity_type"]],
+            **hint,
+        )
 
     # ---- Step 8: stale-row cleanup for multi-row child tables -------------
     # md_run has no §08a entity_type — not logged to the deletion feed — and
@@ -824,18 +1118,27 @@ def upsert_sample_record(
                      keep_acq_pks, "acquisition", None),
         GuardedChild(orm.MdSourceORM, ("sample_id", "acquisition_id"),
                      keep_md_source_pks, "md_source", None),
+        # pk_cols MUST match the arity/order of the keep-set tuples built above.
         GuardedChild(orm.RawTomogramORM,
-                     ("sample_id", "acquisition_id", "tomogram_id"),
+                     ("sample_id", "acquisition_id",
+                      "reconstruction_alignment_id", "tomogram_id"),
                      keep_raw_tomo_pks, "raw_tomogram", "tomogram_id"),
         GuardedChild(orm.PostProcessedTomogramORM,
-                     ("sample_id", "acquisition_id", "tomogram_id"),
+                     ("sample_id", "acquisition_id",
+                      "reconstruction_alignment_id", "tomogram_id"),
                      keep_post_tomo_pks, "post_processed_tomogram", "tomogram_id"),
         GuardedChild(orm.AnnotationORM,
-                     ("sample_id", "acquisition_id", "annotation_id"),
+                     ("sample_id", "acquisition_id",
+                      "reconstruction_alignment_id", "annotation_id"),
                      keep_ann_pks, "annotation", "annotation_id"),
         GuardedChild(orm.TiltSeriesORM,
                      ("sample_id", "acquisition_id", "tilt_series_id"),
                      keep_ts_pks, "tilt_series", "tilt_series_id"),
+        GuardedChild(orm.ReconstructionAlignmentORM,
+                     ("sample_id", "acquisition_id",
+                      "reconstruction_alignment_id"),
+                     keep_recon_align_pks, "reconstruction_alignment",
+                     "reconstruction_alignment_id"),
     )
     deleted_rows: dict[str, list] = {}
     for gc in guarded_children:
@@ -847,11 +1150,26 @@ def upsert_sample_record(
         # event below (a rename event was already recorded for them, above) —
         # but they still get physically deleted along with the rest of
         # `to_delete` (no PK rewrite; see module docstring / issue 08c).
+        #
+        # This LOOSENS the floor, deliberately: each hint that resolves to a
+        # real row removes that row from the ratio's numerator, so a scan that
+        # would otherwise raise `ChildPruneSafetyFloorExceeded` can proceed and
+        # delete. That is the intended §08c semantics (a resolved rename is not
+        # a deletion), and it is bounded at one row per hint — but note that
+        # *improving* hint resolution therefore loosens the floor too: a
+        # cross-group hint that once fell back to an unresolvable key matched
+        # nothing here and cost nothing, and now matches the row it names.
+        # Anything that widens what a hint can resolve to must be judged as a
+        # change to this safety floor, not just to the audit feed.
         exempt = exempt_ids.get(gc.entity_type)
         if exempt:
-            leaf_attr = gc.entity_id_attr or gc.pk_cols[-1]
+            # Keys are the old row's PK below the sample — same columns, same
+            # order as the write site in `_record_leaf_rename` /
+            # `_record_acquisition_rename`.
             non_exempt = [
-                row for row in to_delete if getattr(row, leaf_attr) not in exempt
+                row
+                for row in to_delete
+                if tuple(getattr(row, c) for c in gc.pk_cols[1:]) not in exempt
             ]
         else:
             non_exempt = to_delete

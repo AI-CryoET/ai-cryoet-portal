@@ -306,7 +306,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/tomograms/{sample_id}/{acquisition_id}/{tomogram_id}/preview.png": {
+    "/tomograms/{sample_id}/{acquisition_id}/{reconstruction_alignment_id}/{tomogram_id}/preview.png": {
         parameters: {
             query?: never;
             header?: never;
@@ -320,7 +320,7 @@ export interface paths {
          *     Returns 404 for missing row or path-outside-root, 422 for an existing
          *     row whose ``mrc_path`` is missing on disk.
          */
-        get: operations["tomogram_preview_tomograms__sample_id___acquisition_id___tomogram_id__preview_png_get"];
+        get: operations["tomogram_preview_tomograms__sample_id___acquisition_id___reconstruction_alignment_id___tomogram_id__preview_png_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -329,7 +329,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/tomograms/{sample_id}/{acquisition_id}/{tomogram_id}/neuroglancer": {
+    "/tomograms/{sample_id}/{acquisition_id}/{reconstruction_alignment_id}/{tomogram_id}/neuroglancer": {
         parameters: {
             query?: never;
             header?: never;
@@ -346,14 +346,14 @@ export interface paths {
          *     before opening — Neuroglancer reports the API host's FQDN which may
          *     not be reachable from the browser.
          */
-        post: operations["tomogram_neuroglancer_tomograms__sample_id___acquisition_id___tomogram_id__neuroglancer_post"];
+        post: operations["tomogram_neuroglancer_tomograms__sample_id___acquisition_id___reconstruction_alignment_id___tomogram_id__neuroglancer_post"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/annotations/{sample_id}/{acquisition_id}/{annotation_id}/preview.png": {
+    "/annotations/{sample_id}/{acquisition_id}/{reconstruction_alignment_id}/{annotation_id}/preview.png": {
         parameters: {
             query?: never;
             header?: never;
@@ -367,7 +367,7 @@ export interface paths {
          *     Returns 404 for a missing row or path-outside-root, 422 for an annotation
          *     with no ``.mrc`` artifact.
          */
-        get: operations["annotation_preview_annotations__sample_id___acquisition_id___annotation_id__preview_png_get"];
+        get: operations["annotation_preview_annotations__sample_id___acquisition_id___reconstruction_alignment_id___annotation_id__preview_png_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -376,7 +376,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/annotations/{sample_id}/{acquisition_id}/{annotation_id}/neuroglancer": {
+    "/annotations/{sample_id}/{acquisition_id}/{reconstruction_alignment_id}/{annotation_id}/neuroglancer": {
         parameters: {
             query?: never;
             header?: never;
@@ -394,7 +394,7 @@ export interface paths {
          *     Mirrors the tomogram launch route — same registry, same dev-side hostname
          *     rewrite on the frontend. 422 for an annotation with no ``.mrc`` artifact.
          */
-        post: operations["annotation_neuroglancer_annotations__sample_id___acquisition_id___annotation_id__neuroglancer_post"];
+        post: operations["annotation_neuroglancer_annotations__sample_id___acquisition_id___reconstruction_alignment_id___annotation_id__neuroglancer_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -548,6 +548,57 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/toml/tilt-series-ids/{sample_id}/{acquisition_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Tilt Series Ids
+         * @description Tilt-series ids in one acquisition, for the reconstruction form.
+         *
+         *     raw_tomogram.derived_from names a [[tilt_series]] in the acquisition's
+         *     acquisition.toml — a different file, so the renderer's in-form cross-ref
+         *     pooling cannot supply it.
+         */
+        get: operations["tilt_series_ids_toml_tilt_series_ids__sample_id___acquisition_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/toml/reconstruction-group-ids/{sample_id}/{acquisition_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Reconstruction Group Ids
+         * @description Alignment-group folder names in one acquisition, for the reconstruction
+         *     form's group selector.
+         *
+         *     One reconstruction.toml per Reconstructions/<group>/ folder, so the form
+         *     needs the acquisition's group list to offer switching between them. The
+         *     author route carries no sample context of its own, so it can't read the
+         *     acquisition detail payload — hence this ids endpoint, mirroring
+         *     /tilt-series-ids.
+         */
+        get: operations["reconstruction_group_ids_toml_reconstruction_group_ids__sample_id___acquisition_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/toml/{kind}/load/{record_id}": {
         parameters: {
             query?: never;
@@ -666,7 +717,11 @@ export interface components {
             /** Path */
             path?: string | null;
             md_source?: components["schemas"]["MdSourceOut"] | null;
-            raw_tomogram?: components["schemas"]["RawTomogramOut"] | null;
+            /**
+             * Raw Tomograms
+             * @default []
+             */
+            raw_tomograms: components["schemas"]["RawTomogramOut"][];
             /**
              * Post Processed Tomograms
              * @default []
@@ -682,6 +737,11 @@ export interface components {
              * @default []
              */
             tilt_series: components["schemas"]["TiltSeriesOut"][];
+            /**
+             * Reconstruction Alignment
+             * @default []
+             */
+            reconstruction_alignment: components["schemas"]["ReconstructionAlignmentOut"][];
             scan_status?: components["schemas"]["AcquisitionScanStatus"] | null;
         };
         /**
@@ -714,10 +774,14 @@ export interface components {
         AnnotationOut: {
             /** Annotation Id */
             annotation_id: string;
+            /** Reconstruction Alignment Id */
+            reconstruction_alignment_id: string;
             /** Type */
             type?: string | null;
-            /** Target Tomogram */
-            target_tomogram?: string | null;
+            /** Derived From */
+            derived_from?: string | null;
+            /** Bounding Box */
+            bounding_box?: string | null;
             /**
              * Files
              * @default []
@@ -1007,13 +1071,10 @@ export interface components {
         PostProcessedTomogramOut: {
             /** Tomogram Id */
             tomogram_id: string;
+            /** Reconstruction Alignment Id */
+            reconstruction_alignment_id: string;
             /** Voxel Size */
             voxel_size?: number | null;
-            /**
-             * Derived From
-             * @default []
-             */
-            derived_from: string[];
             /** Image Size X */
             image_size_x?: number | null;
             /** Image Size Y */
@@ -1036,6 +1097,11 @@ export interface components {
             missing_wedge_software?: string | null;
             /** Size Bytes */
             size_bytes?: number | null;
+            /**
+             * Derived From
+             * @default []
+             */
+            derived_from: string[];
         };
         /** ProjectStatRow */
         ProjectStatRow: {
@@ -1076,13 +1142,10 @@ export interface components {
         RawTomogramOut: {
             /** Tomogram Id */
             tomogram_id: string;
+            /** Reconstruction Alignment Id */
+            reconstruction_alignment_id: string;
             /** Voxel Size */
             voxel_size?: number | null;
-            /**
-             * Derived From
-             * @default []
-             */
-            derived_from: string[];
             /** Image Size X */
             image_size_x?: number | null;
             /** Image Size Y */
@@ -1101,6 +1164,24 @@ export interface components {
             pipeline?: string | null;
             /** Software */
             software?: string | null;
+            /** Derived From */
+            derived_from?: string | null;
+        };
+        /** ReconstructionAlignmentOut */
+        ReconstructionAlignmentOut: {
+            /** Reconstruction Alignment Id */
+            reconstruction_alignment_id: string;
+            /** Alignment Software */
+            alignment_software?: string | null;
+            /** Alignment Method */
+            alignment_method?: string | null;
+            /**
+             * Alignment Files
+             * @default []
+             */
+            alignment_files: string[];
+            /** Mtime */
+            mtime?: number | null;
         };
         /** SampleDetail */
         SampleDetail: {
@@ -1751,13 +1832,14 @@ export interface operations {
             };
         };
     };
-    tomogram_preview_tomograms__sample_id___acquisition_id___tomogram_id__preview_png_get: {
+    tomogram_preview_tomograms__sample_id___acquisition_id___reconstruction_alignment_id___tomogram_id__preview_png_get: {
         parameters: {
             query?: never;
             header?: never;
             path: {
                 sample_id: string;
                 acquisition_id: string;
+                reconstruction_alignment_id: string;
                 tomogram_id: string;
             };
             cookie?: never;
@@ -1784,13 +1866,14 @@ export interface operations {
             };
         };
     };
-    tomogram_neuroglancer_tomograms__sample_id___acquisition_id___tomogram_id__neuroglancer_post: {
+    tomogram_neuroglancer_tomograms__sample_id___acquisition_id___reconstruction_alignment_id___tomogram_id__neuroglancer_post: {
         parameters: {
             query?: never;
             header?: never;
             path: {
                 sample_id: string;
                 acquisition_id: string;
+                reconstruction_alignment_id: string;
                 tomogram_id: string;
             };
             cookie?: never;
@@ -1817,13 +1900,14 @@ export interface operations {
             };
         };
     };
-    annotation_preview_annotations__sample_id___acquisition_id___annotation_id__preview_png_get: {
+    annotation_preview_annotations__sample_id___acquisition_id___reconstruction_alignment_id___annotation_id__preview_png_get: {
         parameters: {
             query?: never;
             header?: never;
             path: {
                 sample_id: string;
                 acquisition_id: string;
+                reconstruction_alignment_id: string;
                 annotation_id: string;
             };
             cookie?: never;
@@ -1850,13 +1934,14 @@ export interface operations {
             };
         };
     };
-    annotation_neuroglancer_annotations__sample_id___acquisition_id___annotation_id__neuroglancer_post: {
+    annotation_neuroglancer_annotations__sample_id___acquisition_id___reconstruction_alignment_id___annotation_id__neuroglancer_post: {
         parameters: {
             query?: never;
             header?: never;
             path: {
                 sample_id: string;
                 acquisition_id: string;
+                reconstruction_alignment_id: string;
                 annotation_id: string;
             };
             cookie?: never;
@@ -2117,10 +2202,75 @@ export interface operations {
             };
         };
     };
+    tilt_series_ids_toml_tilt_series_ids__sample_id___acquisition_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                sample_id: string;
+                acquisition_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reconstruction_group_ids_toml_reconstruction_group_ids__sample_id___acquisition_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                sample_id: string;
+                acquisition_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     load_toml_toml__kind__load__record_id__get: {
         parameters: {
             query?: {
                 sample_id?: string | null;
+                acquisition_id?: string | null;
             };
             header?: never;
             path: {

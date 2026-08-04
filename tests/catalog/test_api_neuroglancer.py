@@ -157,7 +157,8 @@ def client(tmp_path, monkeypatch):
         s.add(orm.AcquisitionORM(sample_id="sample_a", acquisition_id="acq1"))
         for tid in ("t1", "t2", "t3", "t4"):
             s.add(orm.PostProcessedTomogramORM(
-                sample_id="sample_a", acquisition_id="acq1", tomogram_id=tid,
+                sample_id="sample_a", acquisition_id="acq1",
+                reconstruction_alignment_id="align1", tomogram_id=tid,
                 mrc_path=str(mrc_path),
             ))
         s.commit()
@@ -168,7 +169,7 @@ def client(tmp_path, monkeypatch):
 
 
 def test_unknown_tomogram_404(client):
-    r = client.post("/tomograms/sample_a/acq1/nope/neuroglancer")
+    r = client.post("/tomograms/sample_a/acq1/align1/nope/neuroglancer")
     assert r.status_code == 404
 
 
@@ -178,7 +179,7 @@ def test_unknown_tilt_series_404(client):
 
 
 def test_launch_returns_url(client):
-    r = client.post("/tomograms/sample_a/acq1/t1/neuroglancer")
+    r = client.post("/tomograms/sample_a/acq1/align1/t1/neuroglancer")
     assert r.status_code == 200, r.text
     body = r.json()
     assert body["url"].startswith("http://fake-host")
@@ -188,18 +189,18 @@ def test_lru_evicts_oldest_at_capacity(client):
     """At capacity 2, launching a 3rd viewer evicts the first."""
     app = client.app
     for tid in ("t1", "t2"):
-        r = client.post(f"/tomograms/sample_a/acq1/{tid}/neuroglancer")
+        r = client.post(f"/tomograms/sample_a/acq1/align1/{tid}/neuroglancer")
         assert r.status_code == 200
     assert list(app.state.active_viewers.keys()) == [
-        ("tomogram", "sample_a", "acq1", "t1"),
-        ("tomogram", "sample_a", "acq1", "t2"),
+        ("tomogram", "sample_a", "acq1", "align1", "t1"),
+        ("tomogram", "sample_a", "acq1", "align1", "t2"),
     ]
-    r = client.post("/tomograms/sample_a/acq1/t3/neuroglancer")
+    r = client.post("/tomograms/sample_a/acq1/align1/t3/neuroglancer")
     assert r.status_code == 200
     keys = list(app.state.active_viewers.keys())
     # Oldest (t1) evicted; t2 and t3 remain.
-    assert ("tomogram", "sample_a", "acq1", "t1") not in keys
-    assert keys[-1] == ("tomogram", "sample_a", "acq1", "t3")
+    assert ("tomogram", "sample_a", "acq1", "align1", "t1") not in keys
+    assert keys[-1] == ("tomogram", "sample_a", "acq1", "align1", "t3")
     assert len(keys) == 2
 
 
@@ -207,13 +208,13 @@ def test_lru_relaunch_same_key_moves_to_end_no_evict(client):
     """Re-launching an already-registered key updates its position, not capacity."""
     app = client.app
     for tid in ("t1", "t2"):
-        client.post(f"/tomograms/sample_a/acq1/{tid}/neuroglancer")
+        client.post(f"/tomograms/sample_a/acq1/align1/{tid}/neuroglancer")
     # Re-launch t1 — should NOT evict t2.
-    r = client.post("/tomograms/sample_a/acq1/t1/neuroglancer")
+    r = client.post("/tomograms/sample_a/acq1/align1/t1/neuroglancer")
     assert r.status_code == 200
     keys = list(app.state.active_viewers.keys())
-    assert keys[-1] == ("tomogram", "sample_a", "acq1", "t1")
-    assert ("tomogram", "sample_a", "acq1", "t2") in keys
+    assert keys[-1] == ("tomogram", "sample_a", "acq1", "align1", "t1")
+    assert ("tomogram", "sample_a", "acq1", "align1", "t2") in keys
     assert len(keys) == 2
 
 
@@ -403,7 +404,7 @@ def test_concurrent_launches_dont_crash(client):
     from collections import OrderedDict
     client.app.state.active_viewers = OrderedDict()
 
-    keys = [("tomogram", "sample_a", "acq1", f"t{i}") for i in range(5)]
+    keys = [("tomogram", "sample_a", "acq1", "align1", f"t{i}") for i in range(5)]
 
     async def driver():
         # Build the lock inside the same event loop that will await it.

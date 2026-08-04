@@ -219,27 +219,36 @@ function DataOrganization() {
           4. Append to the processing log as outputs are produced
         </SectionHeading>
         <Typography variant="body1">
-          Each <code>acquisition.toml</code> grows over time. 
+          Each{' '}
+          <code>
+            Reconstructions/&#123;reconstruction_alignment_id&#125;/reconstruction.toml
+          </code>{' '}
+          grows over time.
         </Typography>
         <Steps>
           <Step>
             Record the raw
-          reconstruction once in <code>[raw_tomogram]</code>.</Step>
+          reconstruction once in <code>[[raw_tomogram]]</code>.</Step>
           <Step>
             For each new output
           — a denoised version, a segmentation, an STA result — append a new{' '}
           <code>[[post_processed_tomogram]]</code> or <code>[[annotation]]</code>{' '}
-          entry to the relevant acquisition's file. Do not delete or modify a tomogram or annotation entry once added.
+          entry to the relevant group's file. Do not delete or modify a tomogram or annotation entry once added.
             Reprocessing produces a new entry with a new <code>id</code>, placed
             at the bottom of the file.
           </Step>
           <Step>
-            The <code>id</code> under the <code>[raw_tomogram]</code>, <code>[[post_processed_tomogram]]</code> or <code>[[annotation]]</code> block must match the folder name for the corresponding{' '}
-            tomogram or annotation.
+            The <code>id</code> under the <code>[[raw_tomogram]]</code>, <code>[[post_processed_tomogram]]</code> or <code>[[annotation]]</code> block must match a{' '}
+            file name without its extension under that same group's{' '}
+            <code>Tomograms/</code> or <code>Annotations/</code> folder.
           </Step>
           <Step>
-            Use <code>derived_from</code> under <code>[[post_processed_tomogram]]</code> and <code>target_tomogram</code> under <code>[[annotation]]</code> to
-            record lineage between entries.
+            Use <code>derived_from</code> to record lineage: on{' '}
+            <code>[[raw_tomogram]]</code> it names the <code>[[tilt_series]]</code>{' '}
+            in the acquisition's <code>acquisition.toml</code> the reconstruction was
+            built from; on <code>[[post_processed_tomogram]]</code> it names the
+            tomogram id(s) it was derived from. An annotation needs no target — it
+            belongs to the whole 3D alignment group.
           </Step>
         </Steps>
       </Stack>

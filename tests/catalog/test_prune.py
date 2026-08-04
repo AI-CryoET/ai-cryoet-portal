@@ -11,7 +11,14 @@ import pytest
 from sqlalchemy import select
 from sqlalchemy.orm import sessionmaker
 
-from schema import Acquisition, AcquisitionFile, RawTomogram, Sample, SampleRecord
+from schema import (
+    Acquisition,
+    AcquisitionFile,
+    RawTomogram,
+    ReconstructionFile,
+    Sample,
+    SampleRecord,
+)
 from schema.schema import DataSource, Project
 
 from catalog import db, orm
@@ -303,7 +310,13 @@ def _record_with_acquisitions(
         aid: AcquisitionFile(
             acquisition=Acquisition(acquisition_id=aid),
             raw_tomogram=(
-                RawTomogram(id=f"{aid}_raw") if aid in raw_tomo_acq_ids else None
+                [
+                    RawTomogram(
+                        id=f"{aid}_raw", reconstruction_alignment_id="grp1"
+                    )
+                ]
+                if aid in raw_tomo_acq_ids
+                else []
             ),
         )
         for aid in acq_ids
@@ -587,7 +600,13 @@ def test_child_rename_suppresses_event_and_does_not_trip_floor_at_100_percent(
     acquisitions = {
         aid: AcquisitionFile(
             acquisition=Acquisition(acquisition_id=aid),
-            raw_tomogram=RawTomogram(id=f"{aid}_raw2", renamed_from=f"{aid}_raw"),
+            raw_tomogram=[
+                RawTomogram(
+                    id=f"{aid}_raw2",
+                    reconstruction_alignment_id="grp1",
+                    renamed_from=f"{aid}_raw",
+                )
+            ],
         )
         for aid in acq_ids
     }
@@ -783,3 +802,285 @@ def test_sample_rename_carries_last_changed_at(session):
     assert status.last_changed_at == old_last_changed
     assert status.last_changed_at != _NOW + 100
     assert status.last_scanned_at == _NOW + 100  # always stamped to `now`
+
+
+# ─── §08c exemption scoping (acquisition + alignment group) ──────────────────
+
+
+def _raw_tomo_record(
+    sample_id: str, rows, *, via_reconstructions: bool = False
+) -> SampleRecord:
+    """A sample whose acquisitions hold the given raw tomograms.
+
+    ``rows`` is an iterable of ``(acquisition_id, group, tomogram_id,
+    renamed_from)`` tuples; ``renamed_from`` may be None.
+
+    ``via_reconstructions`` puts the rows on ``record.reconstructions[acq]
+    [group]`` (the §4.5 reconstruction.toml layout) instead of the flat
+    ``acq_file.raw_tomogram`` list. Both feed the same ORM table and keep-set
+    from separate loops in ``upsert_sample_record``; merge order is row order
+    either way (dict insertion order for the group nesting).
+    """
+    acquisitions: dict = {}
+    reconstructions: dict = {}
+    for acq_id, group, tomo_id, renamed_from in rows:
+        acquisitions.setdefault(
+            acq_id,
+            AcquisitionFile(acquisition=Acquisition(acquisition_id=acq_id)),
+        )
+        tomo = RawTomogram(
+            id=tomo_id,
+            reconstruction_alignment_id=group,
+            renamed_from=renamed_from,
+        )
+        if via_reconstructions:
+            rf = reconstructions.setdefault(acq_id, {}).setdefault(
+                group, ReconstructionFile()
+            )
+            rf.raw_tomogram.append(tomo)
+        else:
+            acquisitions[acq_id].raw_tomogram.append(tomo)
+    return SampleRecord(
+        sample=Sample(
+            sample_id=sample_id,
+            data_source=DataSource.experimental,
+            project=Project.chromatin,
+        ),
+        acquisitions=acquisitions,
+        reconstructions=reconstructions,
+    )
+
+
+def _raw_pks(session) -> set:
+    return {
+        (t.sample_id, t.acquisition_id, t.reconstruction_alignment_id, t.tomogram_id)
+        for t in session.execute(select(orm.RawTomogramORM)).scalars().all()
+    }
+
+
+def test_rename_exemption_does_not_leak_across_alignment_groups(session):
+    """A `renamed_from = "x"` on a fresh row in `grp_a` must not exempt a
+    genuinely deleted `x` in `grp_b`: that row still gets its §08a deletion
+    event and still counts toward the §08b floor."""
+    seed = _raw_tomo_record(
+        "s1",
+        [
+            ("a1", "grp_a", "x", None),
+            ("a1", "grp_b", "x", None),
+            ("a1", "grp_b", "z", None),
+        ],
+    )
+    upsert_sample_record(session, seed, extras=[], run_id="run-1", now=_NOW)
+    session.commit()
+
+    fresh = _raw_tomo_record(
+        "s1",
+        [("a1", "grp_a", "y", "x"), ("a1", "grp_b", "z", None)],
+    )
+
+    # Floor contribution: grp_b/x is the only non-exempt drop, 1 of 3 = 33%.
+    with pytest.raises(ChildPruneSafetyFloorExceeded) as excinfo:
+        upsert_sample_record(
+            session,
+            fresh,
+            extras=[],
+            run_id="run-2",
+            now=_NOW + 1,
+            child_prune_safety_floor=0.2,
+        )
+    session.rollback()
+    # The aborted upsert left deleted-but-rolled-back rows in the identity
+    # map; drop them so the retry below starts from the DB.
+    session.expunge_all()
+    assert excinfo.value.to_delete == [("s1", "a1", "grp_b", "x")]
+
+    # Under the default floor the upsert goes through ...
+    upsert_sample_record(session, fresh, extras=[], run_id="run-2", now=_NOW + 1)
+    session.commit()
+
+    events = {
+        (ev.kind, json.loads(ev.last_known_json).get("renamed_from"), ev.entity_id)
+        for ev in session.execute(select(orm.DeletionEventORM)).scalars().all()
+    }
+    # ... the grp_a rename is logged as a rename, and grp_b/x — a genuine
+    # deletion — still gets its own deletion event.
+    assert events == {("rename", "x", "y"), ("deletion", None, "x")}
+    assert _raw_pks(session) == {
+        ("s1", "a1", "grp_a", "y"),
+        ("s1", "a1", "grp_b", "z"),
+    }
+
+
+def test_rename_exemption_does_not_leak_across_acquisitions(session):
+    """Same leak one dimension over: a rename in `a1` must not exempt a
+    genuinely deleted same-stem row in `a2`."""
+    seed = _raw_tomo_record(
+        "s1",
+        [
+            ("a1", "grp1", "x", None),
+            ("a2", "grp1", "x", None),
+            ("a2", "grp1", "z", None),
+        ],
+    )
+    upsert_sample_record(session, seed, extras=[], run_id="run-1", now=_NOW)
+    session.commit()
+
+    fresh = _raw_tomo_record(
+        "s1",
+        [("a1", "grp1", "y", "x"), ("a2", "grp1", "z", None)],
+    )
+
+    with pytest.raises(ChildPruneSafetyFloorExceeded) as excinfo:
+        upsert_sample_record(
+            session,
+            fresh,
+            extras=[],
+            run_id="run-2",
+            now=_NOW + 1,
+            child_prune_safety_floor=0.2,
+        )
+    session.rollback()
+    session.expunge_all()
+    assert excinfo.value.to_delete == [("s1", "a2", "grp1", "x")]
+
+    upsert_sample_record(session, fresh, extras=[], run_id="run-2", now=_NOW + 1)
+    session.commit()
+
+    events = {
+        (ev.kind, ev.acquisition_id, ev.entity_id)
+        for ev in session.execute(select(orm.DeletionEventORM)).scalars().all()
+        if ev.entity_type == "raw_tomogram"
+    }
+    assert events == {("rename", "a1", "y"), ("deletion", "a2", "x")}
+
+
+def test_cross_group_rename_is_logged_with_both_groups(session):
+    """A rename that also moves the file to another Reconstructions/ group:
+    the old row lives under the *old* group, so the lookup searches across
+    groups within the acquisition. One rename event, naming both groups, and
+    no deletion event."""
+    seed = _raw_tomo_record("s1", [("a1", "grp_a", "x", None)])
+    upsert_sample_record(session, seed, extras=[], run_id="run-1", now=_NOW)
+    session.commit()
+
+    fresh = _raw_tomo_record("s1", [("a1", "grp_b", "y", "x")])
+    upsert_sample_record(session, fresh, extras=[], run_id="run-2", now=_NOW + 1)
+    session.commit()
+
+    events = session.execute(select(orm.DeletionEventORM)).scalars().all()
+    assert [ev.kind for ev in events] == ["rename"]
+    assert json.loads(events[0].last_known_json) == {
+        "renamed_from": "x",
+        "renamed_to": "y",
+        "renamed_from_group": "grp_a",
+        "renamed_to_group": "grp_b",
+    }
+    assert _raw_pks(session) == {("s1", "a1", "grp_b", "y")}
+
+
+def test_cross_group_move_keeping_the_stem_is_logged_once(session):
+    """A pure move (same file stem, new group). The same-group probe would
+    find the row this upsert just merged, so it is skipped — the old row is
+    found in `grp_a` and one rename event is recorded, not a deletion."""
+    seed = _raw_tomo_record("s1", [("a1", "grp_a", "x", None)])
+    upsert_sample_record(session, seed, extras=[], run_id="run-1", now=_NOW)
+    session.commit()
+
+    fresh = _raw_tomo_record("s1", [("a1", "grp_b", "x", "x")])
+    upsert_sample_record(session, fresh, extras=[], run_id="run-2", now=_NOW + 1)
+    session.commit()
+
+    events = session.execute(select(orm.DeletionEventORM)).scalars().all()
+    assert [ev.kind for ev in events] == ["rename"]
+    assert json.loads(events[0].last_known_json) == {
+        "renamed_from": "x",
+        "renamed_to": "x",
+        "renamed_from_group": "grp_a",
+        "renamed_to_group": "grp_b",
+    }
+    assert _raw_pks(session) == {("s1", "a1", "grp_b", "x")}
+
+
+_RENAMED = ("a1", "grp_b", "y", "x")  # fresh row carrying `renamed_from = "x"`
+_THIRD = ("a1", "grp_c", "x", None)  # same stem, third group, no hint
+
+
+@pytest.mark.parametrize(
+    "via_reconstructions", [False, True], ids=["flat-layout", "reconstruction-toml"]
+)
+@pytest.mark.parametrize(
+    ("seed_rows", "merge_order"),
+    [
+        ([("a1", "grp_a", "x", None)], [_RENAMED, _THIRD]),
+        ([("a1", "grp_a", "x", None)], [_THIRD, _RENAMED]),
+        ([("a1", "grp_a", "x", None), _THIRD], [_RENAMED, _THIRD]),
+        ([("a1", "grp_a", "x", None), _THIRD], [_THIRD, _RENAMED]),
+    ],
+    ids=[
+        "new-third-group-row/renamed-first",
+        "new-third-group-row/third-first",
+        "kept-third-group-row/renamed-first",
+        "kept-third-group-row/third-first",
+    ],
+)
+def test_cross_group_rename_resolution_is_merge_order_independent(
+    session, seed_rows, merge_order, via_reconstructions
+):
+    """Stale `grp_a/x`, fresh `grp_b/y` carrying `renamed_from = "x"`, and a
+    same-stem `grp_c/x` that this scan keeps. Only `grp_a/x` is disappearing,
+    so it is the only candidate the hint can name — regardless of merge order
+    and of whether `grp_c/x` is new or pre-existing.
+
+    Merge order is exactly the order rows appear in the acquisition's
+    `raw_tomogram` list (`upsert_sample_record` merges them in list order), so
+    the params really are the two orders; all four must yield the identical
+    audit feed.
+
+    The two axes pin the two halves of the fix, and each one alone is
+    insufficient:
+
+    * `new-third-group-row` pins the **keep-set guard**. Pre-fix, `third-first`
+      merged `grp_c/x` into the DB before resolving, saw `[grp_a, grp_c]`,
+      called it ambiguous and logged a deletion for `grp_a/x`.
+    * `kept-third-group-row` pins the **deferral**. Here `grp_c/x` is already
+      in the DB from the seed, so the guard alone cannot help an in-loop
+      resolver: at `renamed-first` the keep-set does not yet contain
+      `grp_c/x`, the filter passes it through, and the candidate list is
+      ambiguous again. Only resolving after the merge loop — when the keep-set
+      is complete — filters it out. This param fails against an
+      inline-with-guard implementation.
+
+    Run over both merge paths (`via_reconstructions`): the flat
+    `acq_file.raw_tomogram` list and the §4.5 `record.reconstructions` nesting
+    have separate loops and separate `_defer_leaf_rename` call sites.
+    """
+    upsert_sample_record(
+        session,
+        _raw_tomo_record("s1", seed_rows, via_reconstructions=via_reconstructions),
+        extras=[],
+        run_id="run-1",
+        now=_NOW,
+    )
+    session.commit()
+
+    upsert_sample_record(
+        session,
+        _raw_tomo_record("s1", merge_order, via_reconstructions=via_reconstructions),
+        extras=[],
+        run_id="run-2",
+        now=_NOW + 1,
+    )
+    session.commit()
+
+    events = session.execute(select(orm.DeletionEventORM)).scalars().all()
+    assert [ev.kind for ev in events] == ["rename"]
+    assert json.loads(events[0].last_known_json) == {
+        "renamed_from": "x",
+        "renamed_to": "y",
+        "renamed_from_group": "grp_a",
+        "renamed_to_group": "grp_b",
+    }
+    assert _raw_pks(session) == {
+        ("s1", "a1", "grp_b", "y"),
+        ("s1", "a1", "grp_c", "x"),
+    }

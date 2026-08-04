@@ -205,7 +205,12 @@ def test_assembler_records_tomogram_size_bytes(tmp_path: Path) -> None:
         """,
     )
     mrc_path = (
-        sample_dir / "Pos1" / "Reconstructions" / "Tomograms" / "tomo_a" / "vol.mrc"
+        sample_dir
+        / "Pos1"
+        / "Reconstructions"
+        / "ts_1"
+        / "Tomograms"
+        / "tomo_a.mrc"
     )
     mrc_path.parent.mkdir(parents=True)
     with mrcfile_pkg.new(str(mrc_path), overwrite=True) as m:
@@ -280,12 +285,12 @@ def test_assembler_keeps_tilt_series_despite_tomogram_id_typo(
         derived_from = "Frames"
         """,
     )
-    # The tilt-series folder matches its id; the tomogram folder on disk is
-    # named 'denoised', not the declared 'relion5_bin5_denoised'.
+    # The tilt-series folder matches its id; the tomogram file on disk has stem
+    # 'denoised', not the declared 'relion5_bin5_denoised'.
     (sample_dir / "Pos1" / "TiltSeries" / "ts_a" / "stack").mkdir(parents=True)
-    (sample_dir / "Pos1" / "Reconstructions" / "Tomograms" / "denoised").mkdir(
-        parents=True
-    )
+    tomos = sample_dir / "Pos1" / "Reconstructions" / "ts_a" / "Tomograms"
+    tomos.mkdir(parents=True)
+    (tomos / "denoised.mrc").write_bytes(b"")
 
     result = assemble_sample(_sample_loc(sample_dir))
 

@@ -47,8 +47,9 @@ class CatalogEntity:
 DOMAIN_ORM: list[type] = [
     orm.SampleORM, orm.ChromatinORM, orm.LabelORM, orm.FiducialORM,
     orm.SimulationORM, orm.FreezingORM, orm.MillingORM, orm.MdRunORM,
-    orm.AcquisitionORM, orm.MdSourceORM, orm.RawTomogramORM,
-    orm.PostProcessedTomogramORM, orm.AnnotationORM, orm.TiltSeriesORM,
+    orm.AcquisitionORM, orm.MdSourceORM, orm.ReconstructionAlignmentORM,
+    orm.RawTomogramORM, orm.PostProcessedTomogramORM, orm.AnnotationORM,
+    orm.TiltSeriesORM,
 ]
 
 # Operational/scanner-internal ORM classes with no documented-catalog entry
@@ -261,24 +262,27 @@ CATALOG: list[CatalogEntity] = [
         ],
     ),
     CatalogEntity(
-        key="raw_tomogram", name="Raw tomogram", cardinality="one per acquisition (optional)",
-        parent="acquisition", orm=orm.RawTomogramORM,
+        key="raw_tomogram", name="Raw tomogram",
+        cardinality="0..N per 3D alignment group",
+        parent="reconstruction_alignment", orm=orm.RawTomogramORM,
         fields=[
             CatalogField("tomogram_id", "text", "directory",
-                         "Processing folder name, e.g. bp_3dctf_bin4; the TOML id must match "
-                         "the folder."),
+                         "Reconstruction file's name without its extension, e.g. "
+                         "bp_3dctf_bin4; the TOML id must match the stem."),
             CatalogField("acquisition_id", "text", "directory", "Parent acquisition folder name."),
             CatalogField("sample_id", "text", "directory", "Parent sample folder name."),
-            CatalogField("tilt_series_id", "text", "acquisition.toml [raw_tomogram]",
-                         "Tilt series (in this acquisition) this reconstruction was built "
-                         "from; cross-referenced against the acquisition's tilt series ids."),
-            CatalogField("pipeline", "text", "acquisition.toml [raw_tomogram]", "Human description."),
-            CatalogField("software", "text", "acquisition.toml [raw_tomogram]"),
+            CatalogField("reconstruction_alignment_id", "text", "directory",
+                         "Enclosing Reconstructions/{id}/ folder — the 3D-alignment group "
+                         "this belongs to. Part of the key: two groups may hold the same "
+                         "file stem."),
+            CatalogField("pipeline", "text", "reconstruction.toml [[raw_tomogram]]",
+                         "Human description."),
+            CatalogField("software", "text", "reconstruction.toml [[raw_tomogram]]"),
             CatalogField("voxel_size", "float", "MRC header",
                          "Ångström/pixel. Populated by the catalog scanner from the "
                          "reconstruction MRC header's voxel_size.x; not authored in any TOML."),
-            CatalogField("derived_from", "list[text]", "acquisition.toml [raw_tomogram]",
-                         "Lineage; empty for raw reconstructions."),
+            CatalogField("derived_from", "text", "reconstruction.toml [[raw_tomogram]]",
+                         "The tilt series (under TiltSeries/) this was reconstructed from."),
             CatalogField("image_size_x", "integer", "MRC header"),
             CatalogField("image_size_y", "integer", "MRC header"),
             CatalogField("image_size_z", "integer", "MRC header"),
@@ -286,32 +290,37 @@ CATALOG: list[CatalogEntity] = [
             CatalogField("zarr_path", "text", "directory", "Derived from prescribed layout."),
             CatalogField("zarr_axes", "text", "OME-Zarr .zattrs", "Axis order."),
             CatalogField("zarr_scale", "list[float]", "OME-Zarr .zattrs", "Multiscale scale factors."),
-            CatalogField("renamed_from", "text", "acquisition.toml [raw_tomogram]",
+            CatalogField("renamed_from", "text", "reconstruction.toml [[raw_tomogram]]",
                          "Scan-time-only rename directive; not stored in the DB.", in_db=False),
         ],
     ),
     CatalogEntity(
         key="post_processed_tomogram", name="Post-processed tomogram",
-        cardinality="0..N per acquisition",
-        parent="acquisition", orm=orm.PostProcessedTomogramORM,
+        cardinality="0..N per 3D alignment group",
+        parent="reconstruction_alignment", orm=orm.PostProcessedTomogramORM,
         fields=[
             CatalogField("tomogram_id", "text", "directory",
-                         "Processing folder name; the TOML id must match the folder."),
+                         "Reconstruction file's name without its extension; the TOML id "
+                         "must match the stem."),
             CatalogField("acquisition_id", "text", "directory", "Parent acquisition folder name."),
             CatalogField("sample_id", "text", "directory", "Parent sample folder name."),
-            CatalogField("tilt_series_id", "text", "acquisition.toml [[post_processed_tomogram]]",
-                         "Tilt series (in this acquisition) this reconstruction was built "
-                         "from; cross-referenced against the acquisition's tilt series ids."),
-            CatalogField("denoising_software", "text", "acquisition.toml [[post_processed_tomogram]]"),
-            CatalogField("ctf_software", "text", "acquisition.toml [[post_processed_tomogram]]"),
+            CatalogField("reconstruction_alignment_id", "text", "directory",
+                         "Enclosing Reconstructions/{id}/ folder — the 3D-alignment group "
+                         "this belongs to. Part of the key: two groups may hold the same "
+                         "file stem."),
+            CatalogField("denoising_software", "text",
+                         "reconstruction.toml [[post_processed_tomogram]]"),
+            CatalogField("ctf_software", "text",
+                         "reconstruction.toml [[post_processed_tomogram]]"),
             CatalogField("missing_wedge_software", "text",
-                         "acquisition.toml [[post_processed_tomogram]]"),
+                         "reconstruction.toml [[post_processed_tomogram]]"),
             CatalogField("voxel_size", "float", "MRC header",
                          "Ångström/pixel. Populated by the catalog scanner from the "
                          "reconstruction MRC header's voxel_size.x; not authored in any TOML."),
-            CatalogField("derived_from", "list[text]", "acquisition.toml [[post_processed_tomogram]]",
+            CatalogField("derived_from", "list[text]",
+                         "reconstruction.toml [[post_processed_tomogram]]",
                          "Lineage; references a raw or post-processed tomogram_id in this "
-                         "acquisition."),
+                         "acquisition (resolvable across sibling groups)."),
             CatalogField("image_size_x", "integer", "MRC header"),
             CatalogField("image_size_y", "integer", "MRC header"),
             CatalogField("image_size_z", "integer", "MRC header"),
@@ -322,27 +331,63 @@ CATALOG: list[CatalogEntity] = [
             CatalogField("size_bytes", "integer", "filesystem",
                          "On-disk size recorded by the scanner via os.stat at parse time; "
                          "powers the home-page size stats and per-card size badges."),
-            CatalogField("renamed_from", "text", "acquisition.toml [[post_processed_tomogram]]",
+            CatalogField("renamed_from", "text",
+                         "reconstruction.toml [[post_processed_tomogram]]",
                          "Scan-time-only rename directive; not stored in the DB.", in_db=False),
         ],
     ),
     CatalogEntity(
-        key="annotation", name="Annotation", cardinality="0..N per acquisition",
-        parent="acquisition", orm=orm.AnnotationORM,
+        key="annotation", name="Annotation",
+        cardinality="0..N per 3D alignment group",
+        parent="reconstruction_alignment", orm=orm.AnnotationORM,
         fields=[
             CatalogField("annotation_id", "text", "directory",
-                         "Annotation folder name, e.g. membrain_seg_v10; the TOML id must "
-                         "match the folder."),
+                         "Annotation file's name without its extension, e.g. "
+                         "membrain_seg_v10; the TOML id must match the stem."),
             CatalogField("acquisition_id", "text", "directory", "Parent acquisition folder name."),
             CatalogField("sample_id", "text", "directory", "Parent sample folder name."),
-            CatalogField("type", "text", "acquisition.toml [[annotation]]",
+            CatalogField("reconstruction_alignment_id", "text", "directory",
+                         "Enclosing Reconstructions/{id}/ folder — the 3D-alignment group "
+                         "this belongs to. Part of the key: two groups may hold the same "
+                         "file stem."),
+            CatalogField("type", "text", "reconstruction.toml [[annotation]]",
                          "e.g. membrane_segmentation, nucleosome_placement, "
                          "nucleosome_orientation, sta_result."),
-            CatalogField("target_tomogram", "text", "acquisition.toml [[annotation]]",
-                         "Tomogram this was generated from."),
+            CatalogField("derived_from", "text", "reconstruction.toml [[annotation]]",
+                         "Id of the tomogram in this group the annotation was "
+                         "derived from."),
+            CatalogField("bounding_box", "text", "reconstruction.toml [[annotation]]",
+                         "Id of the annotation file (under Annotations/) holding the "
+                         "bounding box this annotation is associated with."),
             CatalogField("files", "list[text]", "directory",
-                         ".star, .mrc, .ome.zarr, .png artifacts discovered in the folder."),
-            CatalogField("renamed_from", "text", "acquisition.toml [[annotation]]",
+                         ".star, .mrc, .ome.zarr, .png artifacts sharing this stem."),
+            CatalogField("renamed_from", "text", "reconstruction.toml [[annotation]]",
+                         "Scan-time-only rename directive; not stored in the DB.", in_db=False),
+        ],
+    ),
+    CatalogEntity(
+        key="reconstruction_alignment", name="3D alignment group",
+        cardinality="0..N per acquisition",
+        parent="acquisition", orm=orm.ReconstructionAlignmentORM,
+        fields=[
+            CatalogField("reconstruction_alignment_id", "text", "directory",
+                         "Folder name under Reconstructions/. Does NOT have to match any "
+                         "tilt_series_id — a tomogram's tilt-series lineage is recorded on "
+                         "raw_tomogram.derived_from instead."),
+            CatalogField("acquisition_id", "text", "directory", "Parent acquisition folder name."),
+            CatalogField("sample_id", "text", "directory", "Parent sample folder name."),
+            CatalogField("alignment_software", "text",
+                         "reconstruction.toml [reconstruction_alignment]",
+                         "e.g. IMOD, RELION, AreTomo3."),
+            CatalogField("alignment_method", "text",
+                         "reconstruction.toml [reconstruction_alignment]",
+                         "e.g. patch_tracking, fiducial, subtomogram_averaging."),
+            CatalogField("alignment_files", "list[text]", "directory",
+                         "3D-alignment artifacts discovered under "
+                         "Reconstructions/{id}/Alignment/."),
+            CatalogField("mtime", "float", "directory", "Modification time, used to gate re-parsing."),
+            CatalogField("renamed_from", "text",
+                         "reconstruction.toml [reconstruction_alignment]",
                          "Scan-time-only rename directive; not stored in the DB.", in_db=False),
         ],
     ),

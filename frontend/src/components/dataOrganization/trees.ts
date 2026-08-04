@@ -48,7 +48,7 @@ export const experimentalTree: FileNode[] = [
             kind: 'dir',
             comment: 'acquisition identity = directory name',
             children: [
-              { name: 'acquisition.toml', kind: 'file', comment: 'per-acquisition params + processing log' },
+              { name: 'acquisition.toml', kind: 'file', comment: 'per-acquisition params + tilt-series metadata' },
               { name: 'Frames', kind: 'dir', comment: 'raw movie frames (.eer / .tiff) + .mdoc' },
               { name: 'Gains', kind: 'dir', comment: 'gain reference' },
               {
@@ -76,17 +76,14 @@ export const experimentalTree: FileNode[] = [
                 kind: 'dir',
                 children: [
                   {
-                    name: 'Tomograms',
+                    name: '{reconstruction_alignment_id}',
                     kind: 'dir',
+                    comment: 'a 3D alignment group; id does NOT have to match any tilt_series_id',
                     children: [
-                      { name: '{tomogram_id}', kind: 'dir', comment: 'one subfolder per processing pipeline', children: [{ name: '*.mrc', kind: 'file' }, { name: '*.zarr', kind: 'file' }] },
-                    ],
-                  },
-                  {
-                    name: 'Annotations',
-                    kind: 'dir',
-                    children: [
-                      { name: '{annotation_id}', kind: 'dir', children: [{ name: '*.star', kind: 'file' }, { name: '*.mrc / *.zarr', kind: 'file' }] },
+                      { name: 'reconstruction.toml', kind: 'file', comment: '3D alignment params + processing log for this group' },
+                      { name: 'Tomograms', kind: 'dir', children: [{ name: '{tomogram_id}.mrc', kind: 'file', comment: 'id = file name without extension' }, { name: '{tomogram_id}.zarr', kind: 'file' }] },
+                      { name: 'Annotations', kind: 'dir', children: [{ name: '{annotation_id}.star', kind: 'file', comment: 'id = file name without extension' }, { name: '{annotation_id}.mrc / .zarr', kind: 'file' }] },
+                      { name: 'Alignment', kind: 'dir', comment: '3D alignment metadata for this group; MAY be empty', children: [{ name: 'alignment.json', kind: 'file' }] },
                     ],
                   },
                 ],
@@ -149,8 +146,17 @@ export const simulationTree: FileNode[] = [
                     name: 'Reconstructions',
                     kind: 'dir',
                     children: [
-                      { name: 'Tomograms', kind: 'dir', children: [{ name: '{tomogram_id}', kind: 'dir', comment: 'one subfolder per processing pipeline', children: [{ name: '*.mrc', kind: 'file' }, { name: '*.zarr', kind: 'file' }] }] },
-                      { name: 'Annotations', kind: 'dir', children: [{ name: '{annotation_id}', kind: 'dir', children: [{ name: '*.star', kind: 'file' }, { name: '*.mrc / *.zarr', kind: 'file' }] }] },
+                      {
+                        name: '{reconstruction_alignment_id}',
+                        kind: 'dir',
+                        comment: 'a 3D alignment group; id does NOT have to match any tilt_series_id',
+                        children: [
+                      { name: 'reconstruction.toml', kind: 'file', comment: '3D alignment params + processing log for this group' },
+                      { name: 'Tomograms', kind: 'dir', children: [{ name: '{tomogram_id}.mrc', kind: 'file', comment: 'id = file name without extension' }, { name: '{tomogram_id}.zarr', kind: 'file' }] },
+                      { name: 'Annotations', kind: 'dir', children: [{ name: '{annotation_id}.star', kind: 'file', comment: 'id = file name without extension' }, { name: '{annotation_id}.mrc / .zarr', kind: 'file' }] },
+                      { name: 'Alignment', kind: 'dir', comment: '3D alignment metadata for this group; MAY be empty', children: [{ name: 'alignment.json', kind: 'file' }] },
+                        ],
+                      },
                     ],
                   },
                 ],

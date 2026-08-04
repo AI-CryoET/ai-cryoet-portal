@@ -126,7 +126,11 @@
           "$ref": "#/$defs/MdSource"
         },
         "raw_tomogram": {
-          "$ref": "#/$defs/RawTomogram"
+          "items": {
+            "$ref": "#/$defs/RawTomogram"
+          },
+          "title": "Raw Tomogram",
+          "type": "array"
         },
         "post_processed_tomogram": {
           "items": {
@@ -148,6 +152,13 @@
           },
           "title": "Tilt Series",
           "type": "array"
+        },
+        "reconstruction_alignment": {
+          "items": {
+            "$ref": "#/$defs/ReconstructionAlignment"
+          },
+          "title": "Reconstruction Alignment",
+          "type": "array"
         }
       },
       "required": [
@@ -163,6 +174,10 @@
           "title": "Id",
           "type": "string"
         },
+        "reconstruction_alignment_id": {
+          "title": "Reconstruction Alignment Id",
+          "type": "string"
+        },
         "renamed_from": {
           "title": "Renamed From",
           "type": "string"
@@ -171,8 +186,12 @@
           "title": "Type",
           "type": "string"
         },
-        "target_tomogram": {
-          "title": "Target Tomogram",
+        "derived_from": {
+          "title": "Derived From",
+          "type": "string"
+        },
+        "bounding_box": {
+          "title": "Bounding Box",
           "type": "string"
         },
         "files": {
@@ -472,12 +491,12 @@
           "title": "Id",
           "type": "string"
         },
-        "renamed_from": {
-          "title": "Renamed From",
+        "reconstruction_alignment_id": {
+          "title": "Reconstruction Alignment Id",
           "type": "string"
         },
-        "tilt_series_id": {
-          "title": "Tilt Series Id",
+        "renamed_from": {
+          "title": "Renamed From",
           "type": "string"
         },
         "denoising_software": {
@@ -561,12 +580,12 @@
           "title": "Id",
           "type": "string"
         },
-        "renamed_from": {
-          "title": "Renamed From",
+        "reconstruction_alignment_id": {
+          "title": "Reconstruction Alignment Id",
           "type": "string"
         },
-        "tilt_series_id": {
-          "title": "Tilt Series Id",
+        "renamed_from": {
+          "title": "Renamed From",
           "type": "string"
         },
         "pipeline": {
@@ -578,11 +597,8 @@
           "type": "string"
         },
         "derived_from": {
-          "items": {
-            "type": "string"
-          },
           "title": "Derived From",
-          "type": "array"
+          "type": "string"
         },
         "image_size_x": {
           "title": "Image Size X",
@@ -624,6 +640,81 @@
         "id"
       ],
       "title": "RawTomogram",
+      "type": "object"
+    },
+    "ReconstructionAlignment": {
+      "additionalProperties": true,
+      "description": "One 3D-alignment group within an acquisition (composite-PK child of\nAcquisition).\n\nComposite primary key: ``(sample_id, acquisition_id, reconstruction_alignment_id)``.\nThe group is a researcher-authored folder under ``Reconstructions/`` \u2014\n``reconstruction_alignment_id`` is its directory name (accepted as the\nTOML ``id`` alias). It does NOT have to match any ``tilt_series_id``: a\ntomogram's tilt-series lineage is recorded separately on\n``RawTomogram.derived_from``. All non-PK fields are optional so a group\ncan be ingested before disk enrichment runs.",
+      "properties": {
+        "sample_id": {
+          "title": "Sample Id",
+          "type": "string"
+        },
+        "acquisition_id": {
+          "title": "Acquisition Id",
+          "type": "string"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "renamed_from": {
+          "title": "Renamed From",
+          "type": "string"
+        },
+        "alignment_software": {
+          "title": "Alignment Software",
+          "type": "string"
+        },
+        "alignment_method": {
+          "title": "Alignment Method",
+          "type": "string"
+        },
+        "alignment_files": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Alignment Files",
+          "type": "array"
+        },
+        "mtime": {
+          "title": "Mtime",
+          "type": "number"
+        }
+      },
+      "title": "ReconstructionAlignment",
+      "type": "object"
+    },
+    "ReconstructionFile": {
+      "additionalProperties": true,
+      "description": "Parsed contents of one Reconstructions/{id}/reconstruction.toml.\n\n``reconstruction_alignment_id`` is the folder name (path-injected by the\nloader, not authored). Tomogram/annotation ids are the file stems in this\nfolder. Cross-file references (raw_tomogram.derived_from -> a tilt_series in\nacquisition.toml; post_processed_tomogram.derived_from -> a tomogram in this\nor another group) are reconciled by the loader after aggregation, not here.",
+      "properties": {
+        "reconstruction_alignment": {
+          "$ref": "#/$defs/ReconstructionAlignment"
+        },
+        "raw_tomogram": {
+          "items": {
+            "$ref": "#/$defs/RawTomogram"
+          },
+          "title": "Raw Tomogram",
+          "type": "array"
+        },
+        "post_processed_tomogram": {
+          "items": {
+            "$ref": "#/$defs/PostProcessedTomogram"
+          },
+          "title": "Post Processed Tomogram",
+          "type": "array"
+        },
+        "annotation": {
+          "items": {
+            "$ref": "#/$defs/Annotation"
+          },
+          "title": "Annotation",
+          "type": "array"
+        }
+      },
+      "title": "ReconstructionFile",
       "type": "object"
     },
     "Sample": {
@@ -779,6 +870,16 @@
         "$ref": "#/$defs/AcquisitionFile"
       },
       "title": "Acquisitions",
+      "type": "object"
+    },
+    "reconstructions": {
+      "additionalProperties": {
+        "additionalProperties": {
+          "$ref": "#/$defs/ReconstructionFile"
+        },
+        "type": "object"
+      },
+      "title": "Reconstructions",
       "type": "object"
     }
   },
