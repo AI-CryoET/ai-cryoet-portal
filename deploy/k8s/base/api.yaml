@@ -33,6 +33,8 @@ spec:
         runAsNonRoot: true
         seccompProfile:
           type: RuntimeDefault
+      imagePullSecrets:
+        - name: ghcr-pull
       containers:
         - name: api
           image: ghcr.io/ai-cryoet/ai-cryoet-api:latest
