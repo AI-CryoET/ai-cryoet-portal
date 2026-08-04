@@ -97,6 +97,7 @@ def client(tmp_path):
         #    run, not the latest completed run) — §9.7.
         _issue(s, sample_id="sample-2", severity="warning",
                category="possible_typo", message="typo",
+               file_path="/data/scratch/sample-2/sample.toml",
                last_seen_at=_NOW - 9000, last_seen_run_id="run-ancient")
         #  - acquisition-scope issue for filtering by file_kind.
         _issue(s, sample_id="sample-1", scope="acquisition",
@@ -284,6 +285,13 @@ def test_outstanding_text_query_matches_acquisition_id(client):
     body = client.get("/manage/issues", params={"q": "acq1"}).json()
     assert len(body) == 1
     assert body[0]["acquisition_id"] == "acq1"
+
+
+def test_outstanding_text_query_matches_file_path(client):
+    # A term only present in file_path (not message/location/ids) still hits.
+    body = client.get("/manage/issues", params={"q": "scratch"}).json()
+    assert len(body) == 1
+    assert body[0]["sample_id"] == "sample-2"
 
 
 def test_outstanding_text_query_all_terms_must_match(client):
