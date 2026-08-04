@@ -222,10 +222,13 @@ function AcquisitionDetailRoute() {
           acqWarnings.length > 0
             ? {
                 // Opens the warnings page with outstanding issues filtered to
-                // this acquisition (read from the URL search params there).
-                href: `/manage/warnings?sample=${encodeURIComponent(
-                  sampleId,
-                )}&acquisition=${encodeURIComponent(acquisitionId)}`,
+                // this acquisition: sample + acquisition names space-joined into
+                // `q` so the backend's all-terms-must-match search narrows to
+                // this one acquisition (acquisition ids aren't unique across
+                // samples).
+                href: `/manage/warnings?q=${encodeURIComponent(
+                  `${sampleId} ${acquisitionId}`,
+                )}`,
                 text: "*There are warnings for this acquisition's metadata. Click to view",
               }
             : null
