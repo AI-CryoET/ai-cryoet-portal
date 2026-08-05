@@ -11,50 +11,34 @@ import {
   recentlyResolvedQueryOptions,
   useManageSummaryQuery,
   useRecentlyResolvedQuery,
-  type IssueFilters,
 } from '~/utils/queryOptions'
 
-// Optional entity filter carried in the URL (e.g. /manage/warnings?sample=s1
-// from a detail page's "view metadata errors" link).
-type ManageSearch = { sample?: string; acquisition?: string }
+// Free-text search carried in the URL (e.g. /manage/warnings?q=villa_004 from a
+// detail page's "view metadata errors" link, or typed into the search box).
+type ManageSearch = { q?: string }
 
 export const Route = createFileRoute('/manage/warnings')({
   validateSearch: (search: Record<string, unknown>): ManageSearch => ({
-    sample: typeof search.sample === 'string' ? search.sample : undefined,
-    acquisition:
-      typeof search.acquisition === 'string' ? search.acquisition : undefined,
+    q: typeof search.q === 'string' && search.q ? search.q : undefined,
   }),
   loaderDeps: ({ search }) => search,
   loader: ({ context: { queryClient }, deps }) =>
     Promise.all([
       queryClient.ensureQueryData(manageSummaryQueryOptions),
-      queryClient.ensureQueryData(
-        outstandingIssuesQueryOptions({ q: entityQuery(deps) }),
-      ),
+      queryClient.ensureQueryData(outstandingIssuesQueryOptions({ q: deps.q })),
+      // Unfiltered list primes the "X out of Y total" denominator so a
+      // deep-linked (?q=…) table shows the right total immediately.
+      queryClient.ensureQueryData(outstandingIssuesQueryOptions({})),
       queryClient.ensureQueryData(recentlyResolvedQueryOptions(24)),
     ]),
   component: ManageRoute,
 })
 
-// Search text seeding the outstanding-issues box from a detail page's "view
-// warnings" link: both the sample and acquisition names (space-separated, so
-// the backend's all-terms-must-match search narrows to that one acquisition,
-// since acquisition ids aren't unique across samples).
-function entityQuery({
-  sample,
-  acquisition,
-}: ManageSearch): string | undefined {
-  return [sample, acquisition].filter(Boolean).join(' ') || undefined
-}
-
 function ManageRoute() {
-  const { sample, acquisition } = Route.useSearch()
+  const { q } = Route.useSearch()
+  const navigate = Route.useNavigate()
   const { data: summary } = useManageSummaryQuery()
   const { data: resolved } = useRecentlyResolvedQuery(24)
-
-  const outstandingCount =
-    summary.outstanding.errors + summary.outstanding.warnings
-  const initialFilters: IssueFilters = { q: entityQuery({ sample, acquisition }) }
 
   return (
     <Stack spacing={3}>
@@ -86,11 +70,16 @@ function ManageRoute() {
       </Box>
 
       <Box>
-        <SectionHeader
-          count={outstandingCount}
-          title="Outstanding data warnings & errors"
+        <OutstandingIssuesTable
+          q={q ?? ''}
+          onQueryChange={(value) =>
+            navigate({
+              // replace: typing shouldn't stack a history entry per keystroke.
+              search: (prev) => ({ ...prev, q: value || undefined }),
+              replace: true,
+            })
+          }
         />
-        <OutstandingIssuesTable initialFilters={initialFilters} />
       </Box>
 
       <Box>

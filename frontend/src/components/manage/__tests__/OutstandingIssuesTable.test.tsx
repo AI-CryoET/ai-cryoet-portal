@@ -98,9 +98,9 @@ describe('OutstandingIssuesTable', () => {
     ).toBeInTheDocument()
   })
 
-  it('prefills the search box from an initial q filter', () => {
+  it('prefills the search box from the q prop (URL search param)', () => {
     setData([group({})])
-    render(<OutstandingIssuesTable initialFilters={{ q: 'acq_02' }} />)
+    render(<OutstandingIssuesTable q="acq_02" />)
     expect(screen.getByDisplayValue('acq_02')).toBeInTheDocument()
   })
 })

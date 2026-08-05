@@ -79,10 +79,10 @@ export function RecentlyResolvedTable({
     // top toolbar holds only the pagination — no empty button slot.
     enableToolbarInternalActions: false,
     enableSorting: true,
-    // Paginated, 10 rows by default; pagination sits in the top toolbar.
+    // Paginated, 10 rows by default; the pagination bar (rows-per-page + page
+    // nav) shows at both top and bottom, matching the portal tables (/data).
     enablePagination: true,
-    positionPagination: 'top',
-    enableBottomToolbar: false,
+    positionPagination: 'both',
     muiTopToolbarProps: {
       sx: { bgcolor: (t) => alpha(t.palette.primary.main, 0.12) },
     },

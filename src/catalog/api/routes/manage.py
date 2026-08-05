@@ -246,6 +246,7 @@ def get_outstanding_issues(
             stmt = stmt.where(
                 func.lower(orm.IssueORM.message).like(like)
                 | func.lower(orm.IssueORM.location).like(like)
+                | func.lower(func.coalesce(orm.IssueORM.file_path, "")).like(like)
                 | func.lower(func.coalesce(orm.IssueORM.sample_id, "")).like(like)
                 | func.lower(
                     func.coalesce(orm.IssueORM.acquisition_id, "")

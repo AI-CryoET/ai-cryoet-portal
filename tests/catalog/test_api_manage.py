@@ -97,6 +97,7 @@ def client(tmp_path):
         #    run, not the latest completed run) — §9.7.
         _issue(s, sample_id="sample-2", severity="warning",
                category="possible_typo", message="typo",
+               file_path="/data/scratch/sample-2/sample.toml",
                last_seen_at=_NOW - 9000, last_seen_run_id="run-ancient")
         #  - acquisition-scope issue for filtering by file_kind.
         _issue(s, sample_id="sample-1", scope="acquisition",
@@ -286,6 +287,13 @@ def test_outstanding_text_query_matches_acquisition_id(client):
     assert body[0]["acquisition_id"] == "acq1"
 
 
+def test_outstanding_text_query_matches_file_path(client):
+    # A term only present in file_path (not message/location/ids) still hits.
+    body = client.get("/manage/issues", params={"q": "scratch"}).json()
+    assert len(body) == 1
+    assert body[0]["sample_id"] == "sample-2"
+
+
 def test_outstanding_text_query_all_terms_must_match(client):
     # "sample-1 acq1": both terms must match, narrowing to the acq1 group even
     # though sample-1 also has sample-scope issues (which lack "acq1").
@@ -450,9 +458,13 @@ def test_deletions_filter_by_sample_id(client):
 
 
 def test_deletions_filter_by_within_hours(client):
-    # 300s window excludes the sample-old event (100_000s ago).
+    # 1h window excludes the sample-old event (100_000s ≈ 27.8h ago) while
+    # comfortably including the recent events. A tighter (e.g. 300s) window
+    # races the suite runtime: fixtures are stamped relative to _NOW at import
+    # time, but the endpoint's cutoff uses time.time() at request time, so a
+    # slow CI run ages the ~260s-old sample-1 events past the boundary.
     body = client.get(
-        "/manage/deletions", params={"within_hours": 300 / 3600}
+        "/manage/deletions", params={"within_hours": 1.0}
     ).json()
     sample_ids = {r["sample_id"] for r in body}
     assert "sample-old" not in sample_ids

@@ -120,8 +120,8 @@ function SampleDetailRoute() {
           warnings.length > 0
             ? {
                 // Opens the warnings page with outstanding issues filtered to
-                // this sample (read from the URL search params there).
-                href: `/manage/warnings?sample=${encodeURIComponent(sampleId)}`,
+                // this sample (seeds the `q` search param there).
+                href: `/manage/warnings?q=${encodeURIComponent(sampleId)}`,
                 text: "*There are warnings for this sample's metadata. Click to view",
               }
             : null
