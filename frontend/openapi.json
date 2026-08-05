@@ -1093,7 +1093,7 @@
           "tilt-series"
         ],
         "summary": "Tilt Series Preview",
-        "description": "Median-tilt image as PNG.\n\nPrefers the authored ``stack/`` (zarr, then ``.st``/``.mrc``); falls back\nto the acquisition's raw ``Frames/`` images. 422 if none are reachable.",
+        "description": "Median-tilt image as PNG.\n\nPrefers the authored ``Stack/`` (zarr, then ``.st``/``.mrc``); falls back\nto the acquisition's raw ``Frames/`` images. 422 if none are reachable.",
         "operationId": "tilt_series_preview_tilt_series__sample_id___acquisition_id___tilt_series_id__preview_png_get",
         "parameters": [
           {
@@ -1152,7 +1152,7 @@
           "tilt-series"
         ],
         "summary": "Tilt Series Neuroglancer",
-        "description": "Launch a Neuroglancer viewer over the tilt-series stack.\n\nPrefer the authored ``stack/`` (zarr, then ``.st``/``.mrc``); fall back to\nthe acquisition's raw ``Frames/`` images. 422 if none are reachable.",
+        "description": "Launch a Neuroglancer viewer over the tilt-series stack.\n\nPrefer the authored ``Stack/`` (zarr, then ``.st``/``.mrc``); fall back to\nthe acquisition's raw ``Frames/`` images. 422 if none are reachable.",
         "operationId": "tilt_series_neuroglancer_tilt_series__sample_id___acquisition_id___tilt_series_id__neuroglancer_post",
         "parameters": [
           {

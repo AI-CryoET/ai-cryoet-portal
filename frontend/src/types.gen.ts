@@ -437,7 +437,7 @@ export interface paths {
          * Tilt Series Preview
          * @description Median-tilt image as PNG.
          *
-         *     Prefers the authored ``stack/`` (zarr, then ``.st``/``.mrc``); falls back
+         *     Prefers the authored ``Stack/`` (zarr, then ``.st``/``.mrc``); falls back
          *     to the acquisition's raw ``Frames/`` images. 422 if none are reachable.
          */
         get: operations["tilt_series_preview_tilt_series__sample_id___acquisition_id___tilt_series_id__preview_png_get"];
@@ -462,7 +462,7 @@ export interface paths {
          * Tilt Series Neuroglancer
          * @description Launch a Neuroglancer viewer over the tilt-series stack.
          *
-         *     Prefer the authored ``stack/`` (zarr, then ``.st``/``.mrc``); fall back to
+         *     Prefer the authored ``Stack/`` (zarr, then ``.st``/``.mrc``); fall back to
          *     the acquisition's raw ``Frames/`` images. 422 if none are reachable.
          */
         post: operations["tilt_series_neuroglancer_tilt_series__sample_id___acquisition_id___tilt_series_id__neuroglancer_post"];

@@ -2,7 +2,7 @@
 
 Shared by the on-demand preview endpoint (``routes/tilt_series.py``) and the
 scan-time thumbnail cache (``catalog.thumbnails``). Source-resolution order
-mirrors the tilt-series plan §5: prefer the authored ``stack/`` zarr store,
+mirrors the tilt-series plan §5: prefer the authored ``Stack/`` zarr store,
 then the ``.st``/``.mrc`` projection stack, finally the acquisition's raw
 ``Frames/`` images (shared by all the acquisition's tilt series).
 

@@ -33,6 +33,20 @@ from schema.layout import (
 REPRESENTATIVE_FRAME_SUFFIXES = frozenset({".eer", ".tiff", ".tif"})
 
 
+def _first_existing_dir(parent: Path, *names: str) -> Path | None:
+    """First child dir matching one of ``names`` (in order), else ``None``.
+
+    Lets a tilt-series subfolder be discovered under its canonical PascalCase
+    name (``Stack``/``Alignment``) while still reading legacy lowercase
+    (``stack``/``alignment``) layouts already on disk.
+    """
+    for name in names:
+        candidate = parent / name
+        if candidate.is_dir():
+            return candidate
+    return None
+
+
 @dataclass(frozen=True)
 class SampleLocation:
     path: Path
@@ -447,12 +461,13 @@ def iter_tilt_series(acq: AcquisitionLocation) -> Iterator[TiltSeriesLocation]:
     """Yield one TiltSeriesLocation per direct child of ``acq.tilt_series_dir``.
 
     Each ``TiltSeries/{ts_id}/`` is a researcher-authored tilt-series folder.
-    The ``stack/`` and ``alignment/`` subfolders are OPTIONAL — when absent the
+    The ``Stack/`` and ``Alignment/`` subfolders are OPTIONAL — when absent the
     corresponding fields are just ``None``/empty; the tilt series is still
-    yielded. ``st_path`` resolves to the first ``*.st`` (then ``*.mrc``) file
-    under ``stack/``; ``zarr_path`` to the first ``.zarr`` / ``.ome.zarr`` dir
-    there. ``alignment_files`` collects files (and any ``.zarr`` dirs) directly
-    under ``alignment/``.
+    yielded. Legacy lowercase ``stack/`` / ``alignment/`` are still read.
+    ``st_path`` resolves to the first ``*.st`` (then ``*.mrc``) file under
+    ``Stack/``; ``zarr_path`` to the first ``.zarr`` / ``.ome.zarr`` dir there.
+    ``alignment_files`` collects files (and any ``.zarr`` dirs) directly under
+    ``Alignment/``.
     """
     if acq.tilt_series_dir is None or not acq.tilt_series_dir.is_dir():
         return
@@ -460,8 +475,7 @@ def iter_tilt_series(acq: AcquisitionLocation) -> Iterator[TiltSeriesLocation]:
         if not child.is_dir():
             continue
 
-        stack = child / "stack"
-        stack_dir = stack if stack.is_dir() else None
+        stack_dir = _first_existing_dir(child, "Stack", "stack")
         st_path: Path | None = None
         zarr_path: Path | None = None
         if stack_dir is not None:
@@ -479,8 +493,7 @@ def iter_tilt_series(acq: AcquisitionLocation) -> Iterator[TiltSeriesLocation]:
             elif mrc_candidates:
                 st_path = mrc_candidates[0]
 
-        alignment = child / "alignment"
-        alignment_dir = alignment if alignment.is_dir() else None
+        alignment_dir = _first_existing_dir(child, "Alignment", "alignment")
         alignment_files: list[Path] = []
         if alignment_dir is not None:
             for entry in alignment_dir.iterdir():

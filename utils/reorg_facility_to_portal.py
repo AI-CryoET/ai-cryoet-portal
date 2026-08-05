@@ -36,9 +36,9 @@ template and populates it:
             Reconstructions/ ...
             TiltSeries/                   <- one folder per tilt series
                 raw/                      <- the initial .mrc (Gouaux only);
-                    stack/                   id from --tilt-series-id (default "raw")
+                    Stack/                   id from --tilt-series-id (default "raw")
                         <acq>.mrc
-                    alignment/            <- (empty; populated when aligned)
+                    Alignment/            <- (empty; populated when aligned)
 
 The acquisition.toml's [[tilt_series]] block is filled in to match: a raw,
 unaligned series (id = the --tilt-series-id, derived_from = "Frames",
@@ -771,12 +771,12 @@ def process(
             if acq.series_mdoc is not None:
                 runner.place_frame(acq.series_mdoc, frames_dir / acq.series_mdoc.name)
             if acq.mrc is not None:
-                # The initial tilt series goes under TiltSeries/{ts_id}/stack/.
+                # The initial tilt series goes under TiltSeries/{ts_id}/Stack/.
                 # ts_id is the tilt-series folder name (default "raw" — the
                 # unaligned series derived from Frames).
                 runner.place_frame(
                     acq.mrc,
-                    dest_acq / "TiltSeries" / tilt_series_id / "stack" / acq.mrc.name,
+                    dest_acq / "TiltSeries" / tilt_series_id / "Stack" / acq.mrc.name,
                 )
 
         # Gain reference — placed into every acquisition's Gains/ (copied in
