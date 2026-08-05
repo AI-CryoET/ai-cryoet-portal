@@ -25,6 +25,10 @@ data:
         server frontend:3000;
     }
 
+    upstream mrc-ng-server {
+        server mrc-ng-server:8000;
+    }
+
     server {
         listen 8080 default_server;
         server_name _;
@@ -74,6 +78,21 @@ data:
             proxy_set_header X-Forwarded-Proto $scheme;
             proxy_set_header Upgrade $http_upgrade;
             proxy_set_header Connection "upgrade";
+        }
+
+        # mrc-ng-server data service: strip the /mrc-ng-server prefix and forward
+        # to its :8000 (it serves Neuroglancer `precomputed` chunks at /data/...).
+        # Fronting it here means it needs no Route/host of its own — the browser
+        # fetches chunks from this host. MRCNG_BASE_URL = this host +
+        # /mrc-ng-server/data. (The viewer's own /neuroglancer/ paths above target
+        # the API's in-process server, a different service; no overlap.)
+        location /mrc-ng-server/ {
+            rewrite ^/mrc-ng-server/(.*)$ /$1 break;
+            proxy_pass http://mrc-ng-server;
+            proxy_set_header Host $http_host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
         }
 
         # Everything else: the TanStack Start SSR server.

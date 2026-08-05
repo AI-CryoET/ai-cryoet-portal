@@ -159,15 +159,18 @@ oc create secret docker-registry ghcr-credentials \
 
 ### 4. TLS
 
-The Routes in `deploy/k8s/base/routes.yaml` (the portal `cryoet` Route and the
-`mrc-ng-server` Route) use edge TLS termination without specifying a
-certificate, so the cluster router serves its own configured certificate for
-each hostname. No per-application TLS secret is needed. For a custom certificate,
-extend the Route `spec.tls` block with `certificate`/`key`/`caCertificate` or use
-`externalCertificate` (OpenShift 4.16+).
+The portal `cryoet` Route in `deploy/k8s/base/routes.yaml` uses edge TLS
+termination without specifying a certificate, so the cluster router serves its
+own configured certificate for the hostname. No per-application TLS secret is
+needed. For a custom certificate, extend the Route `spec.tls` block with
+`certificate`/`key`/`caCertificate` or use `externalCertificate`
+(OpenShift 4.16+).
 
-The `mrc-ng-server` Route's host + `/data` must equal `MRCNG_BASE_URL` in
-`config.env` — that is the URL the browser fetches Neuroglancer chunks from.
+The mrc-ng-server has no Route of its own: the browser reaches it via nginx's
+`/mrc-ng-server/` location on the portal host (see `deploy/nginx.conf`), so it
+stays a namespace-internal Service. That path prefix + `/data` must equal
+`MRCNG_BASE_URL` in `config.env` — the URL the browser fetches Neuroglancer
+chunks from.
 
 ### 5. Preview the generated manifests
 
