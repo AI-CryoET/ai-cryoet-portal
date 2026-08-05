@@ -37,8 +37,8 @@ dist
 .env
 
 # k8s overlay config (copied from *.example, filled with real values)
-k8s/overlays/*/config.env
-k8s/overlays/*/secrets.env
+deploy/k8s/overlays/*/config.env
+deploy/k8s/overlays/*/secrets.env
 
 # thumbnail cache
 thumbnails/
