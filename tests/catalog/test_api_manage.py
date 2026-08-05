@@ -458,9 +458,13 @@ def test_deletions_filter_by_sample_id(client):
 
 
 def test_deletions_filter_by_within_hours(client):
-    # 300s window excludes the sample-old event (100_000s ago).
+    # 1h window excludes the sample-old event (100_000s ≈ 27.8h ago) while
+    # comfortably including the recent events. A tighter (e.g. 300s) window
+    # races the suite runtime: fixtures are stamped relative to _NOW at import
+    # time, but the endpoint's cutoff uses time.time() at request time, so a
+    # slow CI run ages the ~260s-old sample-1 events past the boundary.
     body = client.get(
-        "/manage/deletions", params={"within_hours": 300 / 3600}
+        "/manage/deletions", params={"within_hours": 1.0}
     ).json()
     sample_ids = {r["sample_id"] for r in body}
     assert "sample-old" not in sample_ids
