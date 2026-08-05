@@ -14,7 +14,6 @@ import {
 import { FileglancerPathSection } from '~/components/common/FileglancerPathSection'
 import { DetailHero } from '~/components/common/DetailHero'
 import { DetailPageHeader } from '~/components/common/DetailPageHeader'
-import { SectionHeading } from '~/components/common/SectionHeading'
 import { MetadataDrawer } from '~/components/common/MetadataDrawer'
 import { MetadataSectionList } from '~/components/common/MetadataSectionList'
 import { sampleMetadataSections } from '~/components/common/metadataSections'
@@ -130,7 +129,7 @@ function SampleDetailRoute() {
         description={sample.description}
         editLink={
           <CustomLink to="/manage/author" search={{ tab: 'sample', id: sampleId }}>
-            Create updated sample.toml
+            Edit sample.toml
           </CustomLink>
         }
       />
@@ -217,9 +216,11 @@ function SampleDetailRoute() {
 
       {/* ── Acquisitions ───────────────────────────────────────────── */}
       <Box>
-        <SectionHeading>
+        {/* Plain heading (no band), matching the acquisition page's
+            "Reconstructions" title. */}
+        <Typography variant="h6" component="h2" sx={{ mb: 2 }}>
           Acquisitions ({sample.acquisitions.length.toLocaleString()})
-        </SectionHeading>
+        </Typography>
         <SampleAcquisitionsTable
           sampleId={sampleId}
           acquisitions={sample.acquisitions}
