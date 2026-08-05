@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useLayoutEffect, useMemo, useRef, useState } from 'react'
 import {
   Box,
   MenuItem,
@@ -12,6 +12,7 @@ import {
   MRT_TablePagination,
   useMaterialReactTable,
   type MRT_ColumnDef,
+  type MRT_PaginationState,
 } from 'material-react-table'
 import type { IssueGroup } from '~/types'
 import { useDebounce } from '~/hooks/useDebounce'
@@ -88,6 +89,16 @@ export function OutstandingIssuesTable({
   onQueryChange?: (q: string) => void
 }) {
   const [local, setLocal] = useState<LocalFilters>({})
+  // Controlled so we can measure the table's on-screen position before a page
+  // change and restore it after (see the layout effect below).
+  const [pagination, setPagination] = useState<MRT_PaginationState>({
+    pageIndex: 0,
+    pageSize: 10,
+  })
+  // Bottom edge of the table (bottom toolbar) in viewport coords, captured the
+  // instant the user clicks a pager — before the new rows re-render.
+  const tableRef = useRef<HTMLDivElement>(null)
+  const anchorBottom = useRef<number | null>(null)
   // Input + URL update on every keystroke (responsive, shareable); the query
   // only fires 300ms after typing stops (matches SamplesBrowser).
   const debouncedQ = useDebounce(q, 300)
@@ -116,7 +127,15 @@ export function OutstandingIssuesTable({
     columns,
     data,
     getRowId: issueRowId,
-    state: { showProgressBars: isFetching, showAlertBanner: isError },
+    onPaginationChange: (updater) => {
+      // Row heights vary, so a page swap changes the table's total height and
+      // shoves everything below it. Remember where the bottom edge sits now;
+      // the layout effect scrolls it back there once the new page renders.
+      anchorBottom.current =
+        tableRef.current?.getBoundingClientRect().bottom ?? null
+      setPagination(updater)
+    },
+    state: { pagination, showProgressBars: isFetching, showAlertBanner: isError },
     muiToolbarAlertBannerProps: isError
       ? { color: 'error', children: 'Failed to load outstanding issues.' }
       : undefined,
@@ -134,7 +153,6 @@ export function OutstandingIssuesTable({
     initialState: {
       density: 'comfortable',
       sorting: [{ id: 'severity', desc: false }],
-      pagination: { pageSize: 10, pageIndex: 0 },
     },
     // Match the portal tables (/data, /experimental, /md-simulation).
     muiTablePaperProps: {
@@ -194,6 +212,17 @@ export function OutstandingIssuesTable({
     ),
   })
 
+  // After the new page renders, nudge the scroll position by exactly how far
+  // the table's bottom edge moved, so it looks like nothing shifted at all.
+  // useLayoutEffect (not useEffect) so the correction happens before paint — no
+  // visible flicker.
+  useLayoutEffect(() => {
+    if (anchorBottom.current == null) return
+    const after = tableRef.current?.getBoundingClientRect().bottom
+    if (after != null) window.scrollBy(0, after - anchorBottom.current)
+    anchorBottom.current = null
+  }, [pagination])
+
   return (
     <Box>
       <SectionHeader
@@ -203,7 +232,9 @@ export function OutstandingIssuesTable({
       <Typography variant="body1" color="text.secondary" sx={{ mb: 2 }}>
         {matchCount.toLocaleString()} match the selected filters
       </Typography>
-      <MaterialReactTable table={table} />
+      <Box ref={tableRef}>
+        <MaterialReactTable table={table} />
+      </Box>
     </Box>
   )
 }
