@@ -29,16 +29,28 @@ Route (ai-cryoet.int.janelia.org) — edge TLS, HTTP→HTTPS redirect
   api  ──reads──>  catalog-data (read-only data tree)
        ──reads──>  catalog-db   (SQLite)        <──writes── scanner (CronJob)
        ──reads──>  thumbnails   (PNG cache)     <──writes── scanner (CronJob)
+
+Route (mrc-ng-server.int.janelia.org) — edge TLS, HTTP→HTTPS redirect
+    |
+    v
+  mrc-ng-server (8000) ──reads──> catalog-data (read-only data tree)
+                       ──reads──> mrc-cache (pyramid cache) <──writes── scanner
 ```
 
-There are four runtime components plus one batch job:
+The browser fetches Neuroglancer `precomputed` chunks straight from
+mrc-ng-server (its own Route), not through nginx — so it is a second public
+entrypoint, separate from the portal's.
+
+There are four runtime components plus one batch job, plus the standalone
+mrc-ng-server data service:
 
 | Component | Image | Port(s) | Role |
 |---|---|---|---|
-| `nginx` | `nginxinc/nginx-unprivileged` | 8080 | Edge proxy. The only service behind the Route. |
+| `nginx` | `nginxinc/nginx-unprivileged` | 8080 | Edge proxy. The only service behind the portal Route. |
 | `api` | `ai-cryoet-api` | 8000, 8050 | FastAPI read API + in-process Neuroglancer server. |
 | `frontend` | `ai-cryoet-frontend` | 3000 | Server-rendered React app. |
-| `scanner` | `ai-cryoet-scanner` | — | CronJob: walks the data tree, rebuilds the DB + thumbnails. |
+| `scanner` | `ai-cryoet-scanner` | — | CronJob: walks the data tree, rebuilds the DB + thumbnails, and precomputes the `mrc-cache` pyramid. |
+| `mrc-ng-server` | `mrc-ng-server` | 8000 | Stateless service that serves tomograms to Neuroglancer over `precomputed`. Own image/repo/tag; own Route. Scalable (unlike `api`). |
 
 ## Directory Structure
 
@@ -46,12 +58,13 @@ There are four runtime components plus one batch job:
 deploy/k8s/
 ├── base/                    # Shared resource definitions
 │   ├── kustomization.yaml
-│   ├── storage.yaml         # PVCs: catalog-data, catalog-db, thumbnails
+│   ├── storage.yaml         # PVCs: catalog-data, catalog-db, thumbnails, mrc-cache
 │   ├── api.yaml             # FastAPI + Neuroglancer Deployment + Service
 │   ├── frontend.yaml        # SSR frontend Deployment + Service
 │   ├── nginx.yaml           # Edge proxy ConfigMap + Deployment + Service
 │   ├── scanner.yaml         # Catalog scanner CronJob
-│   └── routes.yaml          # OpenShift Route (edge TLS via router)
+│   ├── mrc-ng-server.yaml   # Tomogram data service Deployment + Service
+│   └── routes.yaml          # OpenShift Routes (portal + mrc-ng-server, edge TLS)
 └── overlays/
     └── production/          # Production-specific config
         ├── kustomization.yaml
@@ -146,11 +159,15 @@ oc create secret docker-registry ghcr-credentials \
 
 ### 4. TLS
 
-The Route in `deploy/k8s/base/routes.yaml` uses edge TLS termination without specifying
-a certificate, so the cluster router serves its own configured certificate for
-the hostname. No per-application TLS secret is needed. For a custom certificate,
+The Routes in `deploy/k8s/base/routes.yaml` (the portal `cryoet` Route and the
+`mrc-ng-server` Route) use edge TLS termination without specifying a
+certificate, so the cluster router serves its own configured certificate for
+each hostname. No per-application TLS secret is needed. For a custom certificate,
 extend the Route `spec.tls` block with `certificate`/`key`/`caCertificate` or use
 `externalCertificate` (OpenShift 4.16+).
+
+The `mrc-ng-server` Route's host + `/data` must equal `MRCNG_BASE_URL` in
+`config.env` — that is the URL the browser fetches Neuroglancer chunks from.
 
 ### 5. Preview the generated manifests
 
@@ -184,8 +201,12 @@ oc -n ai-cryoet get pods
 # API logs
 oc -n ai-cryoet logs -l app=api
 
-# Route admitted
-oc -n ai-cryoet get route cryoet
+# Routes admitted
+oc -n ai-cryoet get route cryoet mrc-ng-server
+
+# mrc-ng-server serving (health + a precomputed dataset's metadata)
+oc -n ai-cryoet logs -l app=mrc-ng-server
+curl -sf https://mrc-ng-server.int.janelia.org/healthz
 ```
 
 Then open `https://ai-cryoet.int.janelia.org`.
@@ -290,6 +311,16 @@ images:
 
 Then `oc apply -k deploy/k8s/overlays/production`. Pushing a `v*.*.*` git tag builds and
 publishes all three images (see the workflow).
+
+**mrc-ng-server is versioned separately.** Its image is built and tagged in its
+own repo ([mrc-ng-server](https://github.com/JaneliaSciComp/mrc-ng-server)), not
+by this repo's workflow, so it carries its own `0.x` tag independent of the
+portal's `1.x`. To update it, bump only its entry in the overlay:
+
+```yaml
+  - name: ghcr.io/janeliascicomp/mrc-ng-server
+    newTag: "0.1.2"
+```
 
 ## Adding a New Environment
 

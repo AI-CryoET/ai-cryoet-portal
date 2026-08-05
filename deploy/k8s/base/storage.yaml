@@ -1,6 +1,6 @@
 # Persistent storage for the catalog portal.
 #
-# Three volumes, mirroring the named volumes in docker-compose.yml:
+# Four volumes (the first three mirror the named volumes in docker-compose.yml):
 #
 #   catalog-data  — the pre-existing CryoET data tree the scanner walks and the
 #                   API reads. READ-ONLY to the app. This is NOT created or
@@ -17,9 +17,12 @@
 #                   access mode that allows multiple mounters (ReadWriteMany).
 #   thumbnails    — pre-generated preview PNGs. Written by the scanner, read by
 #                   the API. Also shared, also ReadWriteMany.
+#   mrc-cache     — the Neuroglancer pyramid cache. Written by the scanner's
+#                   post-scan `mrc-pyramid build`, read by the mrc-ng-server
+#                   pods. Shared, ReadWriteMany.
 #
-# catalog-db and thumbnails are dynamically provisioned; ReadWriteMany requires
-# a storage class that supports it. On this OpenShift/OCS cluster that is
+# catalog-db, thumbnails and mrc-cache are dynamically provisioned; ReadWriteMany
+# requires a storage class that supports it. On this OpenShift/OCS cluster that is
 # ocs-storagecluster-cephfs (the default RBD class is RWO-only) — pinned via the
 # overlay. catalog-data does not use a storage class at all (static binding).
 ---
@@ -85,3 +88,14 @@ spec:
   resources:
     requests:
       storage: 5Gi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: mrc-cache-pvc
+spec:
+  accessModes:
+    - ReadWriteMany
+  resources:
+    requests:
+      storage: 100Gi

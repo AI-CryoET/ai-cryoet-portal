@@ -7,4 +7,5 @@ resources:
   - frontend.yaml
   - nginx.yaml
   - scanner.yaml
+  - mrc-ng-server.yaml
   - routes.yaml

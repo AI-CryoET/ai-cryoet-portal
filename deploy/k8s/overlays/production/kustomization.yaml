@@ -23,8 +23,8 @@ generatorOptions:
 # (ocs-storagecluster-ceph-rbd) is RBD block storage, which only supports
 # ReadWriteOnce in Filesystem mode and rejects the ReadWriteMany access mode
 # these volumes need. ocs-storagecluster-cephfs is the shared CephFS class and
-# supports it. Pin both PVCs to it here. (catalog-data is not a PVC — it is an
-# inline NFS mount in api.yaml / scanner.yaml.)
+# supports it. Pin the RWX PVCs (catalog-db, thumbnails, mrc-cache) to it here.
+# catalog-data binds statically (storageClassName: "") and is not patched.
 patches:
   - target:
       kind: PersistentVolumeClaim
@@ -40,9 +40,18 @@ patches:
       - op: add
         path: /spec/storageClassName
         value: ocs-storagecluster-cephfs
+  - target:
+      kind: PersistentVolumeClaim
+      name: mrc-cache-pvc
+    patch: |-
+      - op: add
+        path: /spec/storageClassName
+        value: ocs-storagecluster-cephfs
 
 # Pin to the version built by the `v*.*.*` git tag. The metadata-action strips
 # the leading `v`, so git tag `v1.0.0` publishes image tag `1.0.0` (no `v`).
+# mrc-ng-server is built and versioned in its own repo, so it tracks its own
+# tag independently of the 1.x portal images.
 images:
   - name: ghcr.io/janeliascicomp/ai-cryoet-api
     newTag: "1.4.0"
@@ -50,3 +59,5 @@ images:
     newTag: "1.4.0"
   - name: ghcr.io/janeliascicomp/ai-cryoet-scanner
     newTag: "1.4.0"
+  - name: ghcr.io/janeliascicomp/mrc-ng-server
+    newTag: "0.1.2"

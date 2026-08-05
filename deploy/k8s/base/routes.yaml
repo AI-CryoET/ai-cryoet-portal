@@ -1,6 +1,8 @@
-# Single OpenShift Route fronting nginx. Edge TLS termination: the cluster
-# router serves its own configured certificate for the hostname and redirects
-# HTTP to HTTPS. No per-application TLS secret is needed (see DEPLOYMENT.md → TLS).
+# OpenShift Routes. Edge TLS termination: the cluster router serves its own
+# configured certificate for each hostname and redirects HTTP to HTTPS. No
+# per-application TLS secret is needed (see DEPLOYMENT.md → TLS).
+
+# Portal: the only service behind this Route is nginx (edge proxy).
 apiVersion: route.openshift.io/v1
 kind: Route
 metadata:
@@ -15,6 +17,27 @@ spec:
     weight: 100
   port:
     targetPort: 8080
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect
+  wildcardPolicy: None
+---
+# mrc-ng-server: separate public host so the browser can fetch Neuroglancer
+# `precomputed` chunks cross-origin over HTTPS (a plain-HTTP source on the HTTPS
+# viewer is blocked as mixed content). This host + /data is what MRCNG_BASE_URL
+# in config.env must point at. The pod serves plain HTTP on :8000; TLS is
+# terminated here at the edge.
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: mrc-ng-server
+spec:
+  host: mrc-ng-server.int.janelia.org
+  to:
+    kind: Service
+    name: mrc-ng-server
+  port:
+    targetPort: http
   tls:
     termination: edge
     insecureEdgeTerminationPolicy: Redirect
