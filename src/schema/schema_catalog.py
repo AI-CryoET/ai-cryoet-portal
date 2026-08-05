@@ -410,12 +410,12 @@ CATALOG: list[CatalogEntity] = [
                          "e.g. fiducial, patch_tracking, feature_tracking."),
             CatalogField("st_path", "text", "directory",
                          "Path to the stacked tilt-series .mrc file, resolved under "
-                         "{tilt_series_id}/stack/."),
+                         "{tilt_series_id}/Stack/."),
             CatalogField("zarr_path", "text", "directory",
-                         "Path to the OME-Zarr rendering under {tilt_series_id}/stack/, when "
+                         "Path to the OME-Zarr rendering under {tilt_series_id}/Stack/, when "
                          "present."),
             CatalogField("alignment_files", "list[text]", "directory",
-                         "Alignment artifacts discovered under {tilt_series_id}/alignment/."),
+                         "Alignment artifacts discovered under {tilt_series_id}/Alignment/."),
             CatalogField("mtime", "float", "directory", "Modification time, used to gate re-parsing."),
             CatalogField("renamed_from", "text", "acquisition.toml [[tilt_series]]",
                          "Scan-time-only rename directive; not stored in the DB.", in_db=False),

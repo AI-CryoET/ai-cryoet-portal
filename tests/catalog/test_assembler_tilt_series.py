@@ -148,6 +148,38 @@ def test_assembler_enriches_authored_tilt_series(tmp_path: Path) -> None:
     assert mismatch == []
 
 
+def test_assembler_enriches_canonical_pascalcase_subfolders(tmp_path: Path) -> None:
+    """The canonical ``Stack/`` + ``Alignment/`` (PascalCase) subfolders are
+    discovered the same as the legacy lowercase layout above."""
+    sample_dir = tmp_path / "sample_a"
+    _write_minimal_sample_toml(sample_dir)
+    _write_minimal_acquisition_toml(
+        sample_dir,
+        extra="""
+        [[tilt_series]]
+        id = "ts_a"
+        derived_from = "Frames"
+        is_aligned = true
+        """,
+    )
+    ts_dir = sample_dir / "Pos1" / "TiltSeries" / "ts_a"
+    (ts_dir / "Stack").mkdir(parents=True)
+    (ts_dir / "Stack" / "ts_a.st").write_bytes(b"")
+    (ts_dir / "Alignment").mkdir(parents=True)
+    (ts_dir / "Alignment" / "ts_a.aln").write_text("alignment params\n")
+
+    result = assemble_sample(_sample_loc(sample_dir))
+
+    assert result.record is not None
+    ts = result.record.acquisitions["Pos1"].tilt_series[0]
+    assert ts.st_path == str(ts_dir / "Stack" / "ts_a.st")
+    assert ts.alignment_files == [str(ts_dir / "Alignment" / "ts_a.aln")]
+    mismatch = [
+        w for w in result.warnings if w.category == "tilt_series_alignment_mismatch"
+    ]
+    assert mismatch == []
+
+
 def test_assembler_records_acquisition_path_for_synthesized(
     tmp_path: Path,
 ) -> None:

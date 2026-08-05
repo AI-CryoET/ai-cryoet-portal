@@ -47,7 +47,7 @@ def _make_record_with_tilt_series(
             tilt_series_id=tid,
             derived_from="Frames",
             is_aligned=False,
-            st_path=f"/data/{sample_id}/Pos1/TiltSeries/{tid}/stack/{tid}.st",
+            st_path=f"/data/{sample_id}/Pos1/TiltSeries/{tid}/Stack/{tid}.st",
             mtime=1234567890.0,
         )
         for tid in tilt_series_ids
@@ -79,7 +79,7 @@ def test_upsert_writes_tilt_series_row(session) -> None:
     assert row.tilt_series_id == "ts_a"
     assert row.derived_from == "Frames"
     assert row.is_aligned is False
-    assert row.st_path.endswith("/TiltSeries/ts_a/stack/ts_a.st")
+    assert row.st_path.endswith("/TiltSeries/ts_a/Stack/ts_a.st")
     assert row.mtime == 1234567890.0
 
 

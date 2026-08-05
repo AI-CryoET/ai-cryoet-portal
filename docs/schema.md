@@ -247,8 +247,8 @@ _one per imaging position_
 | `is_aligned` | boolean | `acquisition.toml [[tilt_series]]` | researcher authored | Whether the stack is already geometrically transformed (aligned). |
 | `alignment_software` | text | `acquisition.toml [[tilt_series]]` | researcher authored | e.g. IMOD, AreTomo3. |
 | `alignment_method` | text | `acquisition.toml [[tilt_series]]` | researcher authored | e.g. fiducial, patch_tracking, feature_tracking. |
-| `st_path` | text | `directory` | derived | Path to the stacked tilt-series .mrc file, resolved under {tilt_series_id}/stack/. |
-| `zarr_path` | text | `directory` | derived | Path to the OME-Zarr rendering under {tilt_series_id}/stack/, when present. |
-| `alignment_files` | list[text] | `directory` | derived | Alignment artifacts discovered under {tilt_series_id}/alignment/. |
+| `st_path` | text | `directory` | derived | Path to the stacked tilt-series .mrc file, resolved under {tilt_series_id}/Stack/. |
+| `zarr_path` | text | `directory` | derived | Path to the OME-Zarr rendering under {tilt_series_id}/Stack/, when present. |
+| `alignment_files` | list[text] | `directory` | derived | Alignment artifacts discovered under {tilt_series_id}/Alignment/. |
 | `mtime` | float | `directory` | derived | Modification time, used to gate re-parsing. |
 | `renamed_from` | text | `acquisition.toml [[tilt_series]]` | researcher authored | Scan-time-only rename directive; not stored in the DB. |

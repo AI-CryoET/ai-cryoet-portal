@@ -414,10 +414,10 @@ class TiltSeries(_Base):
     is_aligned: bool | None = None
     alignment_software: str | None = None
     alignment_method: str | None = None
-    # filesystem (resolved under {ts_id}/stack/)
+    # filesystem (resolved under {ts_id}/Stack/)
     st_path: str | None = None
     zarr_path: str | None = None
-    # filesystem (alignment artifacts discovered under {ts_id}/alignment/)
+    # filesystem (alignment artifacts discovered under {ts_id}/Alignment/)
     alignment_files: list[str] = Field(default_factory=list)
     # filesystem mtime gating
     mtime: float | None = None

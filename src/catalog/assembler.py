@@ -491,7 +491,7 @@ def assemble_sample(sample_loc: SampleLocation) -> AssemblyResult:
                         ),
                         message=(
                             f"tilt series '{ts_loc.tilt_series_id}' is_aligned=true "
-                            "but no alignment artifacts found under alignment/"
+                            "but no alignment artifacts found under Alignment/"
                         ),
                     )
                 )
@@ -506,7 +506,7 @@ def assemble_sample(sample_loc: SampleLocation) -> AssemblyResult:
                         ),
                         message=(
                             f"tilt series '{ts_loc.tilt_series_id}' has alignment "
-                            "artifacts under alignment/ but is_aligned is not true"
+                            "artifacts under Alignment/ but is_aligned is not true"
                         ),
                     )
                 )

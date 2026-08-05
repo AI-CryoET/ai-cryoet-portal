@@ -60,9 +60,9 @@ export const experimentalTree: FileNode[] = [
                     kind: 'dir',
                     comment: 'one subfolder per tilt series (raw and/or aligned)',
                     children: [
-                      { name: 'stack', kind: 'dir', comment: '.mrc projection stack (+ .zarr / .rawtlt); MAY be empty' },
+                      { name: 'Stack', kind: 'dir', comment: '.mrc projection stack (+ .zarr / .rawtlt); MAY be empty' },
                       {
-                        name: 'alignment',
+                        name: 'Alignment',
                         kind: 'dir',
                         comment: 'MAY be empty if this is the raw tilt series',
                         children: [{ name: 'alignment.json', kind: 'file', comment: 'affine matrix + interpolation recipe (or any other alignment data)' }],
@@ -139,7 +139,7 @@ export const simulationTree: FileNode[] = [
                     name: 'TiltSeries',
                     kind: 'dir',
                     children: [
-                      { name: '{tilt_series_id}', kind: 'dir', comment: 'one subfolder per tilt series', children: [{ name: 'stack', kind: 'dir' }, { name: 'alignment', kind: 'dir' }] },
+                      { name: '{tilt_series_id}', kind: 'dir', comment: 'one subfolder per tilt series', children: [{ name: 'Stack', kind: 'dir' }, { name: 'Alignment', kind: 'dir' }] },
                     ],
                   },
                   {

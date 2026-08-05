@@ -131,8 +131,8 @@ Experimental/
       Gains/                                 # gain reference
       TiltSeries/
         {tilt_series_id}/                    # one subfolder per tilt series (raw and/or aligned)
-          stack/                             # .mrc projection stack (+ .zarr / .rawtlt); MAY be empty
-          alignment/                         # MAY be empty if this is the raw tilt series 
+          Stack/                             # .mrc projection stack (+ .zarr / .rawtlt); MAY be empty
+          Alignment/                         # MAY be empty if this is the raw tilt series 
             alignment.json                   # affine matrix + interpolation recipe (or any other alignment data)
       Reconstructions/
         {reconstruction_alignment_id}/      # a 3D alignment group; id does NOT have to match any tilt_series_id
@@ -163,8 +163,8 @@ MdSimulation/{Bulk|SingleMolecule|Slab}/
         acquisition.toml                     # per-acquisition params + [md_source]
         TiltSeries/
           {tilt_series_id}/                  # one subfolder per tilt series
-            stack/
-            alignment/
+            Stack/
+            Alignment/
         Reconstructions/
           {reconstruction_alignment_id}/    # a 3D alignment group; id does NOT have to match any tilt_series_id
             reconstruction.toml            # 3D alignment params + processing log for this group
@@ -214,15 +214,15 @@ gouauxlab_20250418_AMmilled29-2/             # sample identity = directory name
       gain_reference.gain
     TiltSeries/                              # TO CREATE: from .eer conversion
       ts_raw/                                # raw, unaligned tilt series
-        stack/
+        Stack/
           *.mrc
           *.zarr
           *.rawtlt
-        alignment/
+        Alignment/
       ts_aligned/                            # aligned tilt series (derived_from = "ts_raw")
-        stack/
+        Stack/
           *.mrc
-        alignment/
+        Alignment/
           alignment.json                     # affine matrix + interpolation recipe
     Reconstructions/
       recon_1/                               # a 3D alignment group (derived_from "ts_aligned"; id is independent of it)
@@ -253,7 +253,7 @@ Changes from the current `annotation_HHMI_reorg` layout:
 2. Move the annotation files under `Reconstructions/{reconstruction_alignment_id}/Annotations/` and name each file's stem to match its id (schema rule: annotation `id` = file name without extension) — e.g. the star file becomes `activezone_1.star`.
 3. Add `sample.toml` at the sample level.
 4. Add `acquisition.toml` in each acquisition directory.
-5. Create `TiltSeries/{tilt_series_id}/{stack,alignment}/` (pending `.eer` conversion). Multiple tilt series per acquisition — e.g. one raw and one aligned — are an expected, first-class case.
+5. Create `TiltSeries/{tilt_series_id}/{Stack,Alignment}/` (pending `.eer` conversion). Multiple tilt series per acquisition — e.g. one raw and one aligned — are an expected, first-class case.
 6. Create `Reconstructions/{reconstruction_alignment_id}/Alignment/` for the group's 3D alignment metadata, and add a `reconstruction.toml` alongside it to record the group's alignment params and processing log.
 
 ---
@@ -302,7 +302,7 @@ The only required authored field is `sample.project`. `sample.data_source` is se
 
 ### Folder naming rules
 
-Six names become primary keys in the portal database: the sample directory (`sample_id`), each acquisition directory (`acquisition_id`), each tilt-series subfolder under `TiltSeries/` (`tilt_series_id`; the folder holds a `stack/` and an `alignment/` subdirectory), and each 3D-alignment subfolder under `Reconstructions/` (`reconstruction_alignment_id`; the folder holds a `Tomograms/`, an `Annotations/`, and an `Alignment/` subdirectory) are **folder** names; each tomogram (`tomogram_id`) and each annotation (`annotation_id`) is a **file stem** — the file name without extension — under `Reconstructions/{reconstruction_alignment_id}/Tomograms/` and `.../Annotations/`. The same strings may also be used in path expressions, URLs, and shell commands, so they are restricted to a conservative, cross-platform-safe allowlist.
+Six names become primary keys in the portal database: the sample directory (`sample_id`), each acquisition directory (`acquisition_id`), each tilt-series subfolder under `TiltSeries/` (`tilt_series_id`; the folder holds a `Stack/` and an `Alignment/` subdirectory), and each 3D-alignment subfolder under `Reconstructions/` (`reconstruction_alignment_id`; the folder holds a `Tomograms/`, an `Annotations/`, and an `Alignment/` subdirectory) are **folder** names; each tomogram (`tomogram_id`) and each annotation (`annotation_id`) is a **file stem** — the file name without extension — under `Reconstructions/{reconstruction_alignment_id}/Tomograms/` and `.../Annotations/`. The same strings may also be used in path expressions, URLs, and shell commands, so they are restricted to a conservative, cross-platform-safe allowlist.
 
 A valid id must:
 

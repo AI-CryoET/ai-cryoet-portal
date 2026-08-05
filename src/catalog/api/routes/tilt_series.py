@@ -5,7 +5,7 @@ Composite-key URLs: ``/tilt-series/{sample_id}/{acquisition_id}/
 
 Source-resolution order (decision §5 of the tilt-series/alignment plan): the
 tilt series is a researcher-authored ``TiltSeries/{ts_id}/`` folder whose image
-data lives under ``stack/``. Prefer the zarr store (``zarr_path``; lazy, fast);
+data lives under ``Stack/``. Prefer the zarr store (``zarr_path``; lazy, fast);
 fall back to the ``.st``/``.mrc`` projection stack (``st_path``); finally fall
 back to the **acquisition's** raw ``Frames/`` images when the series has no
 stack artifact of its own (the frames are shared by all the acquisition's tilt
@@ -80,7 +80,7 @@ async def tilt_series_preview(
 ):
     """Median-tilt image as PNG.
 
-    Prefers the authored ``stack/`` (zarr, then ``.st``/``.mrc``); falls back
+    Prefers the authored ``Stack/`` (zarr, then ``.st``/``.mrc``); falls back
     to the acquisition's raw ``Frames/`` images. 422 if none are reachable.
     """
     row = _lookup_tilt_series(session, sample_id, acquisition_id, tilt_series_id)
@@ -181,7 +181,7 @@ async def tilt_series_neuroglancer(
 ):
     """Launch a Neuroglancer viewer over the tilt-series stack.
 
-    Prefer the authored ``stack/`` (zarr, then ``.st``/``.mrc``); fall back to
+    Prefer the authored ``Stack/`` (zarr, then ``.st``/``.mrc``); fall back to
     the acquisition's raw ``Frames/`` images. 422 if none are reachable.
     """
     row = _lookup_tilt_series(session, sample_id, acquisition_id, tilt_series_id)
