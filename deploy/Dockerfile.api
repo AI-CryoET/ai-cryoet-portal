@@ -4,11 +4,16 @@
 # Layer order is tuned for cache reuse: pixi.lock changes rarely, source
 # changes often. Keep the lockfile copy in its own early step.
 
-FROM ghcr.io/prefix-dev/pixi:0.66.0-bookworm-slim AS base
+FROM ghcr.io/prefix-dev/pixi:0.73.0-bookworm-slim AS base
 WORKDIR /app
 
 # Resolve and materialize only the `api` environment from pixi.lock.
+# git is needed to fetch the mrc-ng-server git dependency (provides the
+# mrc-pyramid CLI) during resolution; the slim pixi base doesn't ship it. Only
+# the build stage needs it — the runtime stage copies the resolved .pixi tree.
 FROM base AS deps
+RUN apt-get update && apt-get install -y --no-install-recommends git \
+    && rm -rf /var/lib/apt/lists/*
 COPY pixi.lock pyproject.toml ./
 RUN pixi install --locked -e api
 

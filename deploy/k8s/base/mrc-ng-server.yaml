@@ -1,0 +1,122 @@
+# mrc-ng-server: a standalone, stateless service that serves the catalog's MRC
+# tomograms to Neuroglancer over the `precomputed` protocol. The image is built
+# and versioned in its own repo (JaneliaSciComp/mrc-ng-server); only its
+# deployment into this namespace lives here, next to the scanner that fills the
+# cache it reads.
+#
+# It reads two volumes owned by this deployment: the read-only data tree
+# (catalog-data, the same PVC the api/scanner use) and the shared pyramid cache
+# (mrc-cache, declared in storage.yaml), which the scanner's post-scan
+# `mrc-pyramid build` step writes and this server only reads.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mrc-ng-server
+spec:
+  # Stateless: every request is served from the read-only data tree plus the
+  # shared pyramid cache, with no in-process viewer/session state. Safe to scale
+  # horizontally — bump this (or attach an HPA) to add throughput. Kept low by
+  # default; the bottleneck is NFS/cephfs, not CPU. (Unlike `api`, which is
+  # pinned to 1 replica by its process-global Neuroglancer server.)
+  replicas: 2
+  selector:
+    matchLabels:
+      app: mrc-ng-server
+  template:
+    metadata:
+      labels:
+        app: mrc-ng-server
+    spec:
+      # The data + cache volumes live on the building.prfs filer / cephfs; only
+      # nodes tagged nfs-dmz=true can reach them, so pin the pods there (same as
+      # the api/scanner pods).
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: nfs-dmz
+                    operator: In
+                    values:
+                      - "true"
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: mrc-ng-server
+          image: ghcr.io/janeliascicomp/mrc-ng-server:latest
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          ports:
+            - name: http
+              containerPort: 8000
+          # Shares the portal's ConfigMap: MRCNG_SOURCE_ROOT / MRCNG_CACHE_ROOT /
+          # MRCNG_CORS_ORIGINS live in config.env alongside the scanner's
+          # MRCNG_CACHE_ROOT, so the "must match" cache path has one source of
+          # truth. The server ignores the non-MRCNG_ keys (pydantic env_prefix).
+          envFrom:
+            - configMapRef:
+                name: cryoet-config
+          volumeMounts:
+            # Read-only MRC data. Must equal MRCNG_SOURCE_ROOT (= CATALOG_DATA_ROOT)
+            # in config.env and the path the scanner recorded on each tomogram's
+            # mrc_path, so the API's precomputed:// URLs (relpath under this root)
+            # resolve.
+            - name: catalog-data
+              mountPath: /groups/cryoet/cryoet/data
+              readOnly: true
+            # Shared pyramid cache: the scanner writes it, this server only reads.
+            - name: mrc-cache
+              mountPath: /cache
+              readOnly: true
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: 8000
+            periodSeconds: 2
+            failureThreshold: 30
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8000
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8000
+            initialDelaySeconds: 10
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: "2"
+              memory: 4Gi
+      terminationGracePeriodSeconds: 10
+      volumes:
+        # Reuses catalog-data-pvc (storage.yaml) read-only — one binding to the
+        # NFS PV, shared with the api and scanner pods.
+        - name: catalog-data
+          persistentVolumeClaim:
+            claimName: catalog-data-pvc
+            readOnly: true
+        - name: mrc-cache
+          persistentVolumeClaim:
+            claimName: mrc-cache-pvc
+            readOnly: true
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mrc-ng-server
+spec:
+  selector:
+    app: mrc-ng-server
+  ports:
+    - name: http
+      port: 8000
+      targetPort: 8000

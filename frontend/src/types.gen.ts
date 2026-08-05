@@ -340,11 +340,14 @@ export interface paths {
         put?: never;
         /**
          * Tomogram Neuroglancer
-         * @description Launch a Neuroglancer viewer over the tomogram volume.
+         * @description Build a stateless Neuroglancer viewer URL for the tomogram.
          *
-         *     The frontend rewrites the URL hostname to ``window.location.hostname``
-         *     before opening — Neuroglancer reports the API host's FQDN which may
-         *     not be reachable from the browser.
+         *     No volume load, no in-process viewer: the returned URL points the
+         *     Fileglancer-hosted Neuroglancer app at a ``precomputed://`` source served
+         *     by mrc-server (``MRCNG_BASE_URL`` must resolve to the same data root, so
+         *     ``row.mrc_path`` is the served relpath 1:1). Voxel size rides in mrc-server's
+         *     ``info``; only the IMOD X/Y mirror and a 1-99 contrast window are baked into
+         *     the state here.
          */
         post: operations["tomogram_neuroglancer_tomograms__sample_id___acquisition_id___reconstruction_alignment_id___tomogram_id__neuroglancer_post"];
         delete?: never;

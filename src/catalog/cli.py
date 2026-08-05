@@ -88,6 +88,15 @@ def _build_parser() -> argparse.ArgumentParser:
         help="directory for pre-generated thumbnail cache (defaults to $CATALOG_THUMBNAIL_DIR)",
     )
     scan.add_argument(
+        "--precompute-cache-root",
+        default=os.environ.get("MRCNG_CACHE_ROOT"),
+        help=(
+            "build the Neuroglancer precomputed pyramid cache here after "
+            "scanning, via `mrc-pyramid build` (defaults to $MRCNG_CACHE_ROOT; "
+            "skipped if unset)"
+        ),
+    )
+    scan.add_argument(
         "-v",
         "--verbose",
         action="store_true",
@@ -204,7 +213,103 @@ def _cmd_scan(args) -> int:
             "see above. Exiting 0 — the run as a whole succeeded.",
             file=sys.stderr,
         )
+
+    if args.precompute_cache_root:
+        _run_precompute(engine, args.root, args.precompute_cache_root)
+
     return 0
+
+
+def _tomogram_relpaths(engine, root: Path) -> list[str]:
+    """Relpaths (under ``root``) of every catalogued tomogram's MRC.
+
+    Read from the tomogram tables after the scan has committed. These are the
+    only volumes the API ever builds Neuroglancer links for, so precomputing
+    exactly this set avoids wasting cache on sibling ``.mrc`` files (gain
+    references, etc.) that a whole-tree glob would sweep in. Paths outside
+    ``root`` are skipped (defensive — the scanner records paths under the data
+    root the API validates against).
+    """
+    from sqlalchemy import select
+    from sqlalchemy.orm import Session
+
+    from catalog import orm
+
+    root = root.resolve()
+    seen: set[str] = set()
+    out: list[str] = []
+    with Session(engine) as session:
+        for model in (orm.PostProcessedTomogramORM, orm.RawTomogramORM):
+            rows = session.execute(
+                select(model.mrc_path).where(model.mrc_path.is_not(None))
+            )
+            for (mrc_path,) in rows:
+                p = Path(mrc_path)
+                abs_p = p if p.is_absolute() else (root / p)
+                try:
+                    rel = abs_p.resolve().relative_to(root).as_posix()
+                except ValueError:
+                    continue  # stored path outside the scan root
+                if rel not in seen:
+                    seen.add(rel)
+                    out.append(rel)
+    return out
+
+
+def _run_precompute(engine, root: Path, cache_root: str) -> None:
+    """Build the Neuroglancer precomputed pyramid cache for the catalogued tomograms.
+
+    Runs `mrc-pyramid build` (from the mrc-ng-server dependency) over exactly the
+    tomogram MRCs in the catalog — fed as a `--from-file` list, not a tree glob,
+    so sibling non-tomogram `.mrc` files are never built. The command is
+    idempotent and incremental (it fingerprint-skips volumes already up to date),
+    and runs here after scan_root has committed, so the heavy per-volume I/O is
+    outside every DB transaction.
+
+    A build failure does NOT fail the run: mrc-ng-server still serves scale 0
+    directly from the MRC, so Neuroglancer links keep working; only downsampled
+    zoom-out is missing until the cache is rebuilt. So this warns and returns
+    rather than raising.
+    """
+    import os
+    import shutil
+    import subprocess
+    import tempfile
+
+    if shutil.which("mrc-pyramid") is None:
+        logger.warning(
+            "precompute: `mrc-pyramid` not on PATH — is mrc-ng-server "
+            "installed? Skipping cache build (scale 0 still served)."
+        )
+        return
+
+    relpaths = _tomogram_relpaths(engine, root)
+    if not relpaths:
+        logger.info("precompute: no catalogued tomograms to build; skipping")
+        return
+
+    fd, list_path = tempfile.mkstemp(prefix="mrcng-build-", suffix=".txt")
+    try:
+        with os.fdopen(fd, "w") as fh:
+            fh.write("\n".join(relpaths) + "\n")
+        cmd = [
+            "mrc-pyramid", "build",
+            "--source-root", str(root),
+            "--cache-root", cache_root,
+            "--from-file", list_path,
+        ]
+        logger.info("precompute: building {} tomogram pyramid(s)", len(relpaths))
+        result = subprocess.run(cmd)  # noqa: S603 — fixed argv, no shell
+        if result.returncode != 0:
+            logger.warning(
+                "precompute: `mrc-pyramid build` exited {} — some pyramids may "
+                "be missing (scale 0 still served from the MRC).",
+                result.returncode,
+            )
+        else:
+            logger.info("precompute: cache build complete")
+    finally:
+        os.unlink(list_path)
 
 
 if __name__ == "__main__":

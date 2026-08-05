@@ -17,7 +17,9 @@ Coverage:
 from __future__ import annotations
 
 import asyncio
+import json
 from pathlib import Path
+from urllib.parse import unquote
 
 import mrcfile
 import numpy as np
@@ -192,11 +194,66 @@ def test_unknown_tilt_series_404(client):
     assert r.status_code == 404
 
 
-def test_launch_returns_url(client):
+def _viewer_state(url: str) -> dict:
+    """Decode a Neuroglancer ``<base>#!<json>`` URL back to its state dict."""
+    return json.loads(unquote(url.split("#!", 1)[1]))
+
+
+def test_launch_returns_precomputed_viewer_url(client, monkeypatch):
+    """Tomogram launch now returns a stateless viewer URL (no in-process viewer).
+
+    The URL points the configured viewer app at a ``precomputed://`` source
+    under MRCNG_BASE_URL, with the tomogram's mrc_path as the served relpath.
+    """
+    monkeypatch.setenv("MRCNG_BASE_URL", "http://mrc-server:9000/data")
+    monkeypatch.setenv("NEUROGLANCER_VIEWER_URL", "https://viewer.example/ng")
     r = client.post("/tomograms/sample_a/acq1/align1/t1/neuroglancer")
     assert r.status_code == 200, r.text
-    body = r.json()
-    assert body["url"].startswith("http://fake-host")
+    url = r.json()["url"]
+    assert url.startswith("https://viewer.example/ng#!")
+    state = _viewer_state(url)
+    (layer,) = state["layers"]
+    src = layer["source"]
+    src_url = src["url"] if isinstance(src, dict) else src[0]["url"]
+    assert src_url.startswith("precomputed://http://mrc-server:9000/data/")
+    assert src_url.endswith("/sample_a/acq1/t1.mrc")
+
+
+def test_launch_500_without_mrcng_base_url(client, monkeypatch):
+    """A missing MRCNG_BASE_URL is a config error, surfaced as 500 (not a bad URL)."""
+    monkeypatch.delenv("MRCNG_BASE_URL", raising=False)
+    r = client.post("/tomograms/sample_a/acq1/align1/t1/neuroglancer")
+    assert r.status_code == 500
+
+
+def test_build_precomputed_viewer_url_bakes_mirror_and_contrast():
+    """The IMOD X/Y mirror and contrast serialize into the layer state.
+
+    Guards the flip matrix: x and y get ``-1`` on the diagonal and an
+    ``(extent-1)`` translation; z stays identity. A wrong translation here
+    silently shows scientists a mis-registered / mirrored volume.
+    """
+    pytest.importorskip("neuroglancer")
+    from catalog.api.routes.tomograms import _build_precomputed_viewer_url
+
+    url = _build_precomputed_viewer_url(
+        source_url="precomputed://http://h/data/t.mrc",
+        name="t",
+        viewer_base="https://viewer.example/ng",
+        size_xyz=(200, 100, 50),
+        voxel_nm_xyz=(1.0, 1.0, 1.0),
+        contrast=(12.0, 88.0),
+        mirror_xy=True,
+    )
+    state = _viewer_state(url)
+    (layer,) = state["layers"]
+    src = layer["source"]
+    src = src if isinstance(src, dict) else src[0]
+    m = src["transform"]["matrix"]
+    assert m[0][0] == -1.0 and m[0][3] == 199.0  # flip x, extent nx-1
+    assert m[1][1] == -1.0 and m[1][3] == 99.0   # flip y, extent ny-1
+    assert m[2] == [0.0, 0.0, 1.0, 0.0]          # z identity
+    assert layer["shaderControls"]["normalized"]["range"] == [12.0, 88.0]
 
 
 def test_bbox_annotation_falls_back_to_group_tomogram(client):
@@ -211,36 +268,55 @@ def test_bbox_annotation_falls_back_to_group_tomogram(client):
 
 
 def test_lru_evicts_oldest_at_capacity(client):
-    """At capacity 2, launching a 3rd viewer evicts the first."""
-    app = client.app
-    for tid in ("t1", "t2"):
-        r = client.post(f"/tomograms/sample_a/acq1/align1/{tid}/neuroglancer")
-        assert r.status_code == 200
-    assert list(app.state.active_viewers.keys()) == [
-        ("tomogram", "sample_a", "acq1", "align1", "t1"),
-        ("tomogram", "sample_a", "acq1", "align1", "t2"),
-    ]
-    r = client.post("/tomograms/sample_a/acq1/align1/t3/neuroglancer")
-    assert r.status_code == 200
-    keys = list(app.state.active_viewers.keys())
-    # Oldest (t1) evicted; t2 and t3 remain.
-    assert ("tomogram", "sample_a", "acq1", "align1", "t1") not in keys
-    assert keys[-1] == ("tomogram", "sample_a", "acq1", "align1", "t3")
-    assert len(keys) == 2
+    """At capacity 2, launching a 3rd viewer evicts the first (shared registry
+    logic behind the tilt-series / annotation in-process launches)."""
+    from catalog.api.routes.tomograms import launch_viewer_in_registry
+
+    class FakeRequest:
+        def __init__(self, app):
+            self.app = app
+
+    keys = [("tomogram", "sample_a", "acq1", f"t{i}") for i in (1, 2, 3)]
+
+    async def driver():
+        client.app.state.active_viewers_lock = asyncio.Lock()
+        req = FakeRequest(client.app)
+        for k in keys:
+            await launch_viewer_in_registry(req, k, lambda: _FakeViewer())
+
+    from collections import OrderedDict
+    client.app.state.active_viewers = OrderedDict()
+    asyncio.run(driver())
+    reg_keys = list(client.app.state.active_viewers.keys())
+    assert keys[0] not in reg_keys  # oldest evicted
+    assert reg_keys[-1] == keys[2]  # newest at the end
+    assert len(reg_keys) == 2
 
 
 def test_lru_relaunch_same_key_moves_to_end_no_evict(client):
     """Re-launching an already-registered key updates its position, not capacity."""
-    app = client.app
-    for tid in ("t1", "t2"):
-        client.post(f"/tomograms/sample_a/acq1/align1/{tid}/neuroglancer")
-    # Re-launch t1 — should NOT evict t2.
-    r = client.post("/tomograms/sample_a/acq1/align1/t1/neuroglancer")
-    assert r.status_code == 200
-    keys = list(app.state.active_viewers.keys())
-    assert keys[-1] == ("tomogram", "sample_a", "acq1", "align1", "t1")
-    assert ("tomogram", "sample_a", "acq1", "align1", "t2") in keys
-    assert len(keys) == 2
+    from catalog.api.routes.tomograms import launch_viewer_in_registry
+
+    class FakeRequest:
+        def __init__(self, app):
+            self.app = app
+
+    k1 = ("tomogram", "sample_a", "acq1", "t1")
+    k2 = ("tomogram", "sample_a", "acq1", "t2")
+
+    async def driver():
+        client.app.state.active_viewers_lock = asyncio.Lock()
+        req = FakeRequest(client.app)
+        for k in (k1, k2, k1):  # relaunch k1 last — must NOT evict k2
+            await launch_viewer_in_registry(req, k, lambda: _FakeViewer())
+
+    from collections import OrderedDict
+    client.app.state.active_viewers = OrderedDict()
+    asyncio.run(driver())
+    reg_keys = list(client.app.state.active_viewers.keys())
+    assert reg_keys[-1] == k1
+    assert k2 in reg_keys
+    assert len(reg_keys) == 2
 
 
 def test_teardown_viewer_releases_volume():

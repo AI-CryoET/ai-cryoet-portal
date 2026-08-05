@@ -16,6 +16,8 @@ data_old_organizations
 
 # database files
 *.db
+*.db-shm
+*.db-wal
 
 # Claude, except for plans
 .claude/*

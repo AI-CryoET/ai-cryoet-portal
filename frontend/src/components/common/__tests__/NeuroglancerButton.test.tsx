@@ -68,7 +68,9 @@ describe('NeuroglancerButton — kind:zarr-link', () => {
 })
 
 describe('NeuroglancerButton — kind:launch', () => {
-  const launchSource = {
+  // Tomograms carry a group id and return a fully-formed Fileglancer-hosted
+  // viewer URL (stateless, precomputed:// source) that must open as-is.
+  const tomogramSource = {
     kind: 'launch' as const,
     entity: 'tomogram' as const,
     sampleId: 'sample_a',
@@ -77,11 +79,22 @@ describe('NeuroglancerButton — kind:launch', () => {
     entityId: 't1',
   }
 
-  it('opens a blank popup on click and re-roots the viewer URL onto the current origin', async () => {
-    // Backend returns an absolute URL on the API host's Neuroglancer port.
-    mockApiFetch.mockResolvedValueOnce({ url: 'http://server-host:8050/v/tok123/' })
+  // Tilt series still launch the API's in-process Neuroglancer, whose URL gets
+  // re-rooted onto the current origin (dev proxy). No group id.
+  const tiltSeriesSource = {
+    kind: 'launch' as const,
+    entity: 'tilt-series' as const,
+    sampleId: 'sample_a',
+    acquisitionId: 'acq1',
+    entityId: 't1',
+  }
 
-    renderWithClient(<NeuroglancerButton source={launchSource} />)
+  it('opens a tomogram over its group-scoped launch URL and uses the viewer URL as-is', async () => {
+    // Stateless tomogram launch: the backend returns an external Fileglancer
+    // viewer URL, which must open unchanged (re-rooting it would break it).
+    mockApiFetch.mockResolvedValueOnce({ url: 'https://viewer.example/ng#!state' })
+
+    renderWithClient(<NeuroglancerButton source={tomogramSource} />)
     const btn = screen.getByRole('button', { name: /view in neuroglancer/i })
 
     await userEvent.click(btn)
@@ -89,10 +102,33 @@ describe('NeuroglancerButton — kind:launch', () => {
     // Popup opened synchronously inside click handler.
     expect(window.open).toHaveBeenCalledWith('about:blank', '_blank')
 
-    // apiFetch called with the correct launch URL.
+    // apiFetch called with the group-scoped launch URL.
     await waitFor(() => {
       expect(mockApiFetch).toHaveBeenCalledWith(
         '/tomograms/sample_a/acq1/align1/t1/neuroglancer',
+        { method: 'POST' },
+      )
+    })
+
+    await waitFor(() => {
+      expect(mockWindow.location.href).toBe('https://viewer.example/ng#!state')
+    })
+  })
+
+  it('re-roots a tilt-series viewer URL onto the current origin', async () => {
+    // Backend returns an absolute URL on the API host's Neuroglancer port.
+    mockApiFetch.mockResolvedValueOnce({ url: 'http://server-host:8050/v/tok123/' })
+
+    renderWithClient(<NeuroglancerButton source={tiltSeriesSource} />)
+    const btn = screen.getByRole('button', { name: /view in neuroglancer/i })
+
+    await userEvent.click(btn)
+
+    expect(window.open).toHaveBeenCalledWith('about:blank', '_blank')
+
+    await waitFor(() => {
+      expect(mockApiFetch).toHaveBeenCalledWith(
+        '/tilt-series/sample_a/acq1/t1/neuroglancer',
         { method: 'POST' },
       )
     })
@@ -110,7 +146,7 @@ describe('NeuroglancerButton — kind:launch', () => {
     // dev proxy serves Neuroglancer on the frontend's own origin.
     mockApiFetch.mockResolvedValueOnce({ url: 'http://10.20.30.40:9999/v/tok456/' })
 
-    renderWithClient(<NeuroglancerButton source={launchSource} />)
+    renderWithClient(<NeuroglancerButton source={tiltSeriesSource} />)
     await userEvent.click(screen.getByRole('button', { name: /view in neuroglancer/i }))
 
     await waitFor(() => {
@@ -121,7 +157,7 @@ describe('NeuroglancerButton — kind:launch', () => {
   it('closes the popup on error', async () => {
     mockApiFetch.mockRejectedValueOnce(new Error('server error'))
 
-    renderWithClient(<NeuroglancerButton source={launchSource} />)
+    renderWithClient(<NeuroglancerButton source={tomogramSource} />)
     const btn = screen.getByRole('button', { name: /view in neuroglancer/i })
 
     await userEvent.click(btn)

@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import os
 import time
 from collections import OrderedDict
 from dataclasses import dataclass
@@ -37,6 +38,11 @@ from catalog.api.path_validation import validate_under_data_root
 from catalog.api.schemas import ViewerLaunchOut
 
 router = APIRouter()
+
+# Janelia's Fileglancer-hosted Neuroglancer app (data-only mrc-server serves no
+# UI). Override per deployment; the browser loads only the JS from here and
+# fetches precomputed chunks straight from MRCNG_BASE_URL.
+DEFAULT_NEUROGLANCER_VIEWER = "https://fileglancer.int.janelia.org/neuroglancer"
 
 
 def _lookup_tomogram(
@@ -263,14 +269,64 @@ async def sweep_idle_viewers(
             await run_in_threadpool(teardown_viewer, v)
 
 
-def _load_volume_for_viewer(mrc_path: str):
-    """Read the MRC into a numpy array on the threadpool side.
+@lru_cache(maxsize=64)
+def _cached_viewer_params(mrc_path: str, mtime: float):
+    """LRU-cached ``read_mrc_viewer_params`` keyed on ``(mrc_path, mtime)``.
 
-    Returns ``(data, voxel_size, axis_order)`` ready for ``view_neuroglancer``.
+    Same invalidate-on-reacquisition pattern as ``_cached_preview_png``: a
+    re-write changes ``mtime`` and drops the stale entry. Reads a single plane,
+    so this is cheap even the first time.
     """
-    from catalog.imaging._mrc import read_mrc_volume
+    from catalog.imaging._mrc import read_mrc_viewer_params
 
-    return read_mrc_volume(mrc_path)
+    return read_mrc_viewer_params(mrc_path)
+
+
+def _build_precomputed_viewer_url(
+    *,
+    source_url: str,
+    name: str,
+    viewer_base: str,
+    size_xyz: tuple[int, int, int],
+    voxel_nm_xyz: tuple[float, float, float],
+    contrast: tuple[float, float] | None,
+    mirror_xy: bool,
+) -> str:
+    """Build a stateless Neuroglancer viewer URL over a precomputed source.
+
+    Uses neuroglancer's own ``ViewerState`` + ``to_url`` (no server started, so
+    none of the registry/teardown apparatus is touched) so the IMOD X/Y mirror
+    and the contrast window serialize exactly as the in-process viewer produced
+    them. mrc-server serves canonical x,y,z, so the mirror flips x and y with an
+    ``(extent-1)`` translation — the same ``-1``-on-the-diagonal matrix the old
+    ``LocalVolume`` path used, reordered to x,y,z.
+    """
+    import neuroglancer as ng
+
+    dims = ng.CoordinateSpace(names=["x", "y", "z"], scales=list(voxel_nm_xyz), units="nm")
+    if mirror_xy:
+        n = 3
+        matrix = [[1.0 if i == j else 0.0 for j in range(n + 1)] for i in range(n)]
+        for k in (0, 1):  # x, y
+            matrix[k][k] = -1.0
+            matrix[k][n] = float(size_xyz[k] - 1)
+        source = ng.LayerDataSource(
+            url=source_url,
+            transform=ng.CoordinateSpaceTransform(
+                input_dimensions=dims, output_dimensions=dims, matrix=matrix
+            ),
+        )
+    else:
+        source = ng.LayerDataSource(url=source_url)
+
+    layer = ng.ImageLayer(source=source)
+    if contrast is not None:
+        layer.shader_controls = {"normalized": {"range": list(contrast)}}
+
+    state = ng.ViewerState()
+    state.layers[name] = layer
+    state.dimensions = dims
+    return ng.to_url(state, prefix=viewer_base)
 
 
 @router.post(
@@ -286,11 +342,14 @@ async def tomogram_neuroglancer(
     request: Request,
     session: Session = Depends(get_session),
 ):
-    """Launch a Neuroglancer viewer over the tomogram volume.
+    """Build a stateless Neuroglancer viewer URL for the tomogram.
 
-    The frontend rewrites the URL hostname to ``window.location.hostname``
-    before opening — Neuroglancer reports the API host's FQDN which may
-    not be reachable from the browser.
+    No volume load, no in-process viewer: the returned URL points the
+    Fileglancer-hosted Neuroglancer app at a ``precomputed://`` source served
+    by mrc-server (``MRCNG_BASE_URL`` must resolve to the same data root, so
+    ``row.mrc_path`` is the served relpath 1:1). Voxel size rides in mrc-server's
+    ``info``; only the IMOD X/Y mirror and a 1-99 contrast window are baked into
+    the state here.
     """
     row = _lookup_tomogram(
         session,
@@ -306,26 +365,26 @@ async def tomogram_neuroglancer(
     if not resolved.is_file():
         raise HTTPException(status_code=422, detail="mrc file missing on disk")
 
-    def launch():
-        from catalog.imaging._neuroglancer import view_neuroglancer
+    base = os.environ.get("MRCNG_BASE_URL")
+    if not base:
+        raise HTTPException(status_code=500, detail="MRCNG_BASE_URL not configured")
+    viewer_base = os.environ.get("NEUROGLANCER_VIEWER_URL", DEFAULT_NEUROGLANCER_VIEWER)
 
-        data, voxel_size, axis_order = _load_volume_for_viewer(str(resolved))
-        return view_neuroglancer(
-            data,
-            name=Path(resolved).stem,
-            voxel_size=voxel_size,
-            axis_names=axis_order,
-        )
+    data_root = request.app.state.data_root_resolved
+    relpath = resolved.relative_to(data_root).as_posix()
+    source_url = f"precomputed://{base.rstrip('/')}/{relpath}"
 
-    url = await launch_viewer_in_registry(
-        request,
-        (
-            "tomogram",
-            sample_id,
-            acquisition_id,
-            reconstruction_alignment_id,
-            tomogram_id,
-        ),
-        launch,
+    mtime = resolved.stat().st_mtime
+    size_xyz, voxel_nm, contrast = await run_in_threadpool(
+        _cached_viewer_params, str(resolved), mtime
+    )
+    url = _build_precomputed_viewer_url(
+        source_url=source_url,
+        name=Path(resolved).stem,
+        viewer_base=viewer_base,
+        size_xyz=size_xyz,
+        voxel_nm_xyz=voxel_nm,
+        contrast=contrast,
+        mirror_xy=True,
     )
     return ViewerLaunchOut(url=url)

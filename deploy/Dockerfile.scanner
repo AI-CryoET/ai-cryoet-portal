@@ -7,10 +7,16 @@
 # whose folders have disappeared from disk, so deletions propagate to the site
 # (guarded by the 0.5 prune safety floor; raise it for large bulk migrations).
 
-FROM ghcr.io/prefix-dev/pixi:0.66.0-bookworm-slim AS base
+FROM ghcr.io/prefix-dev/pixi:0.73.0-bookworm-slim AS base
 WORKDIR /app
 
+# git is needed to fetch the mrc-ng-server git dependency (provides the
+# mrc-pyramid CLI the scan's precompute step runs) during resolution; the slim
+# pixi base doesn't ship it. Only the build stage needs it — the runtime stage
+# copies the resolved .pixi tree.
 FROM base AS deps
+RUN apt-get update && apt-get install -y --no-install-recommends git \
+    && rm -rf /var/lib/apt/lists/*
 COPY pixi.lock pyproject.toml ./
 RUN pixi install --locked -e catalog
 
@@ -28,8 +34,13 @@ COPY src ./src
 # `chmod g=u` grants the group the same access as the owner.
 RUN chgrp -R 0 /app && chmod -R g=u /app
 
+# MRCNG_CACHE_ROOT is the shared Neuroglancer pyramid cache. When set, the scan
+# runs `mrc-pyramid build` into it after cataloguing (catalog/cli.py
+# `_run_precompute`); mrc-ng-server reads the same path. Must match the
+# mrc-cache mountPath here and MRCNG_CACHE_ROOT in the mrc-ng-server ConfigMap.
 ENV CATALOG_DATA_ROOT=/groups/cryoet/cryoet/data \
     CATALOG_DB_URL=sqlite:////db/catalog.db \
-    CATALOG_THUMBNAIL_DIR=/thumbnails
+    CATALOG_THUMBNAIL_DIR=/thumbnails \
+    MRCNG_CACHE_ROOT=/cache
 
 CMD ["pixi", "run", "-e", "catalog", "scan", "--init", "--prune"]
