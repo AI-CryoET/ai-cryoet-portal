@@ -1,7 +1,8 @@
 """Annotation preview endpoint.
 
-Annotations are composite-PK children of an acquisition
-(``sample_id, acquisition_id, annotation_id``) whose artifacts live in the
+Annotations are composite-PK children of an alignment group
+(``sample_id, acquisition_id, reconstruction_alignment_id, annotation_id``)
+whose artifacts live in the
 ``files`` JSON list (an ``.mrc`` volume plus, typically, a ``.zarr`` and
 sometimes a pre-rendered ``.png``/``.star``). This route renders the center-XY
 slice of the annotation's ``.mrc`` as a PNG — the same render path the
@@ -20,6 +21,7 @@ from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi.concurrency import run_in_threadpool
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from catalog import orm
@@ -32,14 +34,24 @@ router = APIRouter()
 
 
 def _lookup_annotation(
-    session: Session, sample_id: str, acquisition_id: str, annotation_id: str
+    session: Session,
+    sample_id: str,
+    acquisition_id: str,
+    *,
+    reconstruction_alignment_id: str,
+    annotation_id: str,
 ) -> orm.AnnotationORM:
-    """Return the annotation row or raise 404 (incl. soft-deleted parent samples)."""
+    """Return the annotation row or raise 404 (incl. soft-deleted parent samples).
+
+    The group and leaf args are keyword-only: four same-typed positionals made
+    a transposition a silent 404.
+    """
     sample = session.get(orm.SampleORM, sample_id)
     if sample is None or sample.deleted_at is not None:
         raise HTTPException(status_code=404, detail="sample not found")
     row = session.get(
-        orm.AnnotationORM, (sample_id, acquisition_id, annotation_id)
+        orm.AnnotationORM,
+        (sample_id, acquisition_id, reconstruction_alignment_id, annotation_id),
     )
     if row is None:
         raise HTTPException(status_code=404, detail="annotation not found")
@@ -56,6 +68,47 @@ def _annotation_json_path(files: list[str]) -> str | None:
     return next((f for f in files if f.lower().endswith("_neuroglancer.json")), None)
 
 
+def _bbox_target_tomogram(
+    session: Session,
+    sample_id: str,
+    acquisition_id: str,
+    reconstruction_alignment_id: str,
+    derived_from: str | None,
+):
+    """Tomogram to render a bounding-box overlay over.
+
+    Prefer the author-declared ``derived_from`` tomogram; otherwise fall back to
+    any tomogram in the same alignment group (post-processed first). Bbox coords
+    live in the group's shared voxel frame, so any group tomogram is a valid
+    canvas — ``derived_from`` is optional ``acquisition.toml`` metadata that is
+    absent on most (esp. auto-migrated) annotations. Raises 422 if the group has
+    no tomogram to draw on.
+    """
+    if derived_from:
+        return _lookup_tomogram(
+            session,
+            sample_id,
+            acquisition_id,
+            reconstruction_alignment_id=reconstruction_alignment_id,
+            tomogram_id=derived_from,
+        )
+    for orm_cls in (orm.PostProcessedTomogramORM, orm.RawTomogramORM):
+        row = session.execute(
+            select(orm_cls)
+            .filter_by(
+                sample_id=sample_id,
+                acquisition_id=acquisition_id,
+                reconstruction_alignment_id=reconstruction_alignment_id,
+            )
+            .limit(1)
+        ).scalar_one_or_none()
+        if row is not None:
+            return row
+    raise HTTPException(
+        status_code=422, detail="no tomogram in alignment group to render bbox over"
+    )
+
+
 @lru_cache(maxsize=64)
 def _cached_preview_png(mrc_path: str, mtime: float) -> bytes:
     """LRU-cached PNG render keyed on ``(mrc_path, mtime)``.
@@ -70,10 +123,14 @@ def _cached_preview_png(mrc_path: str, mtime: float) -> bytes:
     return render_center_xy_slice_png(mrc_path, width=1200)
 
 
-@router.get("/{sample_id}/{acquisition_id}/{annotation_id}/preview.png")
+@router.get(
+    "/{sample_id}/{acquisition_id}/{reconstruction_alignment_id}"
+    "/{annotation_id}/preview.png"
+)
 async def annotation_preview(
     sample_id: str,
     acquisition_id: str,
+    reconstruction_alignment_id: str,
     annotation_id: str,
     request: Request,
     session: Session = Depends(get_session),
@@ -83,7 +140,13 @@ async def annotation_preview(
     Returns 404 for a missing row or path-outside-root, 422 for an annotation
     with no ``.mrc`` artifact.
     """
-    row = _lookup_annotation(session, sample_id, acquisition_id, annotation_id)
+    row = _lookup_annotation(
+        session,
+        sample_id,
+        acquisition_id,
+        reconstruction_alignment_id=reconstruction_alignment_id,
+        annotation_id=annotation_id,
+    )
     mrc_path = _annotation_mrc_path(row.files)
     if not mrc_path:
         raise HTTPException(status_code=422, detail="annotation has no mrc file")
@@ -111,12 +174,14 @@ async def annotation_preview(
 
 
 @router.post(
-    "/{sample_id}/{acquisition_id}/{annotation_id}/neuroglancer",
+    "/{sample_id}/{acquisition_id}/{reconstruction_alignment_id}"
+    "/{annotation_id}/neuroglancer",
     response_model=ViewerLaunchOut,
 )
 async def annotation_neuroglancer(
     sample_id: str,
     acquisition_id: str,
+    reconstruction_alignment_id: str,
     annotation_id: str,
     request: Request,
     session: Session = Depends(get_session),
@@ -128,13 +193,23 @@ async def annotation_neuroglancer(
     Mirrors the tomogram launch route — same registry, same dev-side hostname
     rewrite on the frontend. 422 for an annotation with no ``.mrc`` artifact.
     """
-    row = _lookup_annotation(session, sample_id, acquisition_id, annotation_id)
+    row = _lookup_annotation(
+        session,
+        sample_id,
+        acquisition_id,
+        reconstruction_alignment_id=reconstruction_alignment_id,
+        annotation_id=annotation_id,
+    )
     json_path = _annotation_json_path(row.files)
 
     if json_path:
-        if not row.target_tomogram:
-            raise HTTPException(status_code=422, detail="annotation has no target tomogram")
-        tomogram_row = _lookup_tomogram(session, sample_id, acquisition_id, row.target_tomogram)
+        tomogram_row = _bbox_target_tomogram(
+            session,
+            sample_id,
+            acquisition_id,
+            reconstruction_alignment_id,
+            row.derived_from,
+        )
         if not tomogram_row.mrc_path:
             raise HTTPException(status_code=422, detail="tomogram has no mrc_path")
         resolved_tomo_mrc = validate_under_data_root(request, tomogram_row.mrc_path)
@@ -151,7 +226,10 @@ async def annotation_neuroglancer(
 
             data, voxel_size, axis_order = read_mrc_volume(str(resolved_tomo_mrc))
             json_data = json.loads(resolved_json.read_text())[0] # always only a single bbox
-            init_pos = tuple(getattr(tomogram_row, f'image_size_{a}')/2 for a in axis_order)
+            # image_size_* is nullable; skip the initial position rather than
+            # crash on None/2 when a group tomogram has no recorded size.
+            sizes = [getattr(tomogram_row, f'image_size_{a}') for a in axis_order]
+            init_pos = tuple(s / 2 for s in sizes) if all(s is not None for s in sizes) else None
             viewer = view_neuroglancer(
                 data,
                 name=Path(resolved_tomo_mrc).stem,
@@ -183,6 +261,14 @@ async def annotation_neuroglancer(
             )
 
     url = await launch_viewer_in_registry(
-        request, ("annotation", sample_id, acquisition_id, annotation_id), launch
+        request,
+        (
+            "annotation",
+            sample_id,
+            acquisition_id,
+            reconstruction_alignment_id,
+            annotation_id,
+        ),
+        launch,
     )
     return ViewerLaunchOut(url=url)

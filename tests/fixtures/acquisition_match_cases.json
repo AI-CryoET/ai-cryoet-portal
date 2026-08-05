@@ -73,13 +73,13 @@
   },
   {
     "name": "existence_has_raw_tomogram",
-    "acq": {"raw_tomogram": {"tomogram_id": "r1"}},
+    "acq": {"raw_tomograms": [{"tomogram_id": "r1"}]},
     "filters": {"has_raw_tomogram": "true"},
     "expected": true
   },
   {
     "name": "existence_has_raw_tomogram_missing",
-    "acq": {"raw_tomogram": null},
+    "acq": {"raw_tomograms": []},
     "filters": {"has_raw_tomogram": "true"},
     "expected": false
   },
@@ -97,7 +97,7 @@
   },
   {
     "name": "existence_has_tomogram_zarr_none",
-    "acq": {"raw_tomogram": {"tomogram_id": "r1", "zarr_path": null}, "post_processed_tomograms": [{"tomogram_id": "p1", "zarr_path": null}]},
+    "acq": {"raw_tomograms": [{"tomogram_id": "r1", "zarr_path": null}], "post_processed_tomograms": [{"tomogram_id": "p1", "zarr_path": null}]},
     "filters": {"has_tomogram_zarr": "true"},
     "expected": false
   },

@@ -497,14 +497,17 @@ def render_sample_toml(
 # (templates/.../TiltSeries/tilt_series_id/). We rename it to the real id.
 TILT_SERIES_PLACEHOLDER_DIR = "tilt_series_id"
 
-# Other "<x>_id" placeholder leaf dirs the template ships under Reconstructions/.
-# Nothing populates them at reorg time (researchers add reconstructions later),
-# so we drop them rather than leave empty template placeholders behind. The
-# acquisition_id and tilt_series_id placeholders are handled elsewhere (consumed
-# by copytree / renamed by rename_dir).
+# The template ships one placeholder 3D-alignment group under Reconstructions/
+# (reconstruction_alignment_id/, holding empty Tomograms/Annotations/Alignment/
+# and a commented reconstruction.toml). Nothing populates it at reorg time —
+# facility output is raw frames + an initial tilt series, with reconstructions
+# added by researchers later — so we drop the whole placeholder group, leaving
+# an empty Reconstructions/ dir. Left in place the scanner would read it as a
+# bogus (empty) reconstruction group. The acquisition_id and tilt_series_id
+# placeholders are handled elsewhere (consumed by copytree / renamed by
+# rename_dir).
 PLACEHOLDER_DIRS = (
-    "Reconstructions/Annotations/annotation_id",
-    "Reconstructions/Tomograms/tomogram_id",
+    "Reconstructions/reconstruction_alignment_id",
 )
 
 # Matches the template's commented "# [[tilt_series]]" header and its commented
@@ -746,7 +749,7 @@ def process(
                     render_acquisition_toml(acq_toml_text, tilt_series_id),
                     f"acquisition.toml ([[tilt_series]] id = {tilt_series_id})",
                 )
-        # Drop the Reconstructions/ placeholder "<x>_id" dirs the template ships.
+        # Drop the placeholder Reconstructions/{group}/ folder the template ships.
         for rel in PLACEHOLDER_DIRS:
             runner.remove_dir(dest_acq / rel)
 

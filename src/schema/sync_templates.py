@@ -8,9 +8,10 @@ There are multiple on-disk copies of each researcher template:
   wholesale to begin a new sample. The two skeletons differ in their
   empty-directory layout (experimental has ``Frames/``/``Gains/``/
   ``Alignments/``; simulation has ``MdRuns/`` and wraps acquisitions in
-  ``SyntheticCryoET/``) — the ``sample.toml`` / ``acquisition.toml``
-  contents are identical across both, so each canonical template fans out
-  to both skeletons.
+  ``SyntheticCryoET/``) — the file contents are identical across both, so
+  each canonical template fans out to both skeletons. ``reconstruction.toml``
+  fans out to the ``Reconstructions/reconstruction_alignment_id/`` folder
+  inside each skeleton's acquisition directory.
 
 All copies must stay identical to their canonical source. This script
 regenerates the starter copies from the canonical ones.
@@ -58,6 +59,16 @@ TEMPLATE_PAIRS: list[tuple[Path, Path]] = [
     (
         _TEMPLATES / "md_run.toml",
         _TEMPLATES / "sample_id_simulation" / "MdRuns" / "md_run_id" / "md_run.toml",
+    ),
+    (
+        _TEMPLATES / "reconstruction.toml",
+        _TEMPLATES / "sample_id_experimental" / "acquisition_id" / "Reconstructions"
+        / "reconstruction_alignment_id" / "reconstruction.toml",
+    ),
+    (
+        _TEMPLATES / "reconstruction.toml",
+        _TEMPLATES / "sample_id_simulation" / "SyntheticCryoET" / "acquisition_id"
+        / "Reconstructions" / "reconstruction_alignment_id" / "reconstruction.toml",
     ),
 ]
 

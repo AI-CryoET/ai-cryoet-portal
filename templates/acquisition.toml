@@ -3,19 +3,15 @@
 # One file per acquisition, placed at the root of each acquisition directory.
 # The acquisition directory name IS the acquisition's identity — not repeated here.
 #
-# Likewise, every [raw_tomogram], [[post_processed_tomogram]] and [[annotation]] entry in this file implicitly
-# belongs to the enclosing acquisition directory. No `acquisition_id` field is
+# Likewise, every [[tilt_series]] entry in this file implicitly belongs to
+# the enclosing acquisition directory. No `acquisition_id` field is
 # needed — the validator injects it from the path at load time.
 #
 # HOW TO USE THIS TEMPLATE
 # ────────────────────────
 # 1. Uncomment the [acquisition] section and replace every "<FILL IN>" placeholder.
 # 2. Add a [[tilt_series]] block for each tilt series (raw and/or aligned).
-# 3. Append a [raw_tomogram] / [[post_processed_tomogram]] block for each
-#    tomogram processing pipeline output. Point each one's `tilt_series_id` at
-#    the [[tilt_series]] it was reconstructed from.
-# 4. Append an [[annotation]] block for each annotation.
-# 5. Entries are immutable once added — reprocessing produces a NEW entry
+# 3. Entries are immutable once added — reprocessing produces a NEW entry
 #    with a new `id`. Never modify or delete existing entries.
 #
 # The portal reads pixel size, tilt angles, dose, date, voltage, camera,
@@ -73,29 +69,5 @@
 # md_run_id = "<FILL IN>"   # text, MUST match a MdRuns/{id}/ folder name (the md_run.toml id)
 # frame     = "<FILL IN>"   # integer, frame/snapshot index in the MD run
 
-# ════════════════════════════════════════════════════════════════
-# Processing log
-# Append entries below as tomograms and annotations are produced.
-# Copy-paste the [[post_processed_tomogram]] and [[annotation]] blocks so there is one for each produced
-# These start empty — add them as processing happens.
-# ════════════════════════════════════════════════════════════════
-
-# [raw_tomogram]
-# id             = "<FILL IN>"   # text, MUST equal the tomogram's folder name
-# tilt_series_id = "<FILL IN>"   # text, id of the [[tilt_series]] above this reconstruction was built from. MUST equal a tilt_series id recorded above. Omit if not applicable.
-# pipeline       = "<FILL IN>"   # text, e.g. "backprojection + 3D CTF correction"
-# software       = "<FILL IN>"   # text, e.g. "IMOD 4.12 + novaCTF"
-# derived_from   = "<FILL IN>"   # list[text], list of tomogram ids in this acquisition; empty for raw reconstructions
-
-# [[post_processed_tomogram]]
-# id                        = "<FILL IN>"   # text, MUST equal the tomogram's folder name
-# tilt_series_id            = "<FILL IN>"   # text, id of the [[tilt_series]] above this reconstruction was built from. MUST equal a tilt_series id recorded above. Omit if not applicable.
-# denoising_software        = "<FILL IN>"   # text
-# ctf_software              = "<FILL IN>"   # text
-# missing_wedge_software    = "<FILL IN>"   # text
-# derived_from              = "<FILL IN>"   # list of tomogram ids in this acquisition; empty for raw reconstructions
-
-# [[annotation]]
-# id              = "<FILL IN>"   # text, MUST equal the annotation's folder name, e.g. "membrain_seg_v10"
-# type            = "<FILL IN>"   # text, e.g. membrane_segmentation | nucleosome_placement | active_zone
-# target_tomogram = "<FILL IN>"   # text, id of the tomogram in this acquisition that this was generated from
+# Reconstruction outputs (tomograms, annotations, alignment) are described in
+# each Reconstructions/{id}/reconstruction.toml — not here.

@@ -2,11 +2,17 @@
 
 Utilities for the ai-cryoet portal:
 
-- **Data staging** — `reorg_facility_to_portal.py` and `relion_to_portal.py`
-  stage Janelia cryoET facility data and RELION pipeline output into the portal
-  ingestion layout.
+- **Data staging** — `reorg_facility_to_portal.py` stages Janelia cryoET
+  facility data into the portal ingestion layout.
+- **Data migration** — `migrate_reconstruction_groups.py` moves an existing
+  data root from the flat `Reconstructions/{Tomograms,Annotations}/{id}/`
+  layout to the 3D-alignment-grouped one.
+- **Local dev testing** — `repopulate_test_data.sh` refreshes the
+  `scratch/data/` test tree from the real data root.
 - **Frontend icons** — `icon/` regenerates the snowflake app icon, navbar logo,
   and favicons used by the frontend.
+- **Archived** — `archive/` holds retired scripts kept for reference, currently
+  `relion_to_portal.py` (see [Archived](#archived) below).
 
 ## `reorg_facility_to_portal.py`
 
@@ -107,71 +113,25 @@ defaults.
 
 ---
 
-## `relion_to_portal.py`
+## Archived
 
-Maps a completed **RELION-5 tomography pipeline** directory into the same portal
-sample layout. Where `reorg_facility_to_portal.py` ingests *raw facility output*,
-this script ingests the *processed results* of a RELION project — tilt-series
-alignments, reconstructions, and denoised tomograms — alongside the raw movies.
+Retired scripts kept under `archive/` for reference, not maintained.
 
-Jobs are located by their canonical `_rlnJobTypeLabel` (read from each
-`jobNNN/job.star`), not by the arbitrary `jobNNN` number, so reruns and renamed
-jobs route correctly. When several jobs share a family, the highest-numbered
-successful one (with `RELION_JOB_EXIT_SUCCESS`) wins.
+### `archive/relion_to_portal.py`
 
-### Routing
+Mapped a completed **RELION-5 tomography pipeline** directory (tilt-series
+alignments, reconstructions, denoised tomograms, plus the raw movies) into the
+portal sample layout — the processed-results counterpart to
+`reorg_facility_to_portal.py`.
 
-| RELION job family             | Portal destination                                         |
-|-------------------------------|------------------------------------------------------------|
-| `relion.importtomo`           | `Frames/` (raw movies + mdoc + shared gain)                |
-| `relion.aligntiltseries`      | split: `<acq>.mrc` + `<acq>.rawtlt` → `TiltSeries/`; `*.aln` + `*.com` → `Alignments/` |
-| `relion.reconstructtomograms` | `Reconstructions/Tomograms/reconstruct_halves/`            |
-| `relion.denoisetomo`          | `Reconstructions/Tomograms/denoised/`                      |
-| `relion.motioncorr`           | skipped (regenerable motion-corrected frames)              |
-| `relion.ctffind`              | skipped (CTF metadata only)                                |
-| `relion.excludetilts`         | skipped (tilt-selection star only)                         |
-
-Derived/QC files inside routed jobs (e.g. `_aligned.mrc`, `_ctf.mrc`, `*.eps`,
-`*.log`) are intentionally left behind.
-
-### Placement modes
-
-Like the facility script, files are placed by `--symlink` / `--copy` / `--move`
-(mutually exclusive), defaulting to `--symlink`. **One difference to note:**
-
-- It is a **dry run by default** — even with a placement mode chosen, it prints
-  the plan and writes nothing until you pass `--apply`.
-
-### Recommended workflow
-
-1. **Dry run** (the default) — inspect the discovered jobs and the routing plan:
-   ```bash
-   ./relion_to_portal.py PIPELINE_DIR TARGET_SAMPLE_DIR
-   ```
-
-2. **Symlink test (default)** — stage the layout instantly to inspect it, then
-   `rm -rf`:
-   ```bash
-   ./relion_to_portal.py PIPELINE_DIR TARGET_SAMPLE_DIR --apply
-   ```
-
-3. **Real run** — copy (preserves the pipeline) or move (consumes it):
-   ```bash
-   ./relion_to_portal.py PIPELINE_DIR TARGET_SAMPLE_DIR --apply --copy
-   ```
-
-### Options
-
-| Option            | Purpose                                                            |
-|-------------------|--------------------------------------------------------------------|
-| `--apply`         | Actually perform the action (without it, dry run).                 |
-| `--symlink / --copy / --move` | Placement action (default `--symlink`).                |
-| `--manifest CSV`  | Write a per-file routed-vs-unrouted inventory (with sizes) to CSV. |
-
-The `--manifest` option is useful for auditing exactly which pipeline files were
-routed where and which were left behind (and why).
-
-See `./relion_to_portal.py --help` for details.
+**Why it was archived:** there is no remaining RELION data to reorganize. It
+also predates the 3D-alignment-grouped `Reconstructions/` layout — it still
+writes the old flat `Reconstructions/Tomograms/{reconstruct_halves,denoised}/`
+paths — so it would have to be rewritten for the current format
+(`Reconstructions/{reconstruction_alignment_id}/…`; see
+`migrate_reconstruction_groups.py`) before it could be used again. Moved to
+`utils/archive/relion_to_portal.py` rather than deleted so that rewrite has a
+starting point if RELION output ever needs staging.
 
 ---
 
@@ -206,3 +166,67 @@ rm ai_cryoet_snowflake_*.png               # intermediates; not committed
 
 The `<link>` tags that reference these live in `frontend/src/routes/__root.tsx`;
 the navbar logo is imported in `frontend/src/components/Header.tsx`.
+
+## `migrate_reconstruction_groups.py`
+
+One-shot migration to the 3D-alignment-grouped reconstruction layout. For each
+acquisition it moves
+
+```
+Reconstructions/Tomograms/{tomogram_id}/<file>
+Reconstructions/Annotations/{annotation_id}/<file>
+```
+
+to
+
+```
+Reconstructions/{reconstruction_alignment_id}/Tomograms/{tomogram_id}.<ext>
+Reconstructions/{reconstruction_alignment_id}/Annotations/{annotation_id}.<ext>
+Reconstructions/{reconstruction_alignment_id}/Alignment/
+```
+
+and splits the acquisition.toml processing log into one `reconstruction.toml`
+per group (dropping the removed `tilt_series_id` / `target_tomogram` fields and
+setting `raw_tomogram.derived_from` to the acquisition's tilt-series id).
+
+The group id comes from the acquisition's single `[[tilt_series]]` id — the only
+unambiguous choice available from the old data. An acquisition with zero or
+several tilt series has no such id, so each `{id}/` folder becomes its own group
+instead. A tomogram and an annotation sharing a name always split into their own
+group: that pairing is itself evidence of a distinct reconstruction attempt.
+
+A `{id}/` folder normally collapses onto its own name — every file in it is one
+entity's artifacts, so `recon.mrc` + `recon.ome.zarr` become `{id}.mrc` +
+`{id}.ome.zarr`. When two files share an extension that is impossible (one name,
+two files), so the folder's contents are treated as **separate entities keeping
+their own filenames**, and each stem becomes an id. The authored block for `{id}`
+is rewritten into one block per resulting stem either way, so no declaration is
+left dangling. Every such split is reported to stderr naming the ids it produced
+— review them, because the ids change from the folder name to the file stems.
+
+Dry-run by default; `--apply` performs the moves and writes the files. Re-running
+after an apply is a no-op. What is still reported and left in place: a
+destination-name collision, and a loose file directly under `Tomograms/` or
+`Annotations/` (no `{id}/` folder says which group it belongs to).
+
+```bash
+./utils/migrate_reconstruction_groups.py --root /groups/cryoet/cryoet/data
+./utils/migrate_reconstruction_groups.py --root /groups/cryoet/cryoet/data --apply
+```
+
+## `repopulate_test_data.sh`
+
+Resets the local `scratch/data/` test tree to a fresh copy of a handful of
+samples from the real data root — the fastest way to re-run the migration from a
+clean slate. Hardlinks where the NFS allows it (so it costs almost no disk), but
+gives every `.toml` its own inode, since the migration rewrites those in place
+and a shared inode would corrupt the source data. Edit the `SAMPLES` array to
+change the test set; `SRC`/`DEST` are hardcoded to the real data root and
+`scratch/data/`.
+
+```bash
+./utils/repopulate_test_data.sh
+```
+
+Files owned by other users can't be deleted by `--delete`, so stale foreign
+files may survive a reset — the script warns and keeps going.

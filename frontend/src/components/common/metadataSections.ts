@@ -268,20 +268,19 @@ export function acquisitionMetadataSections(
   })
 
   const tomoRows: MetadataRow[] = []
-  const totalTomos =
-    (acq.raw_tomogram ? 1 : 0) + acq.post_processed_tomograms.length
+  const totalTomos = acq.raw_tomograms.length + acq.post_processed_tomograms.length
   tomoRows.push({ label: 'Total tomograms', value: `${totalTomos}` })
-  if (acq.raw_tomogram) {
-    const t = acq.raw_tomogram
+  acq.raw_tomograms.forEach((t) => {
+    const prefix = acq.raw_tomograms.length > 1 ? `Raw (${t.tomogram_id}) ` : 'Raw '
     const dims =
       t.image_size_x != null && t.image_size_y != null && t.image_size_z != null
         ? `${t.image_size_x} × ${t.image_size_y} × ${t.image_size_z}`
         : null
-    tomoRows.push({ label: 'Raw voxel size', value: num(t.voxel_size, 'Å') })
-    tomoRows.push({ label: 'Raw dimensions', value: dims })
-    tomoRows.push({ label: 'Pipeline', value: t.pipeline })
-    tomoRows.push({ label: 'Software', value: t.software })
-  }
+    tomoRows.push({ label: `${prefix}voxel size`, value: num(t.voxel_size, 'Å') })
+    tomoRows.push({ label: `${prefix}dimensions`, value: dims })
+    tomoRows.push({ label: `${prefix}pipeline`, value: t.pipeline })
+    tomoRows.push({ label: `${prefix}software`, value: t.software })
+  })
   tomoRows.push({
     label: 'Post-processed tomograms',
     value: acq.post_processed_tomograms.length

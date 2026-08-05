@@ -165,18 +165,31 @@ _one per imaging position_
 | `md_run_id` | text | `acquisition.toml [md_source]` | researcher authored | Should match an MdRuns/{id}/ folder name in the sample; a dangling ref warns rather than failing the acquisition. |
 | `frame` | integer | `acquisition.toml [md_source]` | researcher authored | Frame/snapshot index within the MD run. |
 
-### 2b. Raw tomogram — _one per acquisition (optional)_
+### 2b. 3D alignment group — _0..N per acquisition_
 
 | Field | Type | Source | Source Type | Notes |
 |---|---|---|---|---|
-| `tomogram_id` | text | `directory` | derived | Processing folder name, e.g. bp_3dctf_bin4; the TOML id must match the folder. |
+| `reconstruction_alignment_id` | text | `directory` | derived | Folder name under Reconstructions/. Does NOT have to match any tilt_series_id — a tomogram's tilt-series lineage is recorded on raw_tomogram.derived_from instead. |
 | `acquisition_id` | text | `directory` | derived | Parent acquisition folder name. |
 | `sample_id` | text | `directory` | derived | Parent sample folder name. |
-| `tilt_series_id` | text | `acquisition.toml [raw_tomogram]` | researcher authored | Tilt series (in this acquisition) this reconstruction was built from; cross-referenced against the acquisition's tilt series ids. |
-| `pipeline` | text | `acquisition.toml [raw_tomogram]` | researcher authored | Human description. |
-| `software` | text | `acquisition.toml [raw_tomogram]` | researcher authored |  |
+| `alignment_software` | text | `reconstruction.toml [reconstruction_alignment]` | researcher authored | e.g. IMOD, RELION, AreTomo3. |
+| `alignment_method` | text | `reconstruction.toml [reconstruction_alignment]` | researcher authored | e.g. patch_tracking, fiducial, subtomogram_averaging. |
+| `alignment_files` | list[text] | `directory` | derived | 3D-alignment artifacts discovered under Reconstructions/{id}/Alignment/. |
+| `mtime` | float | `directory` | derived | Modification time, used to gate re-parsing. |
+| `renamed_from` | text | `reconstruction.toml [reconstruction_alignment]` | researcher authored | Scan-time-only rename directive; not stored in the DB. |
+
+#### 2b1. Raw tomogram — _0..N per 3D alignment group_
+
+| Field | Type | Source | Source Type | Notes |
+|---|---|---|---|---|
+| `tomogram_id` | text | `directory` | derived | Reconstruction file's name without its extension, e.g. bp_3dctf_bin4; the TOML id must match the stem. |
+| `acquisition_id` | text | `directory` | derived | Parent acquisition folder name. |
+| `sample_id` | text | `directory` | derived | Parent sample folder name. |
+| `reconstruction_alignment_id` | text | `directory` | derived | Enclosing Reconstructions/{id}/ folder — the 3D-alignment group this belongs to. Part of the key: two groups may hold the same file stem. |
+| `pipeline` | text | `reconstruction.toml [[raw_tomogram]]` | researcher authored | Human description. |
+| `software` | text | `reconstruction.toml [[raw_tomogram]]` | researcher authored |  |
 | `voxel_size` | float | `MRC header` | derived | Ångström/pixel. Populated by the catalog scanner from the reconstruction MRC header's voxel_size.x; not authored in any TOML. |
-| `derived_from` | list[text] | `acquisition.toml [raw_tomogram]` | researcher authored | Lineage; empty for raw reconstructions. |
+| `derived_from` | text | `reconstruction.toml [[raw_tomogram]]` | researcher authored | The tilt series (under TiltSeries/) this was reconstructed from. |
 | `image_size_x` | integer | `MRC header` | derived |  |
 | `image_size_y` | integer | `MRC header` | derived |  |
 | `image_size_z` | integer | `MRC header` | derived |  |
@@ -184,21 +197,21 @@ _one per imaging position_
 | `zarr_path` | text | `directory` | derived | Derived from prescribed layout. |
 | `zarr_axes` | text | `OME-Zarr .zattrs` | derived | Axis order. |
 | `zarr_scale` | list[float] | `OME-Zarr .zattrs` | derived | Multiscale scale factors. |
-| `renamed_from` | text | `acquisition.toml [raw_tomogram]` | researcher authored | Scan-time-only rename directive; not stored in the DB. |
+| `renamed_from` | text | `reconstruction.toml [[raw_tomogram]]` | researcher authored | Scan-time-only rename directive; not stored in the DB. |
 
-### 2c. Post-processed tomogram — _0..N per acquisition_
+#### 2b2. Post-processed tomogram — _0..N per 3D alignment group_
 
 | Field | Type | Source | Source Type | Notes |
 |---|---|---|---|---|
-| `tomogram_id` | text | `directory` | derived | Processing folder name; the TOML id must match the folder. |
+| `tomogram_id` | text | `directory` | derived | Reconstruction file's name without its extension; the TOML id must match the stem. |
 | `acquisition_id` | text | `directory` | derived | Parent acquisition folder name. |
 | `sample_id` | text | `directory` | derived | Parent sample folder name. |
-| `tilt_series_id` | text | `acquisition.toml [[post_processed_tomogram]]` | researcher authored | Tilt series (in this acquisition) this reconstruction was built from; cross-referenced against the acquisition's tilt series ids. |
-| `denoising_software` | text | `acquisition.toml [[post_processed_tomogram]]` | researcher authored |  |
-| `ctf_software` | text | `acquisition.toml [[post_processed_tomogram]]` | researcher authored |  |
-| `missing_wedge_software` | text | `acquisition.toml [[post_processed_tomogram]]` | researcher authored |  |
+| `reconstruction_alignment_id` | text | `directory` | derived | Enclosing Reconstructions/{id}/ folder — the 3D-alignment group this belongs to. Part of the key: two groups may hold the same file stem. |
+| `denoising_software` | text | `reconstruction.toml [[post_processed_tomogram]]` | researcher authored |  |
+| `ctf_software` | text | `reconstruction.toml [[post_processed_tomogram]]` | researcher authored |  |
+| `missing_wedge_software` | text | `reconstruction.toml [[post_processed_tomogram]]` | researcher authored |  |
 | `voxel_size` | float | `MRC header` | derived | Ångström/pixel. Populated by the catalog scanner from the reconstruction MRC header's voxel_size.x; not authored in any TOML. |
-| `derived_from` | list[text] | `acquisition.toml [[post_processed_tomogram]]` | researcher authored | Lineage; references a raw or post-processed tomogram_id in this acquisition. |
+| `derived_from` | list[text] | `reconstruction.toml [[post_processed_tomogram]]` | researcher authored | Lineage; references a raw or post-processed tomogram_id in this acquisition (resolvable across sibling groups). |
 | `image_size_x` | integer | `MRC header` | derived |  |
 | `image_size_y` | integer | `MRC header` | derived |  |
 | `image_size_z` | integer | `MRC header` | derived |  |
@@ -207,21 +220,23 @@ _one per imaging position_
 | `zarr_axes` | text | `OME-Zarr .zattrs` | derived | Axis order. |
 | `zarr_scale` | list[float] | `OME-Zarr .zattrs` | derived | Multiscale scale factors. |
 | `size_bytes` | integer | `filesystem` | derived | On-disk size recorded by the scanner via os.stat at parse time; powers the home-page size stats and per-card size badges. |
-| `renamed_from` | text | `acquisition.toml [[post_processed_tomogram]]` | researcher authored | Scan-time-only rename directive; not stored in the DB. |
+| `renamed_from` | text | `reconstruction.toml [[post_processed_tomogram]]` | researcher authored | Scan-time-only rename directive; not stored in the DB. |
 
-### 2d. Annotation — _0..N per acquisition_
+#### 2b3. Annotation — _0..N per 3D alignment group_
 
 | Field | Type | Source | Source Type | Notes |
 |---|---|---|---|---|
-| `annotation_id` | text | `directory` | derived | Annotation folder name, e.g. membrain_seg_v10; the TOML id must match the folder. |
+| `annotation_id` | text | `directory` | derived | Annotation file's name without its extension, e.g. membrain_seg_v10; the TOML id must match the stem. |
 | `acquisition_id` | text | `directory` | derived | Parent acquisition folder name. |
 | `sample_id` | text | `directory` | derived | Parent sample folder name. |
-| `type` | text | `acquisition.toml [[annotation]]` | researcher authored | e.g. membrane_segmentation, nucleosome_placement, nucleosome_orientation, sta_result. |
-| `target_tomogram` | text | `acquisition.toml [[annotation]]` | researcher authored | Tomogram this was generated from. |
-| `files` | list[text] | `directory` | derived | .star, .mrc, .ome.zarr, .png artifacts discovered in the folder. |
-| `renamed_from` | text | `acquisition.toml [[annotation]]` | researcher authored | Scan-time-only rename directive; not stored in the DB. |
+| `reconstruction_alignment_id` | text | `directory` | derived | Enclosing Reconstructions/{id}/ folder — the 3D-alignment group this belongs to. Part of the key: two groups may hold the same file stem. |
+| `type` | text | `reconstruction.toml [[annotation]]` | researcher authored | e.g. membrane_segmentation, nucleosome_placement, nucleosome_orientation, sta_result. |
+| `derived_from` | text | `reconstruction.toml [[annotation]]` | researcher authored | Id of the tomogram in this group the annotation was derived from. |
+| `bounding_box` | text | `reconstruction.toml [[annotation]]` | researcher authored | Id of the annotation file (under Annotations/) holding the bounding box this annotation is associated with. |
+| `files` | list[text] | `directory` | derived | .star, .mrc, .ome.zarr, .png artifacts sharing this stem. |
+| `renamed_from` | text | `reconstruction.toml [[annotation]]` | researcher authored | Scan-time-only rename directive; not stored in the DB. |
 
-### 2e. Tilt series — _0..N per acquisition_
+### 2c. Tilt series — _0..N per acquisition_
 
 | Field | Type | Source | Source Type | Notes |
 |---|---|---|---|---|

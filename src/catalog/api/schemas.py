@@ -110,8 +110,11 @@ class _TomogramOutBase(BaseModel):
     """
 
     tomogram_id: str
+    # the Reconstructions/{group}/ the id lives in — the id alone is only a
+    # file stem, so the frontend needs the group to build URLs and to tell
+    # same-named tomograms in different groups apart.
+    reconstruction_alignment_id: str
     voxel_size: float | None = None                  # angstrom
-    derived_from: list[str] = []
     image_size_x: int | None = None
     image_size_y: int | None = None
     image_size_z: int | None = None
@@ -124,6 +127,8 @@ class _TomogramOutBase(BaseModel):
 class RawTomogramOut(_TomogramOutBase):
     pipeline: str | None = None
     software: str | None = None
+    # the tilt_series id (under TiltSeries/) this was reconstructed from
+    derived_from: str | None = None
 
 
 class PostProcessedTomogramOut(_TomogramOutBase):
@@ -131,12 +136,19 @@ class PostProcessedTomogramOut(_TomogramOutBase):
     ctf_software: str | None = None
     missing_wedge_software: str | None = None
     size_bytes: int | None = None
+    # id(s) of the tomogram(s) this was derived from
+    derived_from: list[str] = []
 
 
 class AnnotationOut(BaseModel):
     annotation_id: str
+    # see _TomogramOutBase.reconstruction_alignment_id
+    reconstruction_alignment_id: str
     type: str | None = None
-    target_tomogram: str | None = None
+    # tomogram_id in this group the annotation was derived from
+    derived_from: str | None = None
+    # annotation_id (under Annotations/) of the associated bounding box
+    bounding_box: str | None = None
     files: list[str] = []
 
 
@@ -148,6 +160,14 @@ class TiltSeriesOut(BaseModel):
     alignment_method: str | None = None
     st_path: str | None = None
     zarr_path: str | None = None
+    alignment_files: list[str] = []
+    mtime: float | None = None
+
+
+class ReconstructionAlignmentOut(BaseModel):
+    reconstruction_alignment_id: str
+    alignment_software: str | None = None
+    alignment_method: str | None = None
     alignment_files: list[str] = []
     mtime: float | None = None
 
@@ -205,10 +225,11 @@ class AcquisitionOut(BaseModel):
     camera: str | None = None
     path: str | None = None
     md_source: MdSourceOut | None = None
-    raw_tomogram: RawTomogramOut | None = None
+    raw_tomograms: list[RawTomogramOut] = []
     post_processed_tomograms: list[PostProcessedTomogramOut] = []
     annotations: list[AnnotationOut] = []
     tilt_series: list[TiltSeriesOut] = []
+    reconstruction_alignment: list[ReconstructionAlignmentOut] = []
     scan_status: AcquisitionScanStatus | None = None
 
 

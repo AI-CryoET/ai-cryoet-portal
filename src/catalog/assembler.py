@@ -27,6 +27,7 @@ from catalog.discovery import (
     SampleLocation,
     iter_acquisitions,
     iter_annotations,
+    iter_reconstruction_alignments,
     iter_tilt_series,
     iter_tomograms,
 )
@@ -51,11 +52,12 @@ ScanIssueCategory = Literal[
     "undeclared_tomogram_folder",
     "undeclared_annotation_folder",
     "undeclared_tilt_series_folder",
+    "undeclared_reconstruction_alignment_folder",
     "acquisition_without_tilt_series",
     "declared_id_without_folder",
     "tilt_series_alignment_mismatch",
-    "annotation_without_target_tomogram",
     "deprecated_md_run_block",
+    "deprecated_processing_log",
     "dangling_md_source_ref",
     "field_conflict",
     "assembly_failed",
@@ -189,8 +191,18 @@ def _categorize_loader_warning(
     elif "not in schema" in s:
         m = _EXTRA_AT_RE.search(s)
         category, location = "extra_field", (m.group(1) if m else "<unknown>")
-    elif "no matching folder" in s:
-        # Format: "acquisitions.<acq>.<kind>[<id>]: id has no matching folder …"
+    elif "processing-log blocks in acquisition.toml are deprecated" in s:
+        # Format: "acquisitions.<acq>.reconstruction_alignment[<group>]: …"
+        head, sep, _ = s.partition(":")
+        category, location = "deprecated_processing_log", (
+            head if sep else "<root>"
+        )
+    elif "no matching folder" in s or "derived_from" in s:
+        # "…: id has no matching folder …" or a cross-file reconstruction.toml
+        # derived_from ref that resolves to no tilt_series/tomogram — both are a
+        # declared reference with no backing entity, emitted by the same loader
+        # reconciliation pass.
+        # Format: "acquisitions.<acq>.<kind>[<id>]…: <detail>"
         head, sep, _ = s.partition(":")
         category, location = "declared_id_without_folder", (
             head if sep else "<unknown>"
@@ -505,6 +517,64 @@ def assemble_sample(sample_loc: SampleLocation) -> AssemblyResult:
             ts.sample_id = acq_loc.sample_id
             ts.acquisition_id = acq_loc.acquisition_id
 
+        # Per-group reconstruction.toml map (acq -> {group -> ReconstructionFile}).
+        # Fetched here so the reconstruction-alignment reconciliation below can
+        # see the migrated layout too, and reused by Steps 3/4.
+        recon_files = record.reconstructions.get(acq_loc.acquisition_id, {})
+
+        # 3D-alignment-group enrichment: the researcher-authored
+        # Reconstructions/{id}/ folders are the canonical groups. We do NOT
+        # synthesize rows from disk — a folder with no declaration warns. For
+        # declared rows, fill filesystem-derived fields (alignment artifacts,
+        # mtime) and inject the path-derived PK parts. Migrated layout: the
+        # [reconstruction_alignment] block lives in each group's
+        # reconstruction.toml (record.reconstructions), NOT in acquisition.toml
+        # — fold those in so the group folders match and the in-place enrichment
+        # persists on the ReconstructionFile object.
+        existing_ra = {
+            ra.reconstruction_alignment_id: ra
+            for ra in acq_file.reconstruction_alignment
+            if ra.reconstruction_alignment_id is not None
+        }
+        for group, rf in recon_files.items():
+            existing_ra.setdefault(group, rf.reconstruction_alignment)
+        for ra_loc in iter_reconstruction_alignments(acq_loc):
+            ra = existing_ra.get(ra_loc.reconstruction_alignment_id)
+            if ra is None:
+                result.warnings.append(
+                    _make_issue(
+                        sample_loc,
+                        category="undeclared_reconstruction_alignment_folder",
+                        location=(
+                            f"acquisitions.{acq_loc.acquisition_id}"
+                            f".reconstruction_alignment"
+                            f"[{ra_loc.reconstruction_alignment_id}]"
+                        ),
+                        message=(
+                            f"folder '{ra_loc.reconstruction_alignment_id}' exists "
+                            "on disk but is not declared — add a "
+                            "Reconstructions/"
+                            f"{ra_loc.reconstruction_alignment_id}/reconstruction.toml "
+                            "(or a [[reconstruction_alignment]] block with "
+                            f"id = \"{ra_loc.reconstruction_alignment_id}\" in "
+                            "acquisition.toml)"
+                        ),
+                    )
+                )
+                continue
+
+            if not ra.alignment_files and ra_loc.alignment_files:
+                ra.alignment_files = sorted(str(p) for p in ra_loc.alignment_files)
+            if ra.mtime is None:
+                try:
+                    ra.mtime = ra_loc.path.stat().st_mtime
+                except OSError:
+                    pass
+
+        for ra in acq_file.reconstruction_alignment:
+            ra.sample_id = acq_loc.sample_id
+            ra.acquisition_id = acq_loc.acquisition_id
+
         # An acquisition with raw imaging data (Frames/) but no declared tilt
         # series is half-ingested: a thumbnail still renders from Frames/, but
         # the detail pages have no tilt_series_id to key the preview/lightbox
@@ -528,19 +598,70 @@ def assemble_sample(sample_loc: SampleLocation) -> AssemblyResult:
             )
 
         # Step 3: tomograms (raw + post share one id namespace) -------------
+        # Per-group sourcing: when a Reconstructions/{group}/ carries a
+        # reconstruction.toml, its tomogram/annotation metadata lives in
+        # record.reconstructions[acq][group] and is matched to files by stem
+        # WITHIN that group. Groups with no reconstruction.toml fall back to the
+        # legacy flat acquisition.toml blocks, matched by stem globally.
+        # (recon_files fetched above, before the reconstruction-alignment loop.)
         existing_tomos: dict[str, RawTomogram | PostProcessedTomogram] = {}
-        if acq_file.raw_tomogram is not None:
-            existing_tomos[acq_file.raw_tomogram.tomogram_id] = acq_file.raw_tomogram
+        for t in acq_file.raw_tomogram:
+            existing_tomos[t.tomogram_id] = t
         for t in acq_file.post_processed_tomogram:
             existing_tomos[t.tomogram_id] = t
 
         for tomo_loc in iter_tomograms(acq_loc):
-            tomo = existing_tomos.get(tomo_loc.tomogram_id)
+            group = tomo_loc.reconstruction_alignment_id
+            rf = recon_files.get(group)
+            if rf is not None:
+                tomo = next(
+                    (
+                        t
+                        for t in (*rf.raw_tomogram, *rf.post_processed_tomogram)
+                        if t.tomogram_id == tomo_loc.tomogram_id
+                    ),
+                    None,
+                )
+            else:
+                # Legacy acquisition.toml path: one authored block can describe a
+                # stem that exists in several groups. Copy per group so the
+                # enrichment below cannot write group B's header onto group A's
+                # model — they are distinct tomograms sharing a name. The
+                # group-less originals are dropped after the loop.
+                declared = existing_tomos.get(tomo_loc.tomogram_id)
+                tomo = declared.model_copy(deep=True) if declared is not None else None
+                if isinstance(tomo, RawTomogram):
+                    acq_file.raw_tomogram.append(tomo)
+                elif tomo is not None:
+                    acq_file.post_processed_tomogram.append(tomo)
             if tomo is None:
-                # Tomogram folder on disk not declared in acquisition.toml.
-                # v1 does not synthesize tomograms; warn so a forgotten
-                # [raw_tomogram] / [[post_processed_tomogram]] block doesn't
-                # go unnoticed.
+                # Tomogram file on disk with no metadata block. v1 does not
+                # synthesize tomograms; warn so a forgotten declaration doesn't
+                # go unnoticed. Which file the researcher must edit depends on
+                # how this group is authored: a group with a reconstruction.toml
+                # sources its tomograms only from that file, so telling them to
+                # add a flat acquisition.toml block would be wrong — and is
+                # actively misleading when they already have one (that block
+                # loses to the per-group file and is dropped).
+                if rf is not None:
+                    message = (
+                        f"tomogram '{tomo_loc.tomogram_id}' exists on disk under "
+                        f"Reconstructions/{group}/, whose reconstruction.toml does "
+                        "not declare it — that file is authoritative for this "
+                        "group, so add a [[raw_tomogram]] or "
+                        "[[post_processed_tomogram]] block with "
+                        f"id = \"{tomo_loc.tomogram_id}\" to "
+                        f"Reconstructions/{group}/reconstruction.toml (a flat "
+                        "acquisition.toml block for this id is ignored for this "
+                        "group — remove it if it is stale)"
+                    )
+                else:
+                    message = (
+                        f"tomogram '{tomo_loc.tomogram_id}' exists on disk but is "
+                        "not declared in acquisition.toml — add a [[raw_tomogram]] "
+                        "or [[post_processed_tomogram]] block with "
+                        f"id = \"{tomo_loc.tomogram_id}\""
+                    )
                 result.warnings.append(
                     _make_issue(
                         sample_loc,
@@ -549,15 +670,12 @@ def assemble_sample(sample_loc: SampleLocation) -> AssemblyResult:
                             f"acquisitions.{acq_loc.acquisition_id}"
                             f".tomogram[{tomo_loc.tomogram_id}]"
                         ),
-                        message=(
-                            f"folder '{tomo_loc.tomogram_id}' exists on disk but is "
-                            "not declared in acquisition.toml — add a [raw_tomogram] "
-                            "or [[post_processed_tomogram]] block with "
-                            f"id = \"{tomo_loc.tomogram_id}\""
-                        ),
+                        message=message,
                     )
                 )
                 continue
+
+            tomo.reconstruction_alignment_id = group
 
             if tomo_loc.mrc_files:
                 mrc_path_str = str(tomo_loc.mrc_files[0])
@@ -624,11 +742,56 @@ def assemble_sample(sample_loc: SampleLocation) -> AssemblyResult:
                 if tomo.zarr_path is None:
                     tomo.zarr_path = zarr_path_str
 
+        # The authored blocks were templates for the per-group copies above;
+        # only stamped copies should reach storage.
+        acq_file.raw_tomogram = [
+            t for t in acq_file.raw_tomogram if t.reconstruction_alignment_id
+        ]
+        acq_file.post_processed_tomogram = [
+            t for t in acq_file.post_processed_tomogram
+            if t.reconstruction_alignment_id
+        ]
+
         # Step 4: annotation files ------------------------------------------
+        # Same per-group sourcing as tomograms.
         existing_anns = {a.annotation_id: a for a in acq_file.annotation}
         for ann_loc in iter_annotations(acq_loc):
-            ann = existing_anns.get(ann_loc.annotation_id)
+            group = ann_loc.reconstruction_alignment_id
+            rf = recon_files.get(group)
+            if rf is not None:
+                ann = next(
+                    (
+                        a
+                        for a in rf.annotation
+                        if a.annotation_id == ann_loc.annotation_id
+                    ),
+                    None,
+                )
+            else:
+                # Legacy path: same per-group copy as tomograms above.
+                declared = existing_anns.get(ann_loc.annotation_id)
+                ann = declared.model_copy(deep=True) if declared is not None else None
+                if ann is not None:
+                    acq_file.annotation.append(ann)
             if ann is None:
+                # Same per-group vs. flat authoring split as tomograms above.
+                if rf is not None:
+                    message = (
+                        f"annotation '{ann_loc.annotation_id}' exists on disk under "
+                        f"Reconstructions/{group}/, whose reconstruction.toml does "
+                        "not declare it — that file is authoritative for this "
+                        "group, so add an [[annotation]] block with "
+                        f"id = \"{ann_loc.annotation_id}\" to "
+                        f"Reconstructions/{group}/reconstruction.toml (a flat "
+                        "acquisition.toml block for this id is ignored for this "
+                        "group — remove it if it is stale)"
+                    )
+                else:
+                    message = (
+                        f"annotation '{ann_loc.annotation_id}' exists on disk but is "
+                        "not declared in acquisition.toml — add an [[annotation]] "
+                        f"block with id = \"{ann_loc.annotation_id}\""
+                    )
                 result.warnings.append(
                     _make_issue(
                         sample_loc,
@@ -637,38 +800,18 @@ def assemble_sample(sample_loc: SampleLocation) -> AssemblyResult:
                             f"acquisitions.{acq_loc.acquisition_id}"
                             f".annotation[{ann_loc.annotation_id}]"
                         ),
-                        message=(
-                            f"folder '{ann_loc.annotation_id}' exists on disk but is "
-                            "not declared in acquisition.toml — add an [[annotation]] "
-                            f"block with id = \"{ann_loc.annotation_id}\""
-                        ),
+                        message=message,
                     )
                 )
                 continue
+
+            ann.reconstruction_alignment_id = group
             if not ann.files:
                 ann.files = sorted(str(p) for p in ann_loc.files)
 
-        # Declared annotations with no target_tomogram aren't tied to any
-        # tomogram in this acquisition. That's permitted by the schema (the
-        # field is optional), but it usually means the [[annotation]] block is
-        # missing its target_tomogram — warn so it doesn't go unnoticed.
-        for ann in acq_file.annotation:
-            if ann.target_tomogram is None:
-                result.warnings.append(
-                    _make_issue(
-                        sample_loc,
-                        category="annotation_without_target_tomogram",
-                        location=(
-                            f"acquisitions.{acq_loc.acquisition_id}"
-                            f".annotation[{ann.annotation_id}]"
-                        ),
-                        message=(
-                            f"annotation '{ann.annotation_id}' has no "
-                            "target_tomogram — add a target_tomogram referencing "
-                            "a tomogram declared in this acquisition"
-                        ),
-                    )
-                )
+        acq_file.annotation = [
+            a for a in acq_file.annotation if a.reconstruction_alignment_id
+        ]
 
     # ── Step 5: re-validate ──────────────────────────────────────────────────
     try:

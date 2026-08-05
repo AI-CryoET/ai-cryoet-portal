@@ -5,7 +5,11 @@ import type { ViewerLaunchOut } from '../../types'
 import { apiFetch } from '../../utils/api'
 
 export type NeuroglancerSource =
-  | { kind: 'launch'; entity: 'tomogram' | 'tilt-series' | 'annotation'; sampleId: string; acquisitionId: string; entityId: string }
+  // `groupId` is the Reconstructions/{reconstruction_alignment_id}/ segment —
+  // required for tomograms and annotations (their ids are only file stems,
+  // unique within the group), absent for tilt series.
+  | { kind: 'launch'; entity: 'tomogram' | 'annotation'; sampleId: string; acquisitionId: string; groupId: string; entityId: string }
+  | { kind: 'launch'; entity: 'tilt-series'; sampleId: string; acquisitionId: string; entityId: string }
   | { kind: 'zarr-link'; url: string }
   | null
 
@@ -22,8 +26,9 @@ interface NeuroglancerButtonProps {
 
 function launchNeuroglancer(source: Extract<NeuroglancerSource, { kind: 'launch' }>): Promise<ViewerLaunchOut> {
   const segment = LAUNCH_SEGMENT[source.entity]
+  const group = 'groupId' in source ? `/${source.groupId}` : ''
   return apiFetch<ViewerLaunchOut>(
-    `/${segment}/${source.sampleId}/${source.acquisitionId}/${source.entityId}/neuroglancer`,
+    `/${segment}/${source.sampleId}/${source.acquisitionId}${group}/${source.entityId}/neuroglancer`,
     { method: 'POST' },
   )
 }

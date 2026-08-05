@@ -761,14 +761,14 @@
         }
       }
     },
-    "/tomograms/{sample_id}/{acquisition_id}/{tomogram_id}/preview.png": {
+    "/tomograms/{sample_id}/{acquisition_id}/{reconstruction_alignment_id}/{tomogram_id}/preview.png": {
       "get": {
         "tags": [
           "tomograms"
         ],
         "summary": "Tomogram Preview",
         "description": "Render the center-XY slice as a PNG (1200px wide, 1\u201399% percentile).\n\nReturns 404 for missing row or path-outside-root, 422 for an existing\nrow whose ``mrc_path`` is missing on disk.",
-        "operationId": "tomogram_preview_tomograms__sample_id___acquisition_id___tomogram_id__preview_png_get",
+        "operationId": "tomogram_preview_tomograms__sample_id___acquisition_id___reconstruction_alignment_id___tomogram_id__preview_png_get",
         "parameters": [
           {
             "name": "sample_id",
@@ -786,6 +786,15 @@
             "schema": {
               "type": "string",
               "title": "Acquisition Id"
+            }
+          },
+          {
+            "name": "reconstruction_alignment_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Reconstruction Alignment Id"
             }
           },
           {
@@ -820,14 +829,14 @@
         }
       }
     },
-    "/tomograms/{sample_id}/{acquisition_id}/{tomogram_id}/neuroglancer": {
+    "/tomograms/{sample_id}/{acquisition_id}/{reconstruction_alignment_id}/{tomogram_id}/neuroglancer": {
       "post": {
         "tags": [
           "tomograms"
         ],
         "summary": "Tomogram Neuroglancer",
-        "description": "Launch a Neuroglancer viewer over the tomogram volume.\n\nThe frontend rewrites the URL hostname to ``window.location.hostname``\nbefore opening \u2014 Neuroglancer reports the API host's FQDN which may\nnot be reachable from the browser.",
-        "operationId": "tomogram_neuroglancer_tomograms__sample_id___acquisition_id___tomogram_id__neuroglancer_post",
+        "description": "Build a stateless Neuroglancer viewer URL for the tomogram.\n\nNo volume load, no in-process viewer: the returned URL points the\nFileglancer-hosted Neuroglancer app at a ``precomputed://`` source served\nby mrc-server (``MRCNG_BASE_URL`` must resolve to the same data root, so\n``row.mrc_path`` is the served relpath 1:1). Voxel size rides in mrc-server's\n``info``; only the IMOD X/Y mirror and a 1-99 contrast window are baked into\nthe state here.",
+        "operationId": "tomogram_neuroglancer_tomograms__sample_id___acquisition_id___reconstruction_alignment_id___tomogram_id__neuroglancer_post",
         "parameters": [
           {
             "name": "sample_id",
@@ -845,6 +854,15 @@
             "schema": {
               "type": "string",
               "title": "Acquisition Id"
+            }
+          },
+          {
+            "name": "reconstruction_alignment_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Reconstruction Alignment Id"
             }
           },
           {
@@ -881,14 +899,14 @@
         }
       }
     },
-    "/annotations/{sample_id}/{acquisition_id}/{annotation_id}/preview.png": {
+    "/annotations/{sample_id}/{acquisition_id}/{reconstruction_alignment_id}/{annotation_id}/preview.png": {
       "get": {
         "tags": [
           "annotations"
         ],
         "summary": "Annotation Preview",
         "description": "Render the annotation MRC's center-XY slice as a PNG (1200px, 1\u201399%).\n\nReturns 404 for a missing row or path-outside-root, 422 for an annotation\nwith no ``.mrc`` artifact.",
-        "operationId": "annotation_preview_annotations__sample_id___acquisition_id___annotation_id__preview_png_get",
+        "operationId": "annotation_preview_annotations__sample_id___acquisition_id___reconstruction_alignment_id___annotation_id__preview_png_get",
         "parameters": [
           {
             "name": "sample_id",
@@ -906,6 +924,15 @@
             "schema": {
               "type": "string",
               "title": "Acquisition Id"
+            }
+          },
+          {
+            "name": "reconstruction_alignment_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Reconstruction Alignment Id"
             }
           },
           {
@@ -940,14 +967,14 @@
         }
       }
     },
-    "/annotations/{sample_id}/{acquisition_id}/{annotation_id}/neuroglancer": {
+    "/annotations/{sample_id}/{acquisition_id}/{reconstruction_alignment_id}/{annotation_id}/neuroglancer": {
       "post": {
         "tags": [
           "annotations"
         ],
         "summary": "Annotation Neuroglancer",
         "description": "Launch a Neuroglancer viewer over the annotation's ``.mrc`` volume, or a \nNeuroglancer view + bounding box overlay if ``.json`` files are in the ``annotation_id``\ndir. \n\nMirrors the tomogram launch route \u2014 same registry, same dev-side hostname\nrewrite on the frontend. 422 for an annotation with no ``.mrc`` artifact.",
-        "operationId": "annotation_neuroglancer_annotations__sample_id___acquisition_id___annotation_id__neuroglancer_post",
+        "operationId": "annotation_neuroglancer_annotations__sample_id___acquisition_id___reconstruction_alignment_id___annotation_id__neuroglancer_post",
         "parameters": [
           {
             "name": "sample_id",
@@ -965,6 +992,15 @@
             "schema": {
               "type": "string",
               "title": "Acquisition Id"
+            }
+          },
+          {
+            "name": "reconstruction_alignment_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Reconstruction Alignment Id"
             }
           },
           {
@@ -1357,6 +1393,106 @@
         }
       }
     },
+    "/toml/tilt-series-ids/{sample_id}/{acquisition_id}": {
+      "get": {
+        "tags": [
+          "toml"
+        ],
+        "summary": "Tilt Series Ids",
+        "description": "Tilt-series ids in one acquisition, for the reconstruction form.\n\nraw_tomogram.derived_from names a [[tilt_series]] in the acquisition's\nacquisition.toml \u2014 a different file, so the renderer's in-form cross-ref\npooling cannot supply it.",
+        "operationId": "tilt_series_ids_toml_tilt_series_ids__sample_id___acquisition_id__get",
+        "parameters": [
+          {
+            "name": "sample_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Sample Id"
+            }
+          },
+          {
+            "name": "acquisition_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Acquisition Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/toml/reconstruction-group-ids/{sample_id}/{acquisition_id}": {
+      "get": {
+        "tags": [
+          "toml"
+        ],
+        "summary": "Reconstruction Group Ids",
+        "description": "Alignment-group folder names in one acquisition, for the reconstruction\nform's group selector.\n\nOne reconstruction.toml per Reconstructions/<group>/ folder, so the form\nneeds the acquisition's group list to offer switching between them. The\nauthor route carries no sample context of its own, so it can't read the\nacquisition detail payload \u2014 hence this ids endpoint, mirroring\n/tilt-series-ids.",
+        "operationId": "reconstruction_group_ids_toml_reconstruction_group_ids__sample_id___acquisition_id__get",
+        "parameters": [
+          {
+            "name": "sample_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Sample Id"
+            }
+          },
+          {
+            "name": "acquisition_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Acquisition Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/toml/{kind}/load/{record_id}": {
       "get": {
         "tags": [
@@ -1398,6 +1534,22 @@
                 }
               ],
               "title": "Sample Id"
+            }
+          },
+          {
+            "name": "acquisition_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Acquisition Id"
             }
           }
         ],
@@ -1774,15 +1926,13 @@
               }
             ]
           },
-          "raw_tomogram": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/RawTomogramOut"
-              },
-              {
-                "type": "null"
-              }
-            ]
+          "raw_tomograms": {
+            "items": {
+              "$ref": "#/components/schemas/RawTomogramOut"
+            },
+            "type": "array",
+            "title": "Raw Tomograms",
+            "default": []
           },
           "post_processed_tomograms": {
             "items": {
@@ -1806,6 +1956,14 @@
             },
             "type": "array",
             "title": "Tilt Series",
+            "default": []
+          },
+          "reconstruction_alignment": {
+            "items": {
+              "$ref": "#/components/schemas/ReconstructionAlignmentOut"
+            },
+            "type": "array",
+            "title": "Reconstruction Alignment",
             "default": []
           },
           "scan_status": {
@@ -1921,6 +2079,10 @@
             "type": "string",
             "title": "Annotation Id"
           },
+          "reconstruction_alignment_id": {
+            "type": "string",
+            "title": "Reconstruction Alignment Id"
+          },
           "type": {
             "anyOf": [
               {
@@ -1932,7 +2094,7 @@
             ],
             "title": "Type"
           },
-          "target_tomogram": {
+          "derived_from": {
             "anyOf": [
               {
                 "type": "string"
@@ -1941,7 +2103,18 @@
                 "type": "null"
               }
             ],
-            "title": "Target Tomogram"
+            "title": "Derived From"
+          },
+          "bounding_box": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bounding Box"
           },
           "files": {
             "items": {
@@ -1954,7 +2127,8 @@
         },
         "type": "object",
         "required": [
-          "annotation_id"
+          "annotation_id",
+          "reconstruction_alignment_id"
         ],
         "title": "AnnotationOut"
       },
@@ -2944,6 +3118,10 @@
             "type": "string",
             "title": "Tomogram Id"
           },
+          "reconstruction_alignment_id": {
+            "type": "string",
+            "title": "Reconstruction Alignment Id"
+          },
           "voxel_size": {
             "anyOf": [
               {
@@ -2954,14 +3132,6 @@
               }
             ],
             "title": "Voxel Size"
-          },
-          "derived_from": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array",
-            "title": "Derived From",
-            "default": []
           },
           "image_size_x": {
             "anyOf": [
@@ -3086,11 +3256,20 @@
               }
             ],
             "title": "Size Bytes"
+          },
+          "derived_from": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Derived From",
+            "default": []
           }
         },
         "type": "object",
         "required": [
-          "tomogram_id"
+          "tomogram_id",
+          "reconstruction_alignment_id"
         ],
         "title": "PostProcessedTomogramOut"
       },
@@ -3162,6 +3341,10 @@
             "type": "string",
             "title": "Tomogram Id"
           },
+          "reconstruction_alignment_id": {
+            "type": "string",
+            "title": "Reconstruction Alignment Id"
+          },
           "voxel_size": {
             "anyOf": [
               {
@@ -3172,14 +3355,6 @@
               }
             ],
             "title": "Voxel Size"
-          },
-          "derived_from": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array",
-            "title": "Derived From",
-            "default": []
           },
           "image_size_x": {
             "anyOf": [
@@ -3282,13 +3457,79 @@
               }
             ],
             "title": "Software"
+          },
+          "derived_from": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Derived From"
           }
         },
         "type": "object",
         "required": [
-          "tomogram_id"
+          "tomogram_id",
+          "reconstruction_alignment_id"
         ],
         "title": "RawTomogramOut"
+      },
+      "ReconstructionAlignmentOut": {
+        "properties": {
+          "reconstruction_alignment_id": {
+            "type": "string",
+            "title": "Reconstruction Alignment Id"
+          },
+          "alignment_software": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Alignment Software"
+          },
+          "alignment_method": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Alignment Method"
+          },
+          "alignment_files": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Alignment Files",
+            "default": []
+          },
+          "mtime": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mtime"
+          }
+        },
+        "type": "object",
+        "required": [
+          "reconstruction_alignment_id"
+        ],
+        "title": "ReconstructionAlignmentOut"
       },
       "SampleDetail": {
         "properties": {

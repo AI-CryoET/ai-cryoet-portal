@@ -14,17 +14,22 @@ from typing import Iterator
 
 from schema.schema import DataSource, DatasetType
 from schema.layout import (
+    ANNOTATION_FILE_EXTENSIONS,
     DATASET_TYPE_BY_DIR,
+    TOMOGRAM_FILE_EXTENSIONS,
     TOP_LEVEL_EXPERIMENTAL,
     TOP_LEVEL_MD_SIMULATION,
+    ZARR_DIR_SUFFIXES,
+    entity_id_from_path,
     infer_arm,
+    is_zarr_dir,
     sample_id_for,
 )
 
-ANNOTATION_FILE_EXTENSIONS = frozenset(
-    {".star", ".mrc", ".png", ".tiff", ".tif", ".csv", ".json"}
-)
-ZARR_DIR_SUFFIXES = (".zarr", ".ome.zarr")
+# ANNOTATION_FILE_EXTENSIONS / TOMOGRAM_FILE_EXTENSIONS / ZARR_DIR_SUFFIXES /
+# entity_id_from_path / is_zarr_dir all come from schema.layout — the single
+# source of truth shared with the validate CLI. Re-exported here because the
+# scanner and its tests have always imported them from discovery.
 REPRESENTATIVE_FRAME_SUFFIXES = frozenset({".eer", ".tiff", ".tif"})
 
 
@@ -52,8 +57,7 @@ class AcquisitionLocation:
     acquisition_toml: Path | None
     frames_dir: Path | None
     tilt_series_dir: Path | None
-    tomograms_dir: Path | None
-    annotations_dir: Path | None
+    reconstructions_dir: Path | None
 
 
 @dataclass(frozen=True)
@@ -62,6 +66,8 @@ class TomogramLocation:
     tomogram_id: str
     mrc_files: tuple[Path, ...]
     zarr_dirs: tuple[Path, ...]
+    # Enclosing Reconstructions/{reconstruction_alignment_id}/ folder name.
+    reconstruction_alignment_id: str
 
 
 @dataclass(frozen=True)
@@ -69,6 +75,7 @@ class AnnotationLocation:
     path: Path
     annotation_id: str
     files: tuple[Path, ...]
+    reconstruction_alignment_id: str
 
 
 @dataclass(frozen=True)
@@ -82,9 +89,15 @@ class TiltSeriesLocation:
     alignment_files: tuple[Path, ...]
 
 
-def _is_zarr_dir(path: Path) -> bool:
-    name = path.name
-    return any(name.endswith(suffix) for suffix in ZARR_DIR_SUFFIXES)
+@dataclass(frozen=True)
+class ReconstructionAlignmentLocation:
+    path: Path
+    reconstruction_alignment_id: str
+    reconstruction_toml: Path | None
+    tomograms_dir: Path | None
+    annotations_dir: Path | None
+    alignment_dir: Path | None
+    alignment_files: tuple[Path, ...]
 
 
 def dir_size_bytes(path: Path) -> int:
@@ -277,19 +290,10 @@ def iter_acquisitions(sample: SampleLocation) -> Iterator[AcquisitionLocation]:
             continue
 
         tilt_series = child / "TiltSeries"
-        # Probe both layouts for the tomograms dir; v1 uses the same field
-        # name for cryoet ("Reconstructions/Tomograms") and simulation
-        # ("SyntheticCryoET").
-        recon_tomos = child / "Reconstructions" / "Tomograms"
-        synth_tomos = child / "SyntheticCryoET"
-        if recon_tomos.is_dir():
-            tomograms_dir: Path | None = recon_tomos
-        elif synth_tomos.is_dir():
-            tomograms_dir = synth_tomos
-        else:
-            tomograms_dir = None
-
-        annotations = child / "Reconstructions" / "Annotations"
+        # Both arms share one layout: Reconstructions/{group}/{Tomograms,
+        # Annotations,Alignment}/. iter_tomograms / iter_annotations /
+        # iter_reconstruction_alignments walk it.
+        reconstructions = child / "Reconstructions"
 
         yield AcquisitionLocation(
             path=child,
@@ -298,55 +302,144 @@ def iter_acquisitions(sample: SampleLocation) -> Iterator[AcquisitionLocation]:
             acquisition_toml=acq_toml if has_toml else None,
             frames_dir=frames if has_frames else None,
             tilt_series_dir=tilt_series if tilt_series.is_dir() else None,
-            tomograms_dir=tomograms_dir,
-            annotations_dir=annotations if annotations.is_dir() else None,
+            reconstructions_dir=reconstructions if reconstructions.is_dir() else None,
         )
+
+
+def _reconstruction_leaf_dirs(
+    acq: AcquisitionLocation, leaf: str
+) -> Iterator[tuple[Path, str]]:
+    """Yield ``(dir, reconstruction_alignment_id)`` for each Reconstructions
+    ``leaf`` folder.
+
+    ``leaf`` is ``"Tomograms"`` or ``"Annotations"``. Both arms share the same
+    nesting: ``Reconstructions/{reconstruction_alignment_id}/{leaf}/`` — one per
+    3D-alignment group folder, which does NOT have to match any
+    ``tilt_series_id``.
+    """
+    recon = acq.reconstructions_dir
+    if recon is None or not recon.is_dir():
+        return
+    for group_dir in sorted(recon.iterdir()):
+        if not group_dir.is_dir():
+            continue
+        leaf_dir = group_dir / leaf
+        if leaf_dir.is_dir():
+            yield leaf_dir, group_dir.name
 
 
 def iter_tomograms(acq: AcquisitionLocation) -> Iterator[TomogramLocation]:
-    """Yield TomogramLocation for each direct child of ``acq.tomograms_dir``."""
-    if acq.tomograms_dir is None or not acq.tomograms_dir.is_dir():
-        return
-    for child in sorted(acq.tomograms_dir.iterdir()):
-        if not child.is_dir():
-            continue
-        mrc_files: list[Path] = []
-        zarr_dirs: list[Path] = []
-        for entry in sorted(child.iterdir()):
-            if entry.is_file() and entry.suffix == ".mrc":
-                mrc_files.append(entry)
-            elif entry.is_dir() and _is_zarr_dir(entry):
-                zarr_dirs.append(entry)
-        yield TomogramLocation(
-            path=child,
-            tomogram_id=child.name,
-            mrc_files=tuple(mrc_files),
-            zarr_dirs=tuple(zarr_dirs),
-        )
+    """Yield one TomogramLocation per file-stem under the Tomograms folder(s).
+
+    Tomograms are files (not folders): each entity's ``id`` is the filename
+    stem, so a ``foo.mrc`` and its matching ``foo.ome.zarr`` collapse to one
+    tomogram. Only ``.mrc`` / ``.zarr`` / ``.ome.zarr`` entries are grouped;
+    stray files (``.gitkeep``, etc.) are ignored.
+    """
+    for leaf_dir, group_id in _reconstruction_leaf_dirs(acq, "Tomograms"):
+        mrc_by_stem: dict[str, list[Path]] = {}
+        zarr_by_stem: dict[str, list[Path]] = {}
+        for entry in sorted(leaf_dir.iterdir()):
+            if entry.is_file() and entry.suffix.lower() in TOMOGRAM_FILE_EXTENSIONS:
+                mrc_by_stem.setdefault(entity_id_from_path(entry), []).append(entry)
+            elif entry.is_dir() and is_zarr_dir(entry):
+                zarr_by_stem.setdefault(entity_id_from_path(entry), []).append(entry)
+        for stem in sorted(mrc_by_stem.keys() | zarr_by_stem.keys()):
+            yield TomogramLocation(
+                path=leaf_dir,
+                tomogram_id=stem,
+                mrc_files=tuple(mrc_by_stem.get(stem, ())),
+                zarr_dirs=tuple(zarr_by_stem.get(stem, ())),
+                reconstruction_alignment_id=group_id,
+            )
 
 
 def iter_annotations(acq: AcquisitionLocation) -> Iterator[AnnotationLocation]:
-    """Yield AnnotationLocation for each direct child of ``acq.annotations_dir``.
+    """Yield one AnnotationLocation per annotation under the Annotations folder(s).
 
-    Filters discovered file children by extension allowlist; treats ``.zarr`` /
-    ``.ome.zarr`` directories as a single entry (not recursed).
+    An annotation is either a plain subfolder (``Annotations/{id}/`` — id is the
+    folder name, ``files`` are the allowlisted files inside it, recursively) or a
+    bare file / ``.zarr`` store whose id is the stem (differently-suffixed files
+    sharing a stem, ``ann.json`` + ``ann.mrc``, collapse to one). Folders are
+    yielded before bare stems; both are sorted. A ``.zarr`` dir is a store, not a
+    container, so it is a single-file annotation, not a folder.
     """
-    if acq.annotations_dir is None or not acq.annotations_dir.is_dir():
+    for leaf_dir, group_id in _reconstruction_leaf_dirs(acq, "Annotations"):
+        folders: list[Path] = []
+        by_stem: dict[str, list[Path]] = {}
+        for entry in leaf_dir.iterdir():
+            if entry.is_dir() and not is_zarr_dir(entry):
+                folders.append(entry)
+            elif entry.is_file() and entry.suffix.lower() in ANNOTATION_FILE_EXTENSIONS:
+                by_stem.setdefault(entity_id_from_path(entry), []).append(entry)
+            elif entry.is_dir() and is_zarr_dir(entry):
+                by_stem.setdefault(entity_id_from_path(entry), []).append(entry)
+        for folder in sorted(folders, key=lambda p: p.name):
+            files = tuple(
+                sorted(
+                    (
+                        p
+                        for p in folder.rglob("*")
+                        if p.is_file() and p.suffix.lower() in ANNOTATION_FILE_EXTENSIONS
+                    ),
+                    key=lambda p: str(p),
+                )
+            )
+            yield AnnotationLocation(
+                path=folder,
+                annotation_id=folder.name,
+                files=files,
+                reconstruction_alignment_id=group_id,
+            )
+        for stem in sorted(by_stem):
+            yield AnnotationLocation(
+                path=leaf_dir,
+                annotation_id=stem,
+                files=tuple(sorted(by_stem[stem], key=lambda p: str(p))),
+                reconstruction_alignment_id=group_id,
+            )
+
+
+def iter_reconstruction_alignments(
+    acq: AcquisitionLocation,
+) -> Iterator[ReconstructionAlignmentLocation]:
+    """Yield one ReconstructionAlignmentLocation per direct child of
+    ``Reconstructions/``.
+
+    Each ``Reconstructions/{id}/`` is a researcher-authored 3D-alignment group
+    folder owning its own ``reconstruction.toml``. ``Tomograms/`` and
+    ``Annotations/`` are handled by :func:`iter_tomograms` /
+    :func:`iter_annotations`; this walker collects the group's metadata file and
+    its ``Alignment/`` artifacts (mirroring :func:`iter_tilt_series`).
+    """
+    recon = acq.reconstructions_dir
+    if recon is None or not recon.is_dir():
         return
-    for child in sorted(acq.annotations_dir.iterdir()):
+    for child in sorted(recon.iterdir()):
         if not child.is_dir():
             continue
-        kept: list[Path] = []
-        for entry in child.iterdir():
-            if entry.is_file():
-                if entry.suffix.lower() in ANNOTATION_FILE_EXTENSIONS:
-                    kept.append(entry)
-            elif entry.is_dir() and _is_zarr_dir(entry):
-                kept.append(entry)
-        yield AnnotationLocation(
+
+        recon_toml = child / "reconstruction.toml"
+        tomograms_dir = child / "Tomograms"
+        annotations_dir = child / "Annotations"
+        alignment = child / "Alignment"
+        alignment_dir = alignment if alignment.is_dir() else None
+        alignment_files: list[Path] = []
+        if alignment_dir is not None:
+            for entry in alignment_dir.iterdir():
+                if entry.is_file():
+                    alignment_files.append(entry)
+                elif entry.is_dir() and is_zarr_dir(entry):
+                    alignment_files.append(entry)
+
+        yield ReconstructionAlignmentLocation(
             path=child,
-            annotation_id=child.name,
-            files=tuple(sorted(kept, key=lambda p: str(p))),
+            reconstruction_alignment_id=child.name,
+            reconstruction_toml=recon_toml if recon_toml.is_file() else None,
+            tomograms_dir=tomograms_dir if tomograms_dir.is_dir() else None,
+            annotations_dir=annotations_dir if annotations_dir.is_dir() else None,
+            alignment_dir=alignment_dir,
+            alignment_files=tuple(sorted(alignment_files, key=lambda p: str(p))),
         )
 
 
@@ -377,9 +470,9 @@ def iter_tilt_series(acq: AcquisitionLocation) -> Iterator[TiltSeriesLocation]:
             for entry in sorted(stack_dir.iterdir()):
                 if entry.is_file() and entry.suffix == ".st":
                     st_candidates.append(entry)
-                elif entry.is_file() and entry.suffix == ".mrc":
+                elif entry.is_file() and entry.suffix.lower() in TOMOGRAM_FILE_EXTENSIONS:
                     mrc_candidates.append(entry)
-                elif entry.is_dir() and _is_zarr_dir(entry) and zarr_path is None:
+                elif entry.is_dir() and is_zarr_dir(entry) and zarr_path is None:
                     zarr_path = entry
             if st_candidates:
                 st_path = st_candidates[0]
@@ -393,7 +486,7 @@ def iter_tilt_series(acq: AcquisitionLocation) -> Iterator[TiltSeriesLocation]:
             for entry in alignment_dir.iterdir():
                 if entry.is_file():
                     alignment_files.append(entry)
-                elif entry.is_dir() and _is_zarr_dir(entry):
+                elif entry.is_dir() and is_zarr_dir(entry):
                     alignment_files.append(entry)
 
         yield TiltSeriesLocation(
@@ -434,6 +527,12 @@ def parse_targets_for_sample(sample: SampleLocation) -> list[Path]:
                 if entry.is_file() and entry.suffix.lower() in REPRESENTATIVE_FRAME_SUFFIXES:
                     targets.add(entry)
                     break
+
+        # Per-group metadata: each Reconstructions/{group}/reconstruction.toml
+        # so an edit to one re-triggers the sample's parse.
+        for group in iter_reconstruction_alignments(acq):
+            if group.reconstruction_toml is not None:
+                targets.add(group.reconstruction_toml)
 
         for tomo in iter_tomograms(acq):
             for mrc in tomo.mrc_files:

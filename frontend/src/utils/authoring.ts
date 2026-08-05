@@ -148,9 +148,12 @@ export async function parseToml(
 
 // Seed mode: pull-from-API. Load an existing record's authored fields by id.
 // Acquisition identity is composite, so a sampleId is passed through as a query
-// param (mirrors the acquisition detail route's sampleId search param). `path`
-// is the on-disk directory holding the record's TOML (null if unknown) — used
-// by the "save to file share" action to know where to write it back.
+// param (mirrors the acquisition detail route's sampleId search param).
+// Reconstruction identity is a triple (sampleId, acquisitionId, group id) — the
+// group folder name is unique only within its acquisition.
+//
+// `path` is the on-disk directory holding the record's TOML (null if unknown) —
+// used by the "save to file share" action to know where to write it back.
 //
 // `source` records where the seed came from: 'disk' means the backend read the
 // live on-disk file (fields are fresh and `baseline` is its raw text, used for
@@ -160,13 +163,17 @@ export async function loadToml(
   form: FormKind,
   id: string,
   sampleId?: string,
+  acquisitionId?: string,
 ): Promise<{
   fields: Record<string, unknown>
   path: string | null
   source: 'disk' | 'catalog'
   baseline: string | null
 }> {
-  const qs = sampleId ? `?sample_id=${encodeURIComponent(sampleId)}` : ''
+  const params = new URLSearchParams()
+  if (sampleId) params.set('sample_id', sampleId)
+  if (acquisitionId) params.set('acquisition_id', acquisitionId)
+  const qs = params.toString() ? `?${params.toString()}` : ''
   const res = await fetch(
     `/api/toml/${form}/load/${encodeURIComponent(id)}${qs}`,
   )
@@ -362,6 +369,36 @@ export function buildSectionedPayload(
 // md_source.md_run_id suggestions: the sample's known runs (free text still ok).
 export async function fetchMdRunIds(sampleId: string): Promise<string[]> {
   const res = await fetch(`/api/toml/md-run-ids/${encodeURIComponent(sampleId)}`)
+  if (!res.ok) return []
+  const ids = ((await res.json()) as { ids?: string[] }).ids
+  return Array.isArray(ids) ? ids : []
+}
+
+// raw_tomogram.derived_from suggestions: tilt-series ids in the reconstruction's
+// acquisition (they live in a different form's acquisition.toml, so the in-form
+// cross-ref pooling can't supply them).
+export async function fetchTiltSeriesIds(
+  sampleId: string,
+  acquisitionId: string,
+): Promise<string[]> {
+  const res = await fetch(
+    `/api/toml/tilt-series-ids/${encodeURIComponent(sampleId)}/${encodeURIComponent(acquisitionId)}`,
+  )
+  if (!res.ok) return []
+  const ids = ((await res.json()) as { ids?: string[] }).ids
+  return Array.isArray(ids) ? ids : []
+}
+
+// Group-selector options: the Reconstructions/<group>/ folder names in one
+// acquisition. The author route carries no sample context of its own, so it
+// can't read the acquisition detail payload the acquisition page uses.
+export async function fetchReconstructionGroupIds(
+  sampleId: string,
+  acquisitionId: string,
+): Promise<string[]> {
+  const res = await fetch(
+    `/api/toml/reconstruction-group-ids/${encodeURIComponent(sampleId)}/${encodeURIComponent(acquisitionId)}`,
+  )
   if (!res.ok) return []
   const ids = ((await res.json()) as { ids?: string[] }).ids
   return Array.isArray(ids) ? ids : []

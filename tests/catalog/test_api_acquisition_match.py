@@ -10,7 +10,7 @@ Fixture case shape (language-neutral JSON — comments live here, not in the fil
               resolution, phase_plate, …) map to AcquisitionORM columns.
               Nested keys map to per-acquisition child rows:
                 tilt_series                list[ {is_aligned, zarr_path, …} ]
-                raw_tomogram               {tomogram_id, zarr_path, …} | null
+                raw_tomograms              list[ {tomogram_id, zarr_path, …} ]
                 post_processed_tomograms   list[ {tomogram_id, zarr_path, …} ]
                 annotations                list[ {annotation_id, type, …} ]
     filters   dict of registry param -> value(s) exactly as the URL would carry
@@ -44,7 +44,7 @@ _SAMPLE_ID = "sample_x"
 _ACQ_ID = "acq1"
 
 # AcquisitionOut nested children -> not AcquisitionORM scalar columns.
-_NESTED = {"tilt_series", "raw_tomogram", "post_processed_tomograms", "annotations"}
+_NESTED = {"tilt_series", "raw_tomograms", "post_processed_tomograms", "annotations"}
 
 
 @pytest.fixture
@@ -95,14 +95,15 @@ def make_client(tmp_path):
                     )
                 )
 
-            raw = acq.get("raw_tomogram")
-            if raw:
+            for i, raw in enumerate(acq.get("raw_tomograms") or []):
                 s.add(
                     orm.RawTomogramORM(
                         sample_id=_SAMPLE_ID,
                         acquisition_id=_ACQ_ID,
-                        tomogram_id=raw.get("tomogram_id", "r0"),
-                        derived_from=[],
+                        reconstruction_alignment_id=raw.get(
+                            "reconstruction_alignment_id", "align1"
+                        ),
+                        tomogram_id=raw.get("tomogram_id", f"r{i}"),
                         zarr_path=raw.get("zarr_path"),
                     )
                 )
@@ -112,6 +113,9 @@ def make_client(tmp_path):
                     orm.PostProcessedTomogramORM(
                         sample_id=_SAMPLE_ID,
                         acquisition_id=_ACQ_ID,
+                        reconstruction_alignment_id=p.get(
+                            "reconstruction_alignment_id", "align1"
+                        ),
                         tomogram_id=p.get("tomogram_id", f"p{i}"),
                         derived_from=[],
                         zarr_path=p.get("zarr_path"),
@@ -123,6 +127,9 @@ def make_client(tmp_path):
                     orm.AnnotationORM(
                         sample_id=_SAMPLE_ID,
                         acquisition_id=_ACQ_ID,
+                        reconstruction_alignment_id=ann.get(
+                            "reconstruction_alignment_id", "align1"
+                        ),
                         annotation_id=ann.get("annotation_id", f"a{i}"),
                         type=ann.get("type"),
                         files=[],

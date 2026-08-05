@@ -4,30 +4,46 @@ import { CustomLink } from '~/components/CustomLink'
 import { AuthoringForm } from '~/components/authoring/AuthoringForm'
 import type { FormKind } from '~/utils/formFields'
 
-const TABS: { value: FormKind; label: string; blurb: string }[] = [
-  {
-    value: 'sample',
+// Keyed by FormKind so a new form kind fails to compile until it has a tab —
+// a hand-written union in isTab silently sent ?tab=<new kind> to the default.
+// Insertion order is the tab order.
+const TAB_META: Record<FormKind, { label: string; blurb: string }> = {
+  sample: {
     label: 'Sample',
     blurb: "Fill the sample's fields and download a clean value-only file.",
   },
-  {
-    value: 'acquisition',
+  acquisition: {
     label: 'Acquisition',
     blurb: "Fill the acquisition's fields and download a clean value-only file.",
   },
-  {
-    value: 'md_run',
+  reconstruction: {
+    label: 'Reconstruction',
+    blurb:
+      "Fill one alignment group's fields and download a clean value-only file.",
+  },
+  md_run: {
     label: 'MD run',
     blurb: "Fill the run's fields and download a clean value-only file.",
   },
-]
+}
+
+const TABS = (Object.keys(TAB_META) as FormKind[]).map((value) => ({
+  value,
+  ...TAB_META[value],
+}))
 
 // tab is optional so a bare `to="/manage/author"` link needs no search prop; the
-// validator + component both default it to 'sample'.
-type AuthorSearch = { tab?: FormKind; id?: string; sampleId?: string }
+// validator + component both default it to 'sample'. acquisitionId is the third
+// part of the reconstruction form's identity.
+type AuthorSearch = {
+  tab?: FormKind
+  id?: string
+  sampleId?: string
+  acquisitionId?: string
+}
 
 function isTab(v: unknown): v is FormKind {
-  return v === 'sample' || v === 'acquisition' || v === 'md_run'
+  return typeof v === 'string' && Object.hasOwn(TAB_META, v)
 }
 
 export const Route = createFileRoute('/manage/author')({
@@ -41,12 +57,16 @@ export const Route = createFileRoute('/manage/author')({
       typeof search.sampleId === 'string' && search.sampleId
         ? search.sampleId
         : undefined,
+    acquisitionId:
+      typeof search.acquisitionId === 'string' && search.acquisitionId
+        ? search.acquisitionId
+        : undefined,
   }),
   component: AuthorRoute,
 })
 
 function AuthorRoute() {
-  const { tab, id, sampleId } = Route.useSearch()
+  const { tab, id, sampleId, acquisitionId } = Route.useSearch()
   const navigate = Route.useNavigate()
   const active = TABS.find((t) => t.value === tab) ?? TABS[0]
 
@@ -90,6 +110,7 @@ function AuthorRoute() {
         form={active.value}
         initialId={id}
         initialSampleId={sampleId}
+        initialAcquisitionId={acquisitionId}
       />
 
     </Stack>

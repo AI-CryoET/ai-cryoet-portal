@@ -151,6 +151,14 @@ def client(tmp_path, monkeypatch):
     import catalog.imaging._neuroglancer as ng_mod
     monkeypatch.setattr(ng_mod, "view_neuroglancer", lambda data, **kw: _FakeViewer())
 
+    # A bounding-box annotation: a *_neuroglancer.json overlay, no derived_from,
+    # so the launch must fall back to a tomogram in its alignment group.
+    import json as _json
+    bbox_json = data_root / "sample_a" / "acq1" / "bbox_neuroglancer.json"
+    bbox_json.write_text(_json.dumps([{"type": "annotation", "name": "bb", "annotations": []}]))
+    import catalog.imaging._neuroglancer as ng_mod
+    monkeypatch.setattr(ng_mod, "add_json_layer", lambda viewer, name, data: None)
+
     s = Session()
     try:
         s.add(orm.SampleORM(
@@ -159,9 +167,16 @@ def client(tmp_path, monkeypatch):
         s.add(orm.AcquisitionORM(sample_id="sample_a", acquisition_id="acq1"))
         for tid in ("t1", "t2", "t3", "t4"):
             s.add(orm.PostProcessedTomogramORM(
-                sample_id="sample_a", acquisition_id="acq1", tomogram_id=tid,
+                sample_id="sample_a", acquisition_id="acq1",
+                reconstruction_alignment_id="align1", tomogram_id=tid,
                 mrc_path=str(mrc_path),
+                image_size_x=8, image_size_y=8, image_size_z=4,
             ))
+        s.add(orm.AnnotationORM(
+            sample_id="sample_a", acquisition_id="acq1",
+            reconstruction_alignment_id="align1", annotation_id="bounding_boxes",
+            derived_from=None, files=[str(bbox_json)],
+        ))
         s.commit()
     finally:
         s.close()
@@ -170,7 +185,7 @@ def client(tmp_path, monkeypatch):
 
 
 def test_unknown_tomogram_404(client):
-    r = client.post("/tomograms/sample_a/acq1/nope/neuroglancer")
+    r = client.post("/tomograms/sample_a/acq1/align1/nope/neuroglancer")
     assert r.status_code == 404
 
 
@@ -192,7 +207,7 @@ def test_launch_returns_precomputed_viewer_url(client, monkeypatch):
     """
     monkeypatch.setenv("MRCNG_BASE_URL", "http://mrc-server:9000/data")
     monkeypatch.setenv("NEUROGLANCER_VIEWER_URL", "https://viewer.example/ng")
-    r = client.post("/tomograms/sample_a/acq1/t1/neuroglancer")
+    r = client.post("/tomograms/sample_a/acq1/align1/t1/neuroglancer")
     assert r.status_code == 200, r.text
     url = r.json()["url"]
     assert url.startswith("https://viewer.example/ng#!")
@@ -207,7 +222,7 @@ def test_launch_returns_precomputed_viewer_url(client, monkeypatch):
 def test_launch_500_without_mrcng_base_url(client, monkeypatch):
     """A missing MRCNG_BASE_URL is a config error, surfaced as 500 (not a bad URL)."""
     monkeypatch.delenv("MRCNG_BASE_URL", raising=False)
-    r = client.post("/tomograms/sample_a/acq1/t1/neuroglancer")
+    r = client.post("/tomograms/sample_a/acq1/align1/t1/neuroglancer")
     assert r.status_code == 500
 
 
@@ -239,6 +254,17 @@ def test_build_precomputed_viewer_url_bakes_mirror_and_contrast():
     assert m[1][1] == -1.0 and m[1][3] == 99.0   # flip y, extent ny-1
     assert m[2] == [0.0, 0.0, 1.0, 0.0]          # z identity
     assert layer["shaderControls"]["normalized"]["range"] == [12.0, 88.0]
+
+
+def test_bbox_annotation_falls_back_to_group_tomogram(client):
+    """A bbox annotation with no derived_from launches over a group tomogram.
+
+    Regression: the route used a stale ``target_tomogram`` attribute (500), and
+    even renamed it would 422 since scanned annotations rarely set derived_from.
+    """
+    r = client.post("/annotations/sample_a/acq1/align1/bounding_boxes/neuroglancer")
+    assert r.status_code == 200, r.text
+    assert r.json()["url"].startswith("http://fake-host")
 
 
 def test_lru_evicts_oldest_at_capacity(client):
@@ -479,7 +505,7 @@ def test_concurrent_launches_dont_crash(client):
     from collections import OrderedDict
     client.app.state.active_viewers = OrderedDict()
 
-    keys = [("tomogram", "sample_a", "acq1", f"t{i}") for i in range(5)]
+    keys = [("tomogram", "sample_a", "acq1", "align1", f"t{i}") for i in range(5)]
 
     async def driver():
         # Build the lock inside the same event loop that will await it.

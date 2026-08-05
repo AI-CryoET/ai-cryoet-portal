@@ -79,7 +79,7 @@ def test_ts_python_parity():
 
 
 def test_project_requires_data_source_parity():
-    """The synapse ⇒ experimental gating constant (ADR-0003) stays mirrored."""
+    """The synapse ⇒ experimental gating constant stays mirrored."""
     text = TS_PATH.read_text()
     block = re.search(
         r"PROJECT_REQUIRES_DATA_SOURCE\b.*?=\s*\{(.*?)\}", text, re.DOTALL

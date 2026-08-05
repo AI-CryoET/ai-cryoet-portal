@@ -78,18 +78,32 @@ _SKELETON_DIRS = {
         "acquisition_id/Gains",
         "acquisition_id/TiltSeries/tilt_series_id/stack",
         "acquisition_id/TiltSeries/tilt_series_id/alignment",
-        "acquisition_id/Reconstructions/Tomograms/tomogram_id",
-        "acquisition_id/Reconstructions/Annotations/annotation_id",
+        "acquisition_id/Reconstructions/reconstruction_alignment_id/Tomograms",
+        "acquisition_id/Reconstructions/reconstruction_alignment_id/Annotations",
+        "acquisition_id/Reconstructions/reconstruction_alignment_id/Alignment",
     },
     "sample_id_simulation": {
         "MdRuns/md_run_id/Trajectories",
         "MdRuns/md_run_id/Snapshots",
         "SyntheticCryoET/acquisition_id/TiltSeries/tilt_series_id/stack",
         "SyntheticCryoET/acquisition_id/TiltSeries/tilt_series_id/alignment",
-        "SyntheticCryoET/acquisition_id/Reconstructions/Tomograms/tomogram_id",
-        "SyntheticCryoET/acquisition_id/Reconstructions/Annotations/annotation_id",
+        "SyntheticCryoET/acquisition_id/Reconstructions/reconstruction_alignment_id/Tomograms",
+        "SyntheticCryoET/acquisition_id/Reconstructions/reconstruction_alignment_id/Annotations",
+        "SyntheticCryoET/acquisition_id/Reconstructions/reconstruction_alignment_id/Alignment",
     },
 }
+
+
+def test_every_canonical_template_is_registered():
+    """Every canonical templates/*.toml must appear as a source in
+    TEMPLATE_PAIRS, or it silently gets no starter-sync / drift coverage."""
+    canonical = set((_REPO_ROOT / "templates").glob("*.toml"))
+    registered = {source for source, _copy in TEMPLATE_PAIRS}
+    missing = canonical - registered
+    assert not missing, (
+        "templates/*.toml not registered in TEMPLATE_PAIRS (no starter-sync "
+        "coverage): " + ", ".join(sorted(p.name for p in missing))
+    )
 
 
 def test_starter_skeletons_match_documented_layout():
