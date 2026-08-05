@@ -232,41 +232,12 @@ function AcquisitionDetailRoute() {
         // Edit link carries the composite identity so the form auto-loads the
         // right acquisition (acquisition_id alone isn't unique).
         editLink={
-          <Stack direction="row" spacing={2}>
-            <CustomLink
-              to="/manage/author"
-              search={{ tab: 'acquisition', id: acquisitionId, sampleId }}
-              variant="body2"
-              fontWeight={700}
-            >
-              Create updated acquisition.toml
-            </CustomLink>
-            {/* One reconstruction.toml per alignment group. The link opens the
-                first group — named in the label, so it's clear one was chosen
-                — and the form's Group selector switches between them; N
-                identically-labelled links here would be noise. */}
-            {acquisition.reconstruction_alignment.length > 0 && (
-              <CustomLink
-                to="/manage/author"
-                search={{
-                  tab: 'reconstruction',
-                  id: acquisition.reconstruction_alignment[0]
-                    .reconstruction_alignment_id,
-                  sampleId,
-                  acquisitionId,
-                }}
-                variant="body2"
-                fontWeight={700}
-              >
-                Create updated reconstruction.toml (
-                {
-                  acquisition.reconstruction_alignment[0]
-                    .reconstruction_alignment_id
-                }
-                )
-              </CustomLink>
-            )}
-          </Stack>
+          <CustomLink
+            to="/manage/author"
+            search={{ tab: 'acquisition', id: acquisitionId, sampleId }}
+          >
+            Edit acquisition.toml
+          </CustomLink>
         }
       />
 

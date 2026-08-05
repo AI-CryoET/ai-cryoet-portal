@@ -10,9 +10,28 @@ import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import type { AcquisitionOut } from '~/types'
-import { TomogramsAnnotationsTable } from '../TomogramsAnnotationsTable'
 
 vi.mock('../../../utils/api', () => ({ apiFetch: vi.fn() }))
+
+// The per-group "Edit reconstruction.toml" link needs a router context; render
+// it as a plain anchor exposing its target so we can assert without one.
+vi.mock('~/components/CustomLink', () => ({
+  CustomLink: ({
+    children,
+    to,
+    search,
+  }: {
+    children: React.ReactNode
+    to?: string
+    search?: Record<string, unknown>
+  }) => (
+    <a href="#" data-to={to} data-search={JSON.stringify(search)}>
+      {children}
+    </a>
+  ),
+}))
+
+import { TomogramsAnnotationsTable } from '../TomogramsAnnotationsTable'
 
 // Two alignment groups, one tomogram and one annotation each.
 const acquisition: AcquisitionOut = {

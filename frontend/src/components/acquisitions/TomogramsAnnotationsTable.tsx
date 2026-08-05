@@ -27,6 +27,7 @@ import type {
 } from '~/types'
 import { PreviewThumbnail, annotationPreviewUrl, tomogramPreviewUrl } from '~/components/common/Thumbnail'
 import { NeuroglancerButton } from '~/components/common/NeuroglancerButton'
+import { CustomLink } from '~/components/CustomLink'
 
 
 // Discriminated row so raw vs. post-processed tomograms share one table while
@@ -495,6 +496,18 @@ export function TomogramsAnnotationsTable(props: {
                 </Box>
                 <Collapse in={open}>
                   <Stack spacing={2} sx={{ mt: 2 }}>
+                    <CustomLink
+                      to="/manage/author"
+                      search={{
+                        tab: 'reconstruction',
+                        id: groupId,
+                        sampleId,
+                        acquisitionId,
+                      }}
+                      variant="body2"
+                    >
+                      Edit reconstruction.toml
+                    </CustomLink>
                     <Stack spacing={0.75}>
                       <Typography variant="subtitle2">Tomograms</Typography>
                       <TomogramsTable
