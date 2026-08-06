@@ -568,7 +568,7 @@ def _load_reconstruction(
     sample_id: str | None,
     acquisition_id: str | None,
     session: Session,
-) -> dict:
+) -> tuple[dict, str | None]:
     """Reconstruct one alignment group's authored fields, shaped like a parsed
     reconstruction.toml.
 
@@ -576,6 +576,11 @@ def _load_reconstruction(
     group folder name is unique only within its acquisition, so all three are
     required. Tomograms and annotations are filtered by group — their ids are
     file stems and may repeat across groups.
+
+    The alignment group has no path column of its own, so the on-disk directory
+    is derived from the parent acquisition (mirrors ``_load_md_run``):
+    ``{acq.path}/Reconstructions/{group}``. Null if the acquisition path is
+    unset — the loader then falls back to the catalog source.
     """
     if not sample_id or not acquisition_id:
         raise HTTPException(
@@ -591,6 +596,8 @@ def _load_reconstruction(
             f"no reconstruction group {group_id!r} in "
             f"{sample_id!r}/{acquisition_id!r}",
         )
+    acq = session.get(orm.AcquisitionORM, (sample_id, acquisition_id))
+    path = f"{acq.path}/Reconstructions/{group_id}" if acq and acq.path else None
     fields: dict = {
         "reconstruction_alignment": _row_fields(
             ra, _authored_fields("reconstruction", "reconstruction_alignment")
@@ -616,7 +623,7 @@ def _load_reconstruction(
         entries = [_row_fields(r, authored) for r in rows]
         if entries:
             fields[section] = entries
-    return fields
+    return fields, path
 
 
 @router.get("/{kind}/load/{record_id}")
@@ -648,10 +655,9 @@ def load_toml(
     elif kind == "sample":
         db_fields, path = _load_sample(record_id, session)
     elif kind == "reconstruction":
-        # No path column on the alignment group, so no disk-save concurrency:
-        # always falls back to the catalog source below.
-        db_fields = _load_reconstruction(record_id, sample_id, acquisition_id, session)
-        path = None
+        db_fields, path = _load_reconstruction(
+            record_id, sample_id, acquisition_id, session
+        )
     else:
         raise HTTPException(404, f"load not supported for toml kind {kind!r}")
 

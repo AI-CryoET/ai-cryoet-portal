@@ -845,6 +845,36 @@ def test_reconstruction_load_is_scoped_to_the_group(seeded_client):
     assert len(fields["raw_tomogram"]) == 1
 
 
+def test_reconstruction_load_returns_directory_path(seeded_client):
+    # The alignment group has no path column: the directory is derived from the
+    # parent acquisition's path + the Reconstructions/{group} convention. A
+    # non-null path is what enables the "Save to file share" button.
+    from sqlalchemy.orm import sessionmaker
+
+    Session = sessionmaker(
+        bind=seeded_client.app.state.engine, future=True, expire_on_commit=False
+    )
+    s = Session()
+    try:
+        s.add(
+            orm.ReconstructionAlignmentORM(
+                sample_id="samp1",
+                acquisition_id="Position_1",
+                reconstruction_alignment_id="grp_a",
+                alignment_software="IMOD 4.12",
+            )
+        )
+        s.commit()
+    finally:
+        s.close()
+
+    resp = seeded_client.get(
+        "/toml/reconstruction/load/grp_a?sample_id=samp1&acquisition_id=Position_1"
+    )
+    assert resp.status_code == 200
+    assert resp.json()["path"] == "/data/samp1/Position_1/Reconstructions/grp_a"
+
+
 def test_reconstruction_load_requires_acquisition_id(seeded_client):
     resp = seeded_client.get("/toml/reconstruction/load/grp_a?sample_id=samp1")
     assert resp.status_code == 422
