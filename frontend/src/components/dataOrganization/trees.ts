@@ -82,7 +82,24 @@ export const experimentalTree: FileNode[] = [
                     children: [
                       { name: 'reconstruction.toml', kind: 'file', comment: '3D alignment params + processing log for this group' },
                       { name: 'Tomograms', kind: 'dir', children: [{ name: '{tomogram_id}.mrc', kind: 'file', comment: 'id = file name without extension' }, { name: '{tomogram_id}.zarr', kind: 'file' }] },
-                      { name: 'Annotations', kind: 'dir', children: [{ name: '{annotation_id}.star', kind: 'file', comment: 'id = file name without extension' }, { name: '{annotation_id}.mrc / .zarr', kind: 'file' }] },
+                      {
+                        name: 'Annotations',
+                        kind: 'dir',
+                        comment: 'each annotation = a folder OR bare files sharing the {annotation_id} stem (mix allowed)',
+                        children: [
+                          {
+                            name: '{annotation_id}',
+                            kind: 'dir',
+                            comment: 'folder form: folder name = id; holds any number of affiliated files',
+                            children: [
+                              { name: '{annotation_id}.star', kind: 'file' },
+                              { name: '{annotation_id}_aunps.png', kind: 'file' },
+                            ],
+                          },
+                          { name: '{annotation_id}.star', kind: 'file', comment: 'bare-file form: stem = id; any number of files, one per extension' },
+                          { name: '{annotation_id}.mrc / .zarr', kind: 'file' },
+                        ],
+                      },
                       { name: 'Alignment', kind: 'dir', comment: '3D alignment metadata for this group; MAY be empty', children: [{ name: 'alignment.json', kind: 'file' }] },
                     ],
                   },
@@ -153,7 +170,24 @@ export const simulationTree: FileNode[] = [
                         children: [
                       { name: 'reconstruction.toml', kind: 'file', comment: '3D alignment params + processing log for this group' },
                       { name: 'Tomograms', kind: 'dir', children: [{ name: '{tomogram_id}.mrc', kind: 'file', comment: 'id = file name without extension' }, { name: '{tomogram_id}.zarr', kind: 'file' }] },
-                      { name: 'Annotations', kind: 'dir', children: [{ name: '{annotation_id}.star', kind: 'file', comment: 'id = file name without extension' }, { name: '{annotation_id}.mrc / .zarr', kind: 'file' }] },
+                      {
+                        name: 'Annotations',
+                        kind: 'dir',
+                        comment: 'each annotation = a folder OR bare files sharing the {annotation_id} stem (mix allowed)',
+                        children: [
+                          {
+                            name: '{annotation_id}',
+                            kind: 'dir',
+                            comment: 'folder form: folder name = id; holds any number of affiliated files',
+                            children: [
+                              { name: '{annotation_id}.star', kind: 'file' },
+                              { name: '{annotation_id}_aunps.png', kind: 'file' },
+                            ],
+                          },
+                          { name: '{annotation_id}.star', kind: 'file', comment: 'bare-file form: stem = id; any number of files, one per extension' },
+                          { name: '{annotation_id}.mrc / .zarr', kind: 'file' },
+                        ],
+                      },
                       { name: 'Alignment', kind: 'dir', comment: '3D alignment metadata for this group; MAY be empty', children: [{ name: 'alignment.json', kind: 'file' }] },
                         ],
                       },
