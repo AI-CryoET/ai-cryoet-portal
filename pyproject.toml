@@ -33,8 +33,7 @@ testpaths = ["tests"]
 # ---------------------------------------------------------------------------
 # Pixi configuration. Runtime deps for the schema/validator are duplicated
 # from [project] so pixi can resolve them from conda-forge.
-# tests/test_deps_in_sync.py enforces alignment for the schema + test deps;
-# the catalog/api features are pixi-only because researchers don't need them.
+# The catalog/api features are pixi-only because researchers don't need them.
 # ---------------------------------------------------------------------------
 
 [tool.pixi.workspace]
@@ -89,14 +88,8 @@ tifffile = ">=2024.1"
 [tool.pixi.feature.catalog.pypi-dependencies]
 eerfile = "*"
 # Provides the `mrc-pyramid` CLI the scanner runs to precompute the Neuroglancer
-# pyramid cache (see catalog/cli.py `_run_precompute`). REQUIRES a mrc-ng-server
-# version that has `mrc-pyramid build --from-file` — the scanner feeds it the
-# catalog's tomogram list. Pin to a release tag that includes that option before
-# deploying; `main` here is a moving target and, until the --from-file change
-# lands there, a real precompute run degrades gracefully (logs a warning, no
-# cache built). Requires `pixi lock` (with network access to the repo) to record
-# it in pixi.lock before an image build, since Dockerfile.scanner installs `--locked`.
-mrc-ng-server = { git = "https://github.com/JaneliaSciComp/mrc-ng-server.git", branch = "main" }
+# pyramid cache (see catalog/cli.py `_run_precompute`).
+mrc-ng-server = { git = "https://github.com/JaneliaSciComp/mrc-ng-server.git", tag = "v0.1.4" }
 
 [tool.pixi.feature.catalog.tasks]
 migrate = "alembic -c src/catalog/migrations/alembic.ini upgrade head"
@@ -106,16 +99,8 @@ migrate-revision = "alembic -c src/catalog/migrations/alembic.ini revision --aut
 fastapi = ">=0.110"
 tomli-w = ">=1.0"
 uvicorn = "*"
-loguru = ">=0.7"
-numpy = ">=1.26"
-matplotlib-base = ">=3.8"
 pillow = ">=10"
 neuroglancer = ">=2.40"
-zarr = ">=2.16"
-tifffile = ">=2024.1"
-
-[tool.pixi.feature.api.pypi-dependencies]
-eerfile = "*"
 
 [tool.pixi.feature.api.tasks]
 api = "uvicorn catalog.api.main:app --port 8000"
@@ -135,8 +120,14 @@ gen-frontend-types = { cmd = "npm run gen:types", cwd = "frontend", depends-on =
     "frontend-install",
 ] }
 
+# Features are additive layers; environments stack them.
+#   default → schema runtime      (pydantic, rapidfuzz)
+#   test    → + pytest, playwright
+#   catalog → + DB & imaging      (sqlalchemy, mrcfile, numpy, zarr, ...)  — Dockerfile.scanner
+#   api     → + web serving       (fastapi, uvicorn, neuroglancer, ...)    — Dockerfile.api, CI
+# catalog and api are kept separate on purpose so the scanner image stays slim
+# (no fastapi/neuroglancer). Don't merge them.
 [tool.pixi.environments]
 default = { solve-group = "default" }
-test = { features = ["test"], solve-group = "default" }
 catalog = { features = ["catalog", "test"], solve-group = "default" }
 api = { features = ["catalog", "api", "test"], solve-group = "default" }
