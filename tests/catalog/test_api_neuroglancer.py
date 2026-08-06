@@ -156,8 +156,6 @@ def client(tmp_path, monkeypatch):
     import json as _json
     bbox_json = data_root / "sample_a" / "acq1" / "bbox_neuroglancer.json"
     bbox_json.write_text(_json.dumps([{"type": "annotation", "name": "bb", "annotations": []}]))
-    import catalog.imaging._neuroglancer as ng_mod
-    monkeypatch.setattr(ng_mod, "add_json_layer", lambda viewer, name, data: None)
 
     s = Session()
     try:
@@ -256,15 +254,30 @@ def test_build_precomputed_viewer_url_bakes_mirror_and_contrast():
     assert layer["shaderControls"]["normalized"]["range"] == [12.0, 88.0]
 
 
-def test_bbox_annotation_falls_back_to_group_tomogram(client):
+def test_bbox_annotation_falls_back_to_group_tomogram(client, monkeypatch):
     """A bbox annotation with no derived_from launches over a group tomogram.
 
     Regression: the route used a stale ``target_tomogram`` attribute (500), and
     even renamed it would 422 since scanned annotations rarely set derived_from.
+
+    The launch is now stateless (no in-process viewer, black-screen z-scale-0
+    bug gone): it returns a precomputed viewer URL over the group tomogram with
+    the bbox baked in as an inline annotation layer.
     """
+    monkeypatch.setenv("MRCNG_BASE_URL", "http://mrc-server:9000/data")
+    monkeypatch.setenv("NEUROGLANCER_VIEWER_URL", "https://viewer.example/ng")
     r = client.post("/annotations/sample_a/acq1/align1/bounding_boxes/neuroglancer")
     assert r.status_code == 200, r.text
-    assert r.json()["url"].startswith("http://fake-host")
+    url = r.json()["url"]
+    assert url.startswith("https://viewer.example/ng#!")
+    state = _viewer_state(url)
+    img = [layer for layer in state["layers"] if layer.get("type") != "annotation"][0]
+    src = img["source"]
+    src_url = src["url"] if isinstance(src, dict) else src[0]["url"]
+    assert src_url.startswith("precomputed://http://mrc-server:9000/data/")
+    assert src_url.endswith("/sample_a/acq1/t1.mrc")  # the group tomogram, not the annotation
+    bbox = [layer for layer in state["layers"] if layer.get("type") == "annotation"][0]
+    assert bbox["name"] == "bb"
 
 
 def test_lru_evicts_oldest_at_capacity(client):

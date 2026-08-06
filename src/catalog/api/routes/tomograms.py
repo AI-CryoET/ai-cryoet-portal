@@ -291,6 +291,7 @@ def _build_precomputed_viewer_url(
     voxel_nm_xyz: tuple[float, float, float],
     contrast: tuple[float, float] | None,
     mirror_xy: bool,
+    extra_layers: list[dict] | None = None,
 ) -> str:
     """Build a stateless Neuroglancer viewer URL over a precomputed source.
 
@@ -300,6 +301,10 @@ def _build_precomputed_viewer_url(
     them. mrc-server serves canonical x,y,z, so the mirror flips x and y with an
     ``(extent-1)`` translation — the same ``-1``-on-the-diagonal matrix the old
     ``LocalVolume`` path used, reordered to x,y,z.
+
+    ``extra_layers`` are raw Neuroglancer layer dicts (each with its own
+    ``name``) appended after the image layer — e.g. a bbox annotation layer
+    whose ``local://annotations`` geometry rides inline in the URL.
     """
     import neuroglancer as ng
 
@@ -325,8 +330,55 @@ def _build_precomputed_viewer_url(
 
     state = ng.ViewerState()
     state.layers[name] = layer
+    for extra in extra_layers or []:
+        state.layers.append(name=extra.get("name", "annotation"), layer=extra)
     state.dimensions = dims
     return ng.to_url(state, prefix=viewer_base)
+
+
+async def build_precomputed_launch_url(
+    request: Request,
+    mrc_path: str,
+    *,
+    extra_layers: list[dict] | None = None,
+) -> str:
+    """Stateless Neuroglancer viewer URL over an MRC served by mrc-ng-server.
+
+    Shared by the tomogram launch and the annotation/bbox launch: resolves the
+    mrc under the data root, points a ``precomputed://`` source at
+    ``MRCNG_BASE_URL`` (``row.mrc_path`` is the served relpath 1:1), and bakes
+    the IMOD X/Y mirror + a 1-99 contrast window into the state. ``extra_layers``
+    (e.g. a bbox annotation layer) are appended inline. No in-process viewer, so
+    the frontend opens the URL as-is — no dev-only re-rooting, no :8050 state
+    server. 422 for a missing file, 500 for unconfigured ``MRCNG_BASE_URL``.
+    """
+    resolved = validate_under_data_root(request, mrc_path)
+    if not resolved.is_file():
+        raise HTTPException(status_code=422, detail="mrc file missing on disk")
+
+    base = os.environ.get("MRCNG_BASE_URL")
+    if not base:
+        raise HTTPException(status_code=500, detail="MRCNG_BASE_URL not configured")
+    viewer_base = os.environ.get("NEUROGLANCER_VIEWER_URL", DEFAULT_NEUROGLANCER_VIEWER)
+
+    data_root = request.app.state.data_root_resolved
+    relpath = resolved.relative_to(data_root).as_posix()
+    source_url = f"precomputed://{base.rstrip('/')}/{relpath}"
+
+    mtime = resolved.stat().st_mtime
+    size_xyz, voxel_nm, contrast = await run_in_threadpool(
+        _cached_viewer_params, str(resolved), mtime
+    )
+    return _build_precomputed_viewer_url(
+        source_url=source_url,
+        name=Path(resolved).stem,
+        viewer_base=viewer_base,
+        size_xyz=size_xyz,
+        voxel_nm_xyz=voxel_nm,
+        contrast=contrast,
+        mirror_xy=True,
+        extra_layers=extra_layers,
+    )
 
 
 @router.post(
@@ -361,30 +413,5 @@ async def tomogram_neuroglancer(
     if not row.mrc_path:
         raise HTTPException(status_code=422, detail="tomogram has no mrc_path")
 
-    resolved = validate_under_data_root(request, row.mrc_path)
-    if not resolved.is_file():
-        raise HTTPException(status_code=422, detail="mrc file missing on disk")
-
-    base = os.environ.get("MRCNG_BASE_URL")
-    if not base:
-        raise HTTPException(status_code=500, detail="MRCNG_BASE_URL not configured")
-    viewer_base = os.environ.get("NEUROGLANCER_VIEWER_URL", DEFAULT_NEUROGLANCER_VIEWER)
-
-    data_root = request.app.state.data_root_resolved
-    relpath = resolved.relative_to(data_root).as_posix()
-    source_url = f"precomputed://{base.rstrip('/')}/{relpath}"
-
-    mtime = resolved.stat().st_mtime
-    size_xyz, voxel_nm, contrast = await run_in_threadpool(
-        _cached_viewer_params, str(resolved), mtime
-    )
-    url = _build_precomputed_viewer_url(
-        source_url=source_url,
-        name=Path(resolved).stem,
-        viewer_base=viewer_base,
-        size_xyz=size_xyz,
-        voxel_nm_xyz=voxel_nm,
-        contrast=contrast,
-        mirror_xy=True,
-    )
+    url = await build_precomputed_launch_url(request, row.mrc_path)
     return ViewerLaunchOut(url=url)

@@ -17,7 +17,6 @@ from __future__ import annotations
 import hashlib
 import json
 from functools import lru_cache
-from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi.concurrency import run_in_threadpool
@@ -27,7 +26,7 @@ from sqlalchemy.orm import Session
 from catalog import orm
 from catalog.api.deps import get_session
 from catalog.api.path_validation import validate_under_data_root
-from catalog.api.routes.tomograms import launch_viewer_in_registry, _lookup_tomogram
+from catalog.api.routes.tomograms import build_precomputed_launch_url, _lookup_tomogram
 from catalog.api.schemas import ViewerLaunchOut
 
 router = APIRouter()
@@ -186,12 +185,14 @@ async def annotation_neuroglancer(
     request: Request,
     session: Session = Depends(get_session),
 ):
-    """Launch a Neuroglancer viewer over the annotation's ``.mrc`` volume, or a 
-    Neuroglancer view + bounding box overlay if ``.json`` files are in the ``annotation_id``
-    dir. 
+    """Stateless Neuroglancer viewer URL for the annotation.
 
-    Mirrors the tomogram launch route — same registry, same dev-side hostname
-    rewrite on the frontend. 422 for an annotation with no ``.mrc`` artifact.
+    A bbox annotation (has a ``*_neuroglancer.json``) renders over a group
+    tomogram served by mrc-ng-server, with the bbox baked into the URL as an
+    inline ``local://annotations`` layer. A plain annotation renders its own
+    ``.mrc``. Both go through the tomogram launch's precomputed path — no
+    in-process viewer, so the frontend opens the URL as-is (see
+    ``build_precomputed_launch_url``). 422 for an annotation with no artifact.
     """
     row = _lookup_annotation(
         session,
@@ -212,63 +213,17 @@ async def annotation_neuroglancer(
         )
         if not tomogram_row.mrc_path:
             raise HTTPException(status_code=422, detail="tomogram has no mrc_path")
-        resolved_tomo_mrc = validate_under_data_root(request, tomogram_row.mrc_path)
-        if not resolved_tomo_mrc.is_file():
-            raise HTTPException(status_code=422, detail="mrc file missing on disk")
-
         resolved_json = validate_under_data_root(request, json_path)
         if not resolved_json.is_file():
             raise HTTPException(status_code=422, detail="json file missing on disk")
-
-        def launch():
-            from catalog.imaging._mrc import read_mrc_volume
-            from catalog.imaging._neuroglancer import view_neuroglancer, add_json_layer
-
-            data, voxel_size, axis_order = read_mrc_volume(str(resolved_tomo_mrc))
-            json_data = json.loads(resolved_json.read_text())[0] # always only a single bbox
-            # image_size_* is nullable; skip the initial position rather than
-            # crash on None/2 when a group tomogram has no recorded size.
-            sizes = [getattr(tomogram_row, f'image_size_{a}') for a in axis_order]
-            init_pos = tuple(s / 2 for s in sizes) if all(s is not None for s in sizes) else None
-            viewer = view_neuroglancer(
-                data,
-                name=Path(resolved_tomo_mrc).stem,
-                voxel_size=voxel_size,
-                axis_names=axis_order,
-                initial_position=init_pos,
-            )
-            add_json_layer(viewer, annotation_id, json_data)
-            return viewer
-
+        bbox_layer = json.loads(resolved_json.read_text())[0]  # always a single bbox
+        url = await build_precomputed_launch_url(
+            request, tomogram_row.mrc_path, extra_layers=[bbox_layer]
+        )
     else:
         mrc_path = _annotation_mrc_path(row.files)
         if not mrc_path:
             raise HTTPException(status_code=422, detail="annotation has no mrc_path")
-        resolved_annot_mrc = validate_under_data_root(request, mrc_path)
-        if not resolved_annot_mrc.is_file():
-            raise HTTPException(status_code=422, detail="annotation mrc file missing from disk")
+        url = await build_precomputed_launch_url(request, mrc_path)
 
-        def launch():
-            from catalog.imaging._mrc import read_mrc_volume
-            from catalog.imaging._neuroglancer import view_neuroglancer
-
-            data, voxel_size, axis_order = read_mrc_volume(str(resolved_annot_mrc))
-            return view_neuroglancer(
-                data,
-                name=Path(resolved_annot_mrc).stem,
-                voxel_size=voxel_size,
-                axis_names=axis_order,
-            )
-
-    url = await launch_viewer_in_registry(
-        request,
-        (
-            "annotation",
-            sample_id,
-            acquisition_id,
-            reconstruction_alignment_id,
-            annotation_id,
-        ),
-        launch,
-    )
     return ViewerLaunchOut(url=url)
