@@ -54,6 +54,37 @@ def _write_synthetic_mrc(path: Path) -> None:
         mrc.voxel_size = (10.0, 10.0, 10.0)
 
 
+def test_viewer_params_voxel_equals_mrc_server_advertised(tmp_path):
+    """Portal's baked ViewerState scale == mrc-server's advertised base resolution.
+
+    Both must go through ``mrcng.parse_header`` + ``/ 10`` so the coordinate
+    space in the stateless URL matches the precomputed ``info`` mrc-server serves.
+    Fails if the portal ever re-derives voxel size a different way.
+    """
+    import os as _os
+
+    from mrcng.mrcheader import parse_header
+    from mrcng.precomputed import build_info, plan_scales
+
+    from catalog.imaging._mrc import read_mrc_viewer_params
+
+    path = tmp_path / "t.mrc"
+    _write_synthetic_mrc(path)
+
+    _size, voxel_nm, _contrast = read_mrc_viewer_params(path)
+
+    st = _os.stat(path)
+    fd = _os.open(str(path), _os.O_RDONLY)
+    try:
+        hdr = parse_header(fd, st.st_size, st.st_mtime_ns)
+    finally:
+        _os.close(fd)
+    scales = plan_scales((hdr.nx, hdr.ny, hdr.nz), min_axis_size=32, max_levels=1)
+    advertised = tuple(build_info(hdr, scales, chunk_size=(64, 64, 64))["scales"][0]["resolution"])
+
+    assert voxel_nm == pytest.approx(advertised)
+
+
 def test_read_mrc_volume_returns_nm_in_array_order(tmp_path):
     """Voxel size comes back in nm (header is Angstrom), reordered to the array axes.
 

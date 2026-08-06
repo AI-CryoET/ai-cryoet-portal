@@ -85,16 +85,29 @@ def read_mrc_viewer_params(
     window the preview PNG uses. Reads a single plane, never the whole volume
     (mrc-server serves the pixels).
 
-    Voxel size mirrors mrc-server's own derivation (cella/grid, Angstrom -> nm):
-    a zero component falls back to 0.1nm so it matches the resolution baked into
-    the precomputed ``info`` and the transform's coordinate space stays finite.
+    Size and voxel size come from mrc-server's *own* header parser
+    (``mrcng.mrcheader.parse_header``) — the same call that feeds its
+    precomputed ``info`` (``build_info`` does ``voxel_size_angstrom / 10``) —
+    so the scale baked into the ViewerState is equal to the advertised
+    resolution by construction, not by a re-derivation that can drift (zero-axis
+    fallback, non-standard-grid fail-closed). A file mrc-server can't serve
+    raises ``MrcFormatError`` here too, rather than launching a broken viewer.
+    ``mrcfile`` is kept only for the 1-99 contrast percentile, which the server
+    header doesn't carry.
     """
-    with mrcfile.mmap(str(mrc_path), mode="r", permissive=True) as mrc:
-        h = mrc.header
-        size_xyz = (int(h.nx), int(h.ny), int(h.nz))
-        vx, vy, vz = (float(mrc.voxel_size.x), float(mrc.voxel_size.y), float(mrc.voxel_size.z))
-        # ponytail: 0.1nm (1 Angstrom) matches mrc-server's zero-cella default.
-        voxel_nm = tuple(v / 10.0 if v > 0 else 0.1 for v in (vx, vy, vz))
+    from mrcng.mrcheader import parse_header
+
+    p = str(mrc_path)
+    st = os.stat(p)
+    fd = os.open(p, os.O_RDONLY)
+    try:
+        hdr = parse_header(fd, st.st_size, st.st_mtime_ns)
+    finally:
+        os.close(fd)
+    size_xyz = (hdr.nx, hdr.ny, hdr.nz)
+    voxel_nm = tuple(a / 10.0 for a in hdr.voxel_size_angstrom)
+
+    with mrcfile.mmap(p, mode="r", permissive=True) as mrc:
         center = np.asarray(mrc.data[mrc.data.shape[0] // 2], dtype=np.float32)
     lo, hi = np.percentile(center, (1, 99))
     return size_xyz, voxel_nm, (float(lo), float(hi))
