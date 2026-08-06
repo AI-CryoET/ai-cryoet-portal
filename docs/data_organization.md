@@ -140,8 +140,11 @@ Experimental/
           Tomograms/
             {tomogram_id}.mrc              # id = file name without extension
             {tomogram_id}.zarr
-          Annotations/
-            {annotation_id}.star          # id = file name without extension
+          Annotations/                     # each annotation = a folder OR bare files sharing the {annotation_id} stem
+            {annotation_id}/               # folder form: name = id, holds any number of files
+              {annotation_id}.star
+              {annotation_id}_aunps.png
+            {annotation_id}.star           # bare-file form: stem = id, one file per extension
             {annotation_id}.mrc / .zarr
           Alignment/                       # 3D alignment metadata for this group; MAY be empty
             alignment.json
@@ -171,8 +174,11 @@ MdSimulation/{Bulk|SingleMolecule|Slab}/
             Tomograms/
               {tomogram_id}.mrc              # id = file name without extension
               {tomogram_id}.zarr
-            Annotations/
-              {annotation_id}.star
+            Annotations/                     # each annotation = a folder OR bare files sharing the {annotation_id} stem
+              {annotation_id}/               # folder form: name = id, holds any number of files
+                {annotation_id}.star
+                {annotation_id}_aunps.png
+              {annotation_id}.star           # bare-file form: stem = id, one file per extension
               {annotation_id}.mrc / .zarr
             Alignment/                       # 3D alignment metadata for this group; MAY be empty
               alignment.json
