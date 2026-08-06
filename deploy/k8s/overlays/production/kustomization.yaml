@@ -54,10 +54,10 @@ patches:
 # tag independently of the 1.x portal images.
 images:
   - name: ghcr.io/ai-cryoet/ai-cryoet-api
-    newTag: "2.1.0"
+    newTag: "2.1.1"
   - name: ghcr.io/ai-cryoet/ai-cryoet-frontend
-    newTag: "2.1.0"
+    newTag: "2.1.1"
   - name: ghcr.io/ai-cryoet/ai-cryoet-scanner
-    newTag: "2.1.0"
+    newTag: "2.1.1"
   - name: ghcr.io/janeliascicomp/mrc-ng-server
     newTag: "0.1.4"
