@@ -24,6 +24,6 @@ def test_committed_openapi_matches_the_app():
     committed = json.loads(_DEFAULT_OUT.read_text())
     assert committed == create_app().openapi(), (
         f"{Path(_DEFAULT_OUT).name} is stale against schemas.py / the routes. "
-        "Run `pixi run gen-frontend-types` and commit openapi.json + "
+        "Run `pixi run -e api sync` and commit openapi.json + "
         "src/types.gen.ts."
     )

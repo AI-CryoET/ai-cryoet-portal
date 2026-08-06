@@ -60,7 +60,9 @@ sync-templates = "python -m schema.sync_templates"
 template-zips = "python -m schema.build_template_zips"
 schema-docs = { cmd = "python -m schema.generate_schema_docs", default-environment = "catalog" }
 # Regenerate every artifact derived from schema.py + the canonical templates.
-sync = { depends-on = ["json-schema", "form-fields", "sync-templates", "template-zips", "schema-docs"] }
+# gen-frontend-types (openapi.json + frontend types) needs the api env, so run
+# this as `pixi run -e api sync`.
+sync = { depends-on = ["json-schema", "form-fields", "sync-templates", "template-zips", "schema-docs", "gen-frontend-types"] }
 scan = { cmd = "python -m catalog scan", default-environment = "catalog" }
 
 [tool.pixi.feature.test.dependencies]
