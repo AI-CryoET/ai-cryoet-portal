@@ -206,10 +206,14 @@ def _load_mrc_volume(mrc_path: str) -> tuple[np.ndarray, tuple[float, float, flo
     # silently corrupting every other viewer's data. Harmless no-op on the
     # mmap path, which is already opened mode="r".
     data.setflags(write=False)
-    # MRC headers store spacing in Angstrom; Neuroglancer is told nm.
-    vx = float(mrc.voxel_size.x) / 10.0
-    vy = float(mrc.voxel_size.y) / 10.0
-    vz = float(mrc.voxel_size.z) / 10.0
+    # MRC headers store spacing in Angstrom; Neuroglancer is told nm. A zero
+    # component (headers with no z-spacing are common) becomes a zero-scale
+    # dimension, which Neuroglancer rejects on state restore ("Expected positive
+    # finite floating-point number") — a black viewer. Fall back to 0.1nm, the
+    # same zero-cella default read_mrc_viewer_params + mrc-server use.
+    vx = float(mrc.voxel_size.x) / 10.0 or 0.1
+    vy = float(mrc.voxel_size.y) / 10.0 or 0.1
+    vz = float(mrc.voxel_size.z) / 10.0 or 0.1
     mapc = int(mrc.header.mapc)
     mapr = int(mrc.header.mapr)
     maps = int(mrc.header.maps)
