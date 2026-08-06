@@ -74,12 +74,13 @@ export function NeuroglancerButton(props: NeuroglancerButtonProps) {
     const launchSource = source as Extract<NeuroglancerSource, { kind: 'launch' }>
     mutation.mutate(launchSource, {
       onSuccess(data) {
-        // Tomograms return a fully-formed external viewer URL (Fileglancer-hosted
-        // Neuroglancer + a precomputed:// source served by mrc-server) — open it
-        // as-is. The re-rooting below only applies to the tilt-series / annotation
-        // launches still served by the API's own in-process Neuroglancer port.
-        // ponytail: drop this branch once those two routes go stateless too.
-        if (launchSource.entity === 'tomogram') {
+        // Tomograms and annotations return a fully-formed external viewer URL
+        // (Fileglancer-hosted Neuroglancer + a precomputed:// source served by
+        // mrc-server, with any bbox baked into the URL) — open it as-is. The
+        // re-rooting below only applies to tilt-series, still served by the
+        // API's own in-process Neuroglancer port.
+        // ponytail: drop this branch once tilt-series goes stateless too.
+        if (launchSource.entity === 'tomogram' || launchSource.entity === 'annotation') {
           w!.location.href = data.url
           return
         }
