@@ -91,6 +91,11 @@
           "title": "Voxel Size",
           "type": "number"
         },
+        "mrc_voxel_size_missing": {
+          "default": false,
+          "title": "Mrc Voxel Size Missing",
+          "type": "boolean"
+        },
         "mrc_path": {
           "title": "Mrc Path",
           "type": "string"
@@ -163,6 +168,11 @@
         "voxel_size": {
           "title": "Voxel Size",
           "type": "number"
+        },
+        "mrc_voxel_size_missing": {
+          "default": false,
+          "title": "Mrc Voxel Size Missing",
+          "type": "boolean"
         },
         "mrc_path": {
           "title": "Mrc Path",
