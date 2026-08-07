@@ -3133,6 +3133,11 @@
             ],
             "title": "Voxel Size"
           },
+          "mrc_voxel_size_missing": {
+            "type": "boolean",
+            "title": "Mrc Voxel Size Missing",
+            "default": false
+          },
           "image_size_x": {
             "anyOf": [
               {
@@ -3355,6 +3360,11 @@
               }
             ],
             "title": "Voxel Size"
+          },
+          "mrc_voxel_size_missing": {
+            "type": "boolean",
+            "title": "Mrc Voxel Size Missing",
+            "default": false
           },
           "image_size_x": {
             "anyOf": [

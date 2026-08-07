@@ -1080,6 +1080,11 @@ export interface components {
             reconstruction_alignment_id: string;
             /** Voxel Size */
             voxel_size?: number | null;
+            /**
+             * Mrc Voxel Size Missing
+             * @default false
+             */
+            mrc_voxel_size_missing: boolean;
             /** Image Size X */
             image_size_x?: number | null;
             /** Image Size Y */
@@ -1151,6 +1156,11 @@ export interface components {
             reconstruction_alignment_id: string;
             /** Voxel Size */
             voxel_size?: number | null;
+            /**
+             * Mrc Voxel Size Missing
+             * @default false
+             */
+            mrc_voxel_size_missing: boolean;
             /** Image Size X */
             image_size_x?: number | null;
             /** Image Size Y */
