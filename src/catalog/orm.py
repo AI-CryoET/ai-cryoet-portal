@@ -199,6 +199,9 @@ class MdRunORM(Base):
     computer: Mapped[str | None] = mapped_column(String, nullable=True)
     reference_contact: Mapped[str | None] = mapped_column(String, nullable=True)
     force_field_version: Mapped[str | None] = mapped_column(String, nullable=True)
+    # DB-only: relpath of the cached OVITO preview PNG under the MD-preview
+    # cache root (set by the scanner, not authored in md_run.toml).
+    preview_path: Mapped[str | None] = mapped_column(String, nullable=True)
 
     __table_args__ = (PrimaryKeyConstraint("sample_id", "md_run_id"),)
 

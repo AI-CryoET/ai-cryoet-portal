@@ -66,6 +66,7 @@ OPERATIONAL_ORM: list[type] = [
 UNDOCUMENTED_ORM_COLUMNS: dict[str, set[str]] = {
     "samples": {"deleted_at", "disk_size_bytes", "thumbnail_path"},
     "labels": {"ordinal"},
+    "md_runs": {"preview_path"},
 }
 
 CATALOG: list[CatalogEntity] = [
