@@ -1,0 +1,18 @@
+# lefthook is installed in the frontend subdirectory (see frontend/package.json)
+lefthook: cd frontend && npx lefthook
+
+pre-push:
+  # Sequential: prettier may rewrite files, and sync regenerates schema/type
+  # artifacts — running them one at a time keeps the working tree predictable.
+  parallel: false
+  jobs:
+    - name: Run Prettier check; fix if check fails
+      root: frontend/
+      run: ./prettier-check-and-fix.sh
+
+    - name: Run ESLint check
+      root: frontend/
+      run: npm run lint
+
+    - name: Sync generated artifacts (schema + frontend types)
+      run: pixi run -e api sync
