@@ -21,6 +21,14 @@ COPY pixi.lock pyproject.toml ./
 RUN pixi install --locked -e catalog
 
 FROM base AS runtime
+# OVITO is a pip wheel (PySide6/Qt6), which dynamically links system libraries
+# the pixi slim base doesn't ship. Even with QT_QPA_PLATFORM=offscreen the Qt6
+# GUI stack dlopens glib, GL/EGL, dbus and xkbcommon on import — without these
+# the render subprocess dies with "libglib-2.0.so.0: cannot open shared object
+# file". Runtime-only; the build stage resolves wheels without them.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libglib2.0-0 libgl1 libegl1 libdbus-1-3 libxkbcommon0 libfontconfig1 \
+    && rm -rf /var/lib/apt/lists/*
 COPY --from=deps /app/.pixi /app/.pixi
 # Packages live under src/ (src layout); pixi activation sets PYTHONPATH=src.
 COPY pixi.lock pyproject.toml ./
