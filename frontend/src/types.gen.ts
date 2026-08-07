@@ -390,12 +390,14 @@ export interface paths {
         put?: never;
         /**
          * Annotation Neuroglancer
-         * @description Launch a Neuroglancer viewer over the annotation's ``.mrc`` volume, or a
-         *     Neuroglancer view + bounding box overlay if ``.json`` files are in the ``annotation_id``
-         *     dir.
+         * @description Stateless Neuroglancer viewer URL for the annotation.
          *
-         *     Mirrors the tomogram launch route — same registry, same dev-side hostname
-         *     rewrite on the frontend. 422 for an annotation with no ``.mrc`` artifact.
+         *     A bbox annotation (has a ``*_neuroglancer.json``) renders over a group
+         *     tomogram served by mrc-ng-server, with the bbox baked into the URL as an
+         *     inline ``local://annotations`` layer. A plain annotation renders its own
+         *     ``.mrc``. Both go through the tomogram launch's precomputed path — no
+         *     in-process viewer, so the frontend opens the URL as-is (see
+         *     ``build_precomputed_launch_url``). 422 for an annotation with no artifact.
          */
         post: operations["annotation_neuroglancer_annotations__sample_id___acquisition_id___reconstruction_alignment_id___annotation_id__neuroglancer_post"];
         delete?: never;
