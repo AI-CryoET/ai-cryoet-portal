@@ -77,7 +77,9 @@ export default defineConfig([
       'react/prefer-stateless-function': 'error',
       'react/button-has-type': 'error',
       'react/no-unused-prop-types': 'error',
-      'react/jsx-pascal-case': 'error',
+      // material-react-table exports components with an MRT_ prefix we don't
+      // control (e.g. MRT_TablePagination) — exempt them from PascalCase.
+      'react/jsx-pascal-case': ['error', { ignore: ['MRT_*'] }],
       'react/jsx-no-script-url': 'error',
       'react/no-children-prop': 'error',
       'react/no-danger': 'error',
