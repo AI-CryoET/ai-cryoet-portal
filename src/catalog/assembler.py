@@ -711,12 +711,12 @@ def assemble_sample(sample_loc: SampleLocation) -> AssemblyResult:
                         tomo.image_size_y = mrc_result.fields.get("image_size_y")
                     if tomo.image_size_z is None:
                         tomo.image_size_z = mrc_result.fields.get("image_size_z")
+                    # voxel_size is purely header-derived — it is not authored in
+                    # any TOML (see refactor 1f3d5ee).
                     header_voxel = mrc_result.fields.get("voxel_spacing_angstrom")
-                    if tomo.voxel_size is None:
-                        tomo.voxel_size = header_voxel
+                    tomo.voxel_size = header_voxel
                     # A zero/absent header voxel size (cella=0) is what
-                    # mrc-ng-server sees, regardless of the authored TOML
-                    # voxel_size above: it then serves a 1 Angstrom default and
+                    # mrc-ng-server sees: it then serves a 1 Angstrom default and
                     # the viewer is mis-scaled ~10x. Flag it so the frontend
                     # disables the launch button, and warn the acquisition to
                     # get the header fixed.

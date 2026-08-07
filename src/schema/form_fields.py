@@ -410,6 +410,7 @@ FORM_FIELDS: list[FormField] = [
         "acquisition", "raw_tomogram",
         "reconstruction_alignment_id",
         "image_size_x", "image_size_y", "image_size_z", "voxel_size",
+        "mrc_voxel_size_missing",
         "mrc_path", "zarr_path", "zarr_axes", "zarr_scale",
     ),
 
@@ -441,6 +442,7 @@ FORM_FIELDS: list[FormField] = [
         "acquisition", "post_processed_tomogram",
         "reconstruction_alignment_id",
         "image_size_x", "image_size_y", "image_size_z", "voxel_size",
+        "mrc_voxel_size_missing",
         "mrc_path", "zarr_path", "zarr_axes", "zarr_scale", "size_bytes",
     ),
 
@@ -614,6 +616,7 @@ FORM_FIELDS: list[FormField] = [
         "reconstruction", "raw_tomogram",
         "reconstruction_alignment_id",
         "image_size_x", "image_size_y", "image_size_z", "voxel_size",
+        "mrc_voxel_size_missing",
         "mrc_path", "zarr_path", "zarr_axes", "zarr_scale",
     ),
 
@@ -645,6 +648,7 @@ FORM_FIELDS: list[FormField] = [
         "reconstruction", "post_processed_tomogram",
         "reconstruction_alignment_id",
         "image_size_x", "image_size_y", "image_size_z", "voxel_size",
+        "mrc_voxel_size_missing",
         "mrc_path", "zarr_path", "zarr_axes", "zarr_scale", "size_bytes",
     ),
 

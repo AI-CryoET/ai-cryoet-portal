@@ -188,7 +188,8 @@ _one per imaging position_
 | `reconstruction_alignment_id` | text | `directory` | derived | Enclosing Reconstructions/{id}/ folder — the 3D-alignment group this belongs to. Part of the key: two groups may hold the same file stem. |
 | `pipeline` | text | `reconstruction.toml [[raw_tomogram]]` | researcher authored | Human description. |
 | `software` | text | `reconstruction.toml [[raw_tomogram]]` | researcher authored |  |
-| `voxel_size` | float | `MRC header` | derived | Ångström/pixel. Populated by the catalog scanner from the reconstruction MRC header's voxel_size.x; not authored in any TOML. |
+| `voxel_size` | float | `MRC header` | derived | Ångström/pixel. Read by the scanner from the reconstruction MRC header's voxel_size.x; not authored in any TOML. |
+| `mrc_voxel_size_missing` | boolean | `MRC header` | derived | True when the MRC header carries no voxel size (cella=0) — what mrc-ng-server reads — so the Neuroglancer viewer would be mis-scaled and the frontend disables its launch button. An explicit flag, set alongside voxel_size when the header read comes back empty. |
 | `derived_from` | text | `reconstruction.toml [[raw_tomogram]]` | researcher authored | The tilt series (under TiltSeries/) this was reconstructed from. |
 | `image_size_x` | integer | `MRC header` | derived |  |
 | `image_size_y` | integer | `MRC header` | derived |  |
@@ -210,7 +211,8 @@ _one per imaging position_
 | `denoising_software` | text | `reconstruction.toml [[post_processed_tomogram]]` | researcher authored |  |
 | `ctf_software` | text | `reconstruction.toml [[post_processed_tomogram]]` | researcher authored |  |
 | `missing_wedge_software` | text | `reconstruction.toml [[post_processed_tomogram]]` | researcher authored |  |
-| `voxel_size` | float | `MRC header` | derived | Ångström/pixel. Populated by the catalog scanner from the reconstruction MRC header's voxel_size.x; not authored in any TOML. |
+| `voxel_size` | float | `MRC header` | derived | Ångström/pixel. Read by the scanner from the reconstruction MRC header's voxel_size.x; not authored in any TOML. |
+| `mrc_voxel_size_missing` | boolean | `MRC header` | derived | True when the MRC header carries no voxel size (cella=0) — what mrc-ng-server reads — so the Neuroglancer viewer would be mis-scaled and the frontend disables its launch button. An explicit flag, set alongside voxel_size when the header read comes back empty. |
 | `derived_from` | list[text] | `reconstruction.toml [[post_processed_tomogram]]` | researcher authored | Lineage; references a raw or post-processed tomogram_id in this acquisition (resolvable across sibling groups). |
 | `image_size_x` | integer | `MRC header` | derived |  |
 | `image_size_y` | integer | `MRC header` | derived |  |

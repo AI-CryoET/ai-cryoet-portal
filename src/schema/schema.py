@@ -327,8 +327,8 @@ class RawTomogram(_Base):
     # True when the MRC header carries no voxel size (cella=0): mrc-ng-server
     # then serves a bogus 1 Angstrom default and the Neuroglancer viewer is
     # mis-scaled, so the frontend disables its launch button. Set by the
-    # assembler from the header read; independent of voxel_size (which prefers
-    # the authored TOML value and so stays populated).
+    # assembler from the header read (an explicit flag so the frontend need not
+    # infer it from voxel_size being null).
     mrc_voxel_size_missing: bool = False
     # directory (prescribed layout)
     mrc_path: str | None = None
