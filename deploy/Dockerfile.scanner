@@ -27,8 +27,12 @@ FROM base AS runtime
 # the render subprocess dies with "libglib-2.0.so.0: cannot open shared object
 # file". Runtime-only; the build stage resolves wheels without them.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    libglib2.0-0 libgl1 libegl1 libdbus-1-3 libxkbcommon0 libfontconfig1 \
+    libglib2.0-0 libgl1 libopengl0 libegl1 libdbus-1-3 libxkbcommon0 \
+    libfontconfig1 libgssapi-krb5-2 \
     && rm -rf /var/lib/apt/lists/*
+# libopengl0 (libOpenGL.so.0, Qt6 GLVND) and libgssapi-krb5-2 (QtNetwork) are the
+# only remaining libs `ldd` on the OVITO plugins reports missing; the two GPU libs
+# it also lists (libcuda, libnvidia-ml) are optional — TachyonRenderer is CPU-only.
 COPY --from=deps /app/.pixi /app/.pixi
 # Packages live under src/ (src layout); pixi activation sets PYTHONPATH=src.
 COPY pixi.lock pyproject.toml ./
