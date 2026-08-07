@@ -333,6 +333,11 @@ def _build_precomputed_viewer_url(
     for extra in extra_layers or []:
         state.layers.append(name=extra.get("name", "annotation"), layer=extra)
     state.dimensions = dims
+    # Center the view on the volume. Unset, Neuroglancer defaults position to
+    # [0.5, 0.5, 0.5] (center of the first voxel = volume corner). Position is
+    # in voxel units of the x,y,z space, so size/2 is the center regardless of
+    # the IMOD mirror (which transforms the source, not the global frame).
+    state.position = [size_xyz[0] / 2, size_xyz[1] / 2, size_xyz[2] / 2]
     return ng.to_url(state, prefix=viewer_base)
 
 

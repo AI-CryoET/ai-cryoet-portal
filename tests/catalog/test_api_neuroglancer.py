@@ -283,6 +283,8 @@ def test_build_precomputed_viewer_url_bakes_mirror_and_contrast():
     assert m[1][1] == -1.0 and m[1][3] == 99.0   # flip y, extent ny-1
     assert m[2] == [0.0, 0.0, 1.0, 0.0]          # z identity
     assert layer["shaderControls"]["normalized"]["range"] == [12.0, 88.0]
+    # View centered on the volume, not the [0.5, 0.5, 0.5] corner default.
+    assert state["position"] == [100.0, 50.0, 25.0]  # size_xyz / 2
 
 
 def test_bbox_annotation_falls_back_to_group_tomogram(client, monkeypatch):
