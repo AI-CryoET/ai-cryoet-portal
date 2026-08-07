@@ -68,7 +68,6 @@ export function FilterPanel({
             return (
               <FilterGroup
                 disabled={disabled}
-                title={group.title}
                 // ponytail: a disabled group renders collapsed regardless of
                 // its remembered open state — MUI's `disabled` freezes the
                 // toggle, so without this it'd be stuck open and its checkboxes
@@ -76,6 +75,7 @@ export function FilterPanel({
                 expanded={openGroups[group.id] ? !disabled : false}
                 key={group.id}
                 onToggle={() => toggleGroup(group.id)}
+                title={group.title}
               >
                 {fields.map(field => (
                   <FilterProperty

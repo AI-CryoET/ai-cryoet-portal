@@ -93,11 +93,11 @@ function AuthorRoute() {
 
       <Tabs
         onChange={(_e, value) => navigate({ search: { tab: value } })}
+        // Light full-width rule under the tab row (matches the section dividers).
+        sx={{ borderBottom: 1, borderColor: 'divider' }}
         // Switching tabs drops any loaded id / sampleId — they belong to the
         // tab that was open.
         value={active.value}
-        // Light full-width rule under the tab row (matches the section dividers).
-        sx={{ borderBottom: 1, borderColor: 'divider' }}
       >
         {TABS.map(t => (
           <Tab key={t.value} label={t.label} value={t.value} />

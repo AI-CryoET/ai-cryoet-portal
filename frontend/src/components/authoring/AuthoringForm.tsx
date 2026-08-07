@@ -159,19 +159,19 @@ function GroupedAuthoringForm({
         value={group}
       />
       <SectionedAuthoringForm
-        initialAcquisitionId={initialAcquisitionId}
         form={form}
+        initialAcquisitionId={initialAcquisitionId}
+        // Empty group = a new folder: nothing to load, so the placement hint
+        // shows the folder name the researcher must create.
+        initialId={group || undefined}
+        initialSampleId={initialSampleId}
+        key={mount}
         // "Load from portal by id" inside the form is a group switch too, so
         // the selector has to follow it — otherwise it keeps reading the old
         // group and MUI's `value !== newValue` guard swallows a click on that
         // group, leaving no way back. This only moves the selector: no
         // remount, no refetch, and the context the user loaded with survives.
         onLoadedId={setGroup}
-        // Empty group = a new folder: nothing to load, so the placement hint
-        // shows the folder name the researcher must create.
-        initialId={group || undefined}
-        initialSampleId={initialSampleId}
-        key={mount}
       />
     </Stack>
   );
@@ -553,17 +553,17 @@ function SectionedAuthoringForm({
                 {needsSampleId ? (
                   <TextField
                     label="Sample id"
-                    value={sampleId}
                     onChange={e => setSampleId(e.target.value)}
                     size="small"
+                    value={sampleId}
                   />
                 ) : null}
                 {needsAcquisitionId ? (
                   <TextField
                     label="Acquisition id"
-                    value={acquisitionId}
                     onChange={e => setAcquisitionId(e.target.value)}
                     size="small"
+                    value={acquisitionId}
                   />
                 ) : null}
               </>
@@ -571,8 +571,6 @@ function SectionedAuthoringForm({
           }
           filename={meta.filename}
           loadId={loadId}
-          onLoadIdChange={setLoadId}
-          onLoad={handleLoad}
           // md_run has no portal load path — nothing loaded, nothing to clear.
           // reconstruction clears by picking "New group" in the selector,
           // which also keeps the selector honest about which group the form
@@ -582,6 +580,8 @@ function SectionedAuthoringForm({
               ? undefined
               : handleClear
           }
+          onLoad={handleLoad}
+          onLoadIdChange={setLoadId}
           // md_run has no portal load-by-id path yet.
           onUpload={handleUpload}
           showLoadById={form !== 'md_run'}
@@ -720,11 +720,11 @@ function ScalarSection({
               disabled={locked || (f.isId && apiLoaded)}
               error={errors[pathFor(section, f.field)]}
               field={f}
-              suggestions={suggestions}
               // The intended-id field is pre-filled read-only once pulled from
               // the API (ADR-0004): its value drives identity, not editable content.
               key={f.field}
               onChange={v => onChange(f.field, v)}
+              suggestions={suggestions}
               value={state.values[f.field] ?? ''}
             />
           ))}
@@ -995,15 +995,15 @@ function Field({
       disabled={disabled}
       error={Boolean(error)}
       fullWidth
+      // 'list' inputs are comma-separated; the help text explains the format.
+      helperText={help}
       label={field.label}
       onChange={e => onChange(e.target.value)}
       required={field.required}
       size="small"
+      slotProps={Object.keys(slotProps).length ? slotProps : undefined}
       type={field.input === 'date' ? 'date' : numeric ? 'number' : 'text'}
       value={value}
-      slotProps={Object.keys(slotProps).length ? slotProps : undefined}
-      // 'list' inputs are comma-separated; the help text explains the format.
-      helperText={help}
     />
   );
 }

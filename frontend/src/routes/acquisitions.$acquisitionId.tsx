@@ -232,13 +232,16 @@ function AcquisitionDetailRoute() {
       <DetailPageHeader
         editLink={
           <CustomLink
-            to="/manage/author"
             search={{ tab: 'acquisition', id: acquisitionId, sampleId }}
+            to="/manage/author"
           >
             Edit acquisition.toml
           </CustomLink>
         }
         onViewMetadata={() => setMetadataOpen(true)}
+        // Edit link carries the composite identity so the form auto-loads the
+        // right acquisition (acquisition_id alone isn't unique).
+        title={acquisitionId}
         warning={
           acqWarnings.length > 0
             ? {
@@ -254,9 +257,6 @@ function AcquisitionDetailRoute() {
               }
             : null
         }
-        // Edit link carries the composite identity so the form auto-loads the
-        // right acquisition (acquisition_id alone isn't unique).
-        title={acquisitionId}
       />
 
       <Divider />
@@ -276,15 +276,15 @@ function AcquisitionDetailRoute() {
                   return (
                     <PreviewThumbnail
                       alt={`Tilt-angle plot for ${acquisitionId}`}
-                      aspectRatio={5 / 3}
-                      width="100%"
                       // Match the rendered figure's 5:3 ratio (render_polar_png
                       // uses figsize=(5, 3)) so the box hugs the plot instead of
                       // padding it with white space top and bottom.
+                      aspectRatio={5 / 3}
                       clickable
                       objectFit="contain"
                       src={acquisitionPolarUrl(sampleId, acquisitionId)}
                       tooltipTitle={`Tilt-angle plot — each line is a tilt image; color shows acquisition order (image 1 to ${n}).`}
+                      width="100%"
                     />
                   );
                 })()}
