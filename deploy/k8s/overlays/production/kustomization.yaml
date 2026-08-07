@@ -23,7 +23,8 @@ generatorOptions:
 # (ocs-storagecluster-ceph-rbd) is RBD block storage, which only supports
 # ReadWriteOnce in Filesystem mode and rejects the ReadWriteMany access mode
 # these volumes need. ocs-storagecluster-cephfs is the shared CephFS class and
-# supports it. Pin the RWX PVCs (catalog-db, thumbnails, mrc-cache) to it here.
+# supports it. Pin the RWX PVCs (catalog-db, thumbnails, mrc-cache, md-previews)
+# to it here.
 # catalog-data binds statically (storageClassName: "") and is not patched.
 patches:
   - target:
@@ -43,6 +44,13 @@ patches:
   - target:
       kind: PersistentVolumeClaim
       name: mrc-cache-pvc
+    patch: |-
+      - op: add
+        path: /spec/storageClassName
+        value: ocs-storagecluster-cephfs
+  - target:
+      kind: PersistentVolumeClaim
+      name: md-previews-pvc
     patch: |-
       - op: add
         path: /spec/storageClassName
