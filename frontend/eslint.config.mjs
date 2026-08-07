@@ -69,7 +69,9 @@ export default defineConfig([
       '@typescript-eslint/no-namespace': 'off',
       '@typescript-eslint/no-use-before-define': 'off',
       curly: ['error', 'all'],
-      eqeqeq: 'error',
+      // Allow the `x == null` idiom (matches null *and* undefined) used
+      // throughout the codebase; still require === for every other comparison.
+      eqeqeq: ['error', 'always', { null: 'ignore' }],
       'prefer-arrow-callback': 'error',
       // Below config adapted from https://timjames.dev/blog/the-best-eslint-rules-for-react-projects-30i8
       'react/prefer-stateless-function': 'error',
