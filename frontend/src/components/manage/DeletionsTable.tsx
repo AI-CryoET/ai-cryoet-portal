@@ -52,7 +52,7 @@ function EntityCell({ event }: { readonly event: DeletionEvent }) {
     : event.sample_id;
 
   if (event.kind !== 'rename') {
-    return <>{label}</>;
+    return label;
   }
 
   if (event.acquisition_id) {

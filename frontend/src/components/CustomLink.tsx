@@ -9,6 +9,7 @@ type MUILinkProps = LinkProps;
 const MUILinkComponent = React.forwardRef<HTMLAnchorElement, MUILinkProps>(
   (props, ref) => <Link ref={ref} {...props} />
 );
+MUILinkComponent.displayName = 'MUILinkComponent';
 
 const CreatedLinkComponent = createLink(MUILinkComponent);
 
@@ -25,6 +26,7 @@ const MUIButtonLinkComponent = React.forwardRef<
   HTMLAnchorElement,
   MUIButtonLinkProps
 >((props, ref) => <Button ref={ref} {...props} component="a" />);
+MUIButtonLinkComponent.displayName = 'MUIButtonLinkComponent';
 
 const CreatedButtonLink = createLink(MUIButtonLinkComponent);
 

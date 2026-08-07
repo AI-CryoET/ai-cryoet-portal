@@ -17,7 +17,9 @@ export function AcquisitionsSubTable({
     sampleDetailQueryOptions(sampleId)
   );
 
-  const all = data?.acquisitions ?? [];
+  // Memoized so the empty-array fallback keeps a stable reference — otherwise a
+  // fresh `[]` each render would bust the `filtered` memo below.
+  const all = useMemo(() => data?.acquisitions ?? [], [data]);
   const filtered = useMemo(
     () => (filters ? all.filter(a => matchAcquisition(a, filters)) : all),
     [all, filters]

@@ -208,3 +208,4 @@ export const SamplesPortalTable = memo(
     return <MaterialReactTable table={table} />;
   }
 );
+SamplesPortalTable.displayName = 'SamplesPortalTable';
