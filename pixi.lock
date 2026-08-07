@@ -210,9 +210,15 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/noarch/zarr-3.2.1-pyhc364b38_0.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/zipp-4.1.0-pyhcf101f3_0.conda
       - pypi: git+https://github.com/JaneliaSciComp/mrc-ng-server.git?tag=v0.1.4#4362b02dc1a2cca2010328fc29af25142d6939e5
+      - pypi: https://files.pythonhosted.org/packages/17/fe/d5c67665f866b8859d02aa1a859f101a1b2fd348cb61746a3e16fd98fb20/pyside6_addons-6.9.3-cp39-abi3-manylinux_2_28_x86_64.whl
+      - pypi: https://files.pythonhosted.org/packages/1f/56/1535540e527a699786e78e498b18271a9429bfc2c20f4045e49d405e5a70/traits-7.1.0-cp314-cp314-manylinux1_x86_64.manylinux_2_28_x86_64.manylinux_2_5_x86_64.whl
       - pypi: https://files.pythonhosted.org/packages/2a/09/f8d8f8f31e4483c10a906437b4ce31bdf3d6d417b73fe33f1a8b59e34228/einops-0.8.2-py3-none-any.whl
+      - pypi: https://files.pythonhosted.org/packages/34/0e/1e9841cc46196c55ac3eac0b8e08044a88cc70c8cc29e9dc1e33b2ced2b7/pyside6-6.9.3-cp39-abi3-manylinux_2_28_x86_64.whl
       - pypi: https://files.pythonhosted.org/packages/59/5a/40682383c8f79faac90135f6586f95b49b53ad2f58aeeb3650bcd94f1ddb/eerfile-0.0.4-py3-none-any.whl
+      - pypi: https://files.pythonhosted.org/packages/72/a6/3f6d1065dd3a02dda96943c279196d689f206ae4d3a52884ad507c83e26b/ovito-3.15.5-cp314-cp314-manylinux_2_28_x86_64.whl
+      - pypi: https://files.pythonhosted.org/packages/85/e8/9396cf11a60f80175bb3c5c1d498d84e87b7af653ab4ea001acf821a3981/pyside6_essentials-6.9.3-cp39-abi3-manylinux_2_28_x86_64.whl
       - pypi: https://files.pythonhosted.org/packages/a0/c4/b4d4827c93ef43c01f599ef31453ccc1c132b353284fc6c87d535c233129/pyee-13.0.1-py3-none-any.whl
+      - pypi: https://files.pythonhosted.org/packages/be/82/c1c6932f9849bc5e75c93c38a29419505a6e3e0037261e28f3e7ecbf2751/shiboken6-6.9.3-cp39-abi3-manylinux_2_28_x86_64.whl
       - pypi: https://files.pythonhosted.org/packages/e4/76/6d409e37e82cdd5dda3df1ab958130ae32b46e42458bd4fc93d7eb8749cb/playwright-1.56.0-py3-none-manylinux1_x86_64.whl
   catalog:
     channels:
@@ -351,9 +357,15 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/noarch/zarr-3.2.1-pyhc364b38_0.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/zipp-4.1.0-pyhcf101f3_0.conda
       - pypi: git+https://github.com/JaneliaSciComp/mrc-ng-server.git?tag=v0.1.4#4362b02dc1a2cca2010328fc29af25142d6939e5
+      - pypi: https://files.pythonhosted.org/packages/17/fe/d5c67665f866b8859d02aa1a859f101a1b2fd348cb61746a3e16fd98fb20/pyside6_addons-6.9.3-cp39-abi3-manylinux_2_28_x86_64.whl
+      - pypi: https://files.pythonhosted.org/packages/1f/56/1535540e527a699786e78e498b18271a9429bfc2c20f4045e49d405e5a70/traits-7.1.0-cp314-cp314-manylinux1_x86_64.manylinux_2_28_x86_64.manylinux_2_5_x86_64.whl
       - pypi: https://files.pythonhosted.org/packages/2a/09/f8d8f8f31e4483c10a906437b4ce31bdf3d6d417b73fe33f1a8b59e34228/einops-0.8.2-py3-none-any.whl
+      - pypi: https://files.pythonhosted.org/packages/34/0e/1e9841cc46196c55ac3eac0b8e08044a88cc70c8cc29e9dc1e33b2ced2b7/pyside6-6.9.3-cp39-abi3-manylinux_2_28_x86_64.whl
       - pypi: https://files.pythonhosted.org/packages/59/5a/40682383c8f79faac90135f6586f95b49b53ad2f58aeeb3650bcd94f1ddb/eerfile-0.0.4-py3-none-any.whl
+      - pypi: https://files.pythonhosted.org/packages/72/a6/3f6d1065dd3a02dda96943c279196d689f206ae4d3a52884ad507c83e26b/ovito-3.15.5-cp314-cp314-manylinux_2_28_x86_64.whl
+      - pypi: https://files.pythonhosted.org/packages/85/e8/9396cf11a60f80175bb3c5c1d498d84e87b7af653ab4ea001acf821a3981/pyside6_essentials-6.9.3-cp39-abi3-manylinux_2_28_x86_64.whl
       - pypi: https://files.pythonhosted.org/packages/a0/c4/b4d4827c93ef43c01f599ef31453ccc1c132b353284fc6c87d535c233129/pyee-13.0.1-py3-none-any.whl
+      - pypi: https://files.pythonhosted.org/packages/be/82/c1c6932f9849bc5e75c93c38a29419505a6e3e0037261e28f3e7ecbf2751/shiboken6-6.9.3-cp39-abi3-manylinux_2_28_x86_64.whl
       - pypi: https://files.pythonhosted.org/packages/e4/76/6d409e37e82cdd5dda3df1ab958130ae32b46e42458bd4fc93d7eb8749cb/playwright-1.56.0-py3-none-manylinux1_x86_64.whl
   default:
     channels:
@@ -3103,11 +3115,48 @@ packages:
   - numpy
   - pydantic-settings
   requires_python: '>=3.11'
+- pypi: https://files.pythonhosted.org/packages/17/fe/d5c67665f866b8859d02aa1a859f101a1b2fd348cb61746a3e16fd98fb20/pyside6_addons-6.9.3-cp39-abi3-manylinux_2_28_x86_64.whl
+  name: pyside6-addons
+  version: 6.9.3
+  sha256: 68932327e1c33d729d79b2b94242f97b77601efe0427e757cd3fd588939ea479
+  requires_dist:
+  - shiboken6==6.9.3
+  - pyside6-essentials==6.9.3
+  requires_python: '>=3.9,<3.14'
+- pypi: https://files.pythonhosted.org/packages/1f/56/1535540e527a699786e78e498b18271a9429bfc2c20f4045e49d405e5a70/traits-7.1.0-cp314-cp314-manylinux1_x86_64.manylinux_2_28_x86_64.manylinux_2_5_x86_64.whl
+  name: traits
+  version: 7.1.0
+  sha256: 7220c9f3182f310a0288c4147d521732480d6921aad50383f1d3ca75f6fa0a00
+  requires_dist:
+  - enthought-sphinx-theme ; extra == 'docs'
+  - sphinx>=2.1.0 ; extra == 'docs'
+  - sphinx-copybutton ; extra == 'docs'
+  - defusedxml ; extra == 'test'
+  - flake8 ; extra == 'test'
+  - flake8-ets ; extra == 'test'
+  - mypy ; extra == 'test'
+  - numpy ; extra == 'test'
+  - pyface ; extra == 'test'
+  - setuptools ; extra == 'test'
+  - sphinx>=2.1.0 ; extra == 'test'
+  - traitsui ; extra == 'test'
+  - numpy ; extra == 'examples'
+  - pillow ; extra == 'examples'
+  requires_python: '>=3.8'
 - pypi: https://files.pythonhosted.org/packages/2a/09/f8d8f8f31e4483c10a906437b4ce31bdf3d6d417b73fe33f1a8b59e34228/einops-0.8.2-py3-none-any.whl
   name: einops
   version: 0.8.2
   sha256: 54058201ac7087911181bfec4af6091bb59380360f069276601256a76af08193
   requires_python: '>=3.9'
+- pypi: https://files.pythonhosted.org/packages/34/0e/1e9841cc46196c55ac3eac0b8e08044a88cc70c8cc29e9dc1e33b2ced2b7/pyside6-6.9.3-cp39-abi3-manylinux_2_28_x86_64.whl
+  name: pyside6
+  version: 6.9.3
+  sha256: 6485aebec8eba4e55d1ec1cebe68ca1413589880cc8ccd8a49acae852ec6cfb3
+  requires_dist:
+  - shiboken6==6.9.3
+  - pyside6-essentials==6.9.3
+  - pyside6-addons==6.9.3
+  requires_python: '>=3.9,<3.14'
 - pypi: https://files.pythonhosted.org/packages/59/5a/40682383c8f79faac90135f6586f95b49b53ad2f58aeeb3650bcd94f1ddb/eerfile-0.0.4-py3-none-any.whl
   name: eerfile
   version: 0.0.4
@@ -3127,6 +3176,22 @@ packages:
   - pytest ; extra == 'test'
   - pytest-cov ; extra == 'test'
   requires_python: '>=3.11'
+- pypi: https://files.pythonhosted.org/packages/72/a6/3f6d1065dd3a02dda96943c279196d689f206ae4d3a52884ad507c83e26b/ovito-3.15.5-cp314-cp314-manylinux_2_28_x86_64.whl
+  name: ovito
+  version: 3.15.5
+  sha256: 31d992428eb7451aad92761d68b6f0a27c96dff18836fb399af76ce5cb527522
+  requires_dist:
+  - numpy>=1.23
+  - traits>=6.3
+  - pyside6>=6.8.3
+  requires_python: '>=3.10'
+- pypi: https://files.pythonhosted.org/packages/85/e8/9396cf11a60f80175bb3c5c1d498d84e87b7af653ab4ea001acf821a3981/pyside6_essentials-6.9.3-cp39-abi3-manylinux_2_28_x86_64.whl
+  name: pyside6-essentials
+  version: 6.9.3
+  sha256: c70d5544e892b201a677b615156fab6a0fef865e7fc287f55a0eae00a682e83f
+  requires_dist:
+  - shiboken6==6.9.3
+  requires_python: '>=3.9,<3.14'
 - pypi: https://files.pythonhosted.org/packages/a0/c4/b4d4827c93ef43c01f599ef31453ccc1c132b353284fc6c87d535c233129/pyee-13.0.1-py3-none-any.whl
   name: pyee
   version: 13.0.1
@@ -3156,6 +3221,11 @@ packages:
   - twisted ; extra == 'dev'
   - validate-pyproject[all] ; extra == 'dev'
   requires_python: '>=3.8'
+- pypi: https://files.pythonhosted.org/packages/be/82/c1c6932f9849bc5e75c93c38a29419505a6e3e0037261e28f3e7ecbf2751/shiboken6-6.9.3-cp39-abi3-manylinux_2_28_x86_64.whl
+  name: shiboken6
+  version: 6.9.3
+  sha256: f3f5337a3a8fc660ba1462265bd9a2bdda9588f8d90fbc3d5ac4ce3134c11e59
+  requires_python: '>=3.9,<3.14'
 - pypi: https://files.pythonhosted.org/packages/e4/76/6d409e37e82cdd5dda3df1ab958130ae32b46e42458bd4fc93d7eb8749cb/playwright-1.56.0-py3-none-manylinux1_x86_64.whl
   name: playwright
   version: 1.56.0

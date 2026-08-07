@@ -16,7 +16,7 @@ import {
   thumbnailUrl,
   tiltSeriesPreviewUrl,
   acquisitionRepTiltSeriesId,
-  mdPreviewBySampleUrl
+  mdPreviewUrl
 } from '~/components/common/Thumbnail';
 import { FileglancerPathSection } from '~/components/common/FileglancerPathSection';
 import { DetailHero } from '~/components/common/DetailHero';
@@ -178,14 +178,16 @@ function SampleDetailRoute() {
           const tsId = firstWithTs
             ? acquisitionRepTiltSeriesId(firstWithTs)
             : null;
-          // Simulation samples show the trajectory-level OVITO preview from the
-          // portal cache (resolved by sample prefix) at the sample hero — the
-          // per-acquisition tilt-series slice belongs on the acquisition page.
-          // Now that synthetic acquisitions carry real tilt series, this keeps
-          // the two levels visually distinct.
+          // Simulation samples show the OVITO preview of their first MD run
+          // (scanner-rendered, keyed by the run's preview_path) at the sample
+          // hero — the per-acquisition tilt-series slice belongs on the
+          // acquisition page. Now that synthetic acquisitions carry real tilt
+          // series, this keeps the two levels visually distinct.
           const mdPreview =
             sample.data_source === 'simulation'
-              ? mdPreviewBySampleUrl(sample.sample_id, sample.path)
+              ? mdPreviewUrl(
+                  sample.md_run.find(r => r.preview_path)?.preview_path
+                )
               : null;
           // Simulation → OVITO preview. Otherwise prefer the acquisition with a
           // tilt series: its cached 512px thumbnail displays, and the sharper

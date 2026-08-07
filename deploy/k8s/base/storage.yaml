@@ -17,6 +17,8 @@
 #                   access mode that allows multiple mounters (ReadWriteMany).
 #   thumbnails    — pre-generated preview PNGs. Written by the scanner, read by
 #                   the API. Also shared, also ReadWriteMany.
+#   md-previews   — OVITO MD-run preview PNGs. Written by the scanner (when
+#                   --md-preview-dir is set), read by the API. Shared, RWX.
 #   mrc-cache     — the Neuroglancer pyramid cache. Written by the scanner's
 #                   post-scan `mrc-pyramid build`, read by the mrc-ng-server
 #                   pods. Shared, ReadWriteMany.
@@ -88,6 +90,17 @@ spec:
   resources:
     requests:
       storage: 5Gi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: md-previews-pvc
+spec:
+  accessModes:
+    - ReadWriteMany
+  resources:
+    requests:
+      storage: 10Gi
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim

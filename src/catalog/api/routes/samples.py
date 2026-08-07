@@ -268,6 +268,15 @@ def list_samples(
         .correlate(orm.SampleORM)
         .scalar_subquery()
     )
+    # Representative MD-run preview relpath for the list hero. min() ignores
+    # NULLs, so this is the lexicographically-first *rendered* preview (or NULL
+    # when no run has one) — a stable per-sample choice.
+    md_preview_sq = (
+        select(func.min(orm.MdRunORM.preview_path))
+        .where(orm.MdRunORM.sample_id == orm.SampleORM.sample_id)
+        .correlate(orm.SampleORM)
+        .scalar_subquery()
+    )
 
     stmt = (
         select(
@@ -276,6 +285,7 @@ def list_samples(
             n_acq_sq.label("n_acquisitions"),
             (n_raw_tomo_sq + n_post_tomo_sq).label("n_tomograms"),
             n_ts_sq.label("n_tilt_series"),
+            md_preview_sq.label("md_preview_path"),
         )
         .outerjoin(warn_count_sq, warn_count_sq.c.sample_id == orm.SampleORM.sample_id)
         .where(orm.SampleORM.deleted_at.is_(None))
@@ -371,6 +381,7 @@ def list_samples(
             n_tomograms=r[3],
             n_tilt_series=r[4],
             thumbnail_path=r[0].thumbnail_path,
+            md_preview_path=r[5],
         )
         for r in rows
     ]

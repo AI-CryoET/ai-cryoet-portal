@@ -89,6 +89,10 @@ tifffile = ">=2024.1"
 
 [tool.pixi.feature.catalog.pypi-dependencies]
 eerfile = "*"
+# OVITO (TachyonRenderer) for MD-run preview generation in the scanner. Heavy
+# (pulls a PySide6/Qt stack) and only needed when --md-preview-dir is used;
+# catalog.imaging._md_render imports it lazily inside a subprocess.
+ovito = "*"
 # Provides the `mrc-pyramid` CLI the scanner runs to precompute the Neuroglancer
 # pyramid cache (see catalog/cli.py `_run_precompute`).
 mrc-ng-server = { git = "https://github.com/JaneliaSciComp/mrc-ng-server.git", tag = "v0.1.4" }

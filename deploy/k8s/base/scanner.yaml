@@ -63,6 +63,11 @@ spec:
                   mountPath: /db
                 - name: thumbnails
                   mountPath: /thumbnails
+                # OVITO MD-run preview cache. Written here (must be writable)
+                # and served read-only by the API. Must match
+                # CATALOG_MD_PREVIEW_DIR in config.env / Dockerfile.scanner.
+                - name: md-previews
+                  mountPath: /md-previews
                 # Shared Neuroglancer pyramid cache. Written here by the
                 # post-scan `mrc-pyramid build` step and read by mrc-ng-server.
                 # mrc-cache-pvc is declared in storage.yaml. Must match
@@ -87,6 +92,9 @@ spec:
             - name: thumbnails
               persistentVolumeClaim:
                 claimName: thumbnails-pvc
+            - name: md-previews
+              persistentVolumeClaim:
+                claimName: md-previews-pvc
             - name: mrc-cache
               persistentVolumeClaim:
                 claimName: mrc-cache-pvc
