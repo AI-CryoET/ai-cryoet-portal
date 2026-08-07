@@ -41,6 +41,7 @@ RUN chgrp -R 0 /app && chmod -R g=u /app
 ENV CATALOG_DATA_ROOT=/groups/cryoet/cryoet/data \
     CATALOG_DB_URL=sqlite:////db/catalog.db \
     CATALOG_THUMBNAIL_DIR=/thumbnails \
+    CATALOG_MD_PREVIEW_DIR=/md-previews \
     MRCNG_CACHE_ROOT=/cache
 
 CMD ["pixi", "run", "-e", "catalog", "scan", "--init", "--prune"]

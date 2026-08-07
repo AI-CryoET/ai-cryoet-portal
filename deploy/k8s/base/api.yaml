@@ -62,6 +62,9 @@ spec:
             - name: thumbnails
               mountPath: /thumbnails
               readOnly: true
+            - name: md-previews
+              mountPath: /md-previews
+              readOnly: true
           # The API has no /healthz route, so probe the TCP port. uvicorn accepts
           # connections only once the app (incl. CATALOG_DATA_ROOT / thumbnail-dir
           # startup checks) has come up.
@@ -98,6 +101,10 @@ spec:
         - name: thumbnails
           persistentVolumeClaim:
             claimName: thumbnails-pvc
+        - name: md-previews
+          persistentVolumeClaim:
+            claimName: md-previews-pvc
+            readOnly: true
 ---
 apiVersion: v1
 kind: Service
