@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Button, CircularProgress, Tooltip } from '@mui/material'
+import { Button, CircularProgress, Stack, Tooltip, Typography } from '@mui/material'
 import { useMutation } from '@tanstack/react-query'
 import type { ViewerLaunchOut } from '../../types'
 import { apiFetch } from '../../utils/api'
@@ -22,6 +22,11 @@ const LAUNCH_SEGMENT: Record<Extract<NeuroglancerSource, { kind: 'launch' }>['en
 interface NeuroglancerButtonProps {
   source: NeuroglancerSource
   label?: string
+  // When set, the button is disabled and this text is shown as a tooltip and
+  // as a warning caption underneath — used when launching would produce a
+  // broken viewer (e.g. an MRC whose header has no voxel size). Takes
+  // precedence over `source`.
+  disabledReason?: string | null
 }
 
 function launchNeuroglancer(source: Extract<NeuroglancerSource, { kind: 'launch' }>): Promise<ViewerLaunchOut> {
@@ -34,10 +39,32 @@ function launchNeuroglancer(source: Extract<NeuroglancerSource, { kind: 'launch'
 }
 
 export function NeuroglancerButton(props: NeuroglancerButtonProps) {
-  const { source, label = 'View in Neuroglancer' } = props
+  const { source, label = 'View in Neuroglancer', disabledReason } = props
   const [launchError, setLaunchError] = useState<string | null>(null)
 
   const mutation = useMutation({ mutationFn: launchNeuroglancer })
+
+  if (disabledReason) {
+    return (
+      <Stack spacing={0.5} alignItems="flex-end">
+        <Tooltip title={disabledReason}>
+          {/* span wrapper so the tooltip still fires on the disabled button */}
+          <span>
+            <Button variant="contained" size="small" disabled>
+              {label}
+            </Button>
+          </span>
+        </Tooltip>
+        <Typography
+          variant="caption"
+          color="warning.main"
+          sx={{ maxWidth: 200, textAlign: 'right' }}
+        >
+          {disabledReason}
+        </Typography>
+      </Stack>
+    )
+  }
 
   if (source === null) {
     return (

@@ -324,6 +324,12 @@ class RawTomogram(_Base):
     image_size_y: int | None = None
     image_size_z: int | None = None
     voxel_size: float | None = None                   # angstrom; from MRC header voxel_size.x
+    # True when the MRC header carries no voxel size (cella=0): mrc-ng-server
+    # then serves a bogus 1 Angstrom default and the Neuroglancer viewer is
+    # mis-scaled, so the frontend disables its launch button. Set by the
+    # assembler from the header read (an explicit flag so the frontend need not
+    # infer it from voxel_size being null).
+    mrc_voxel_size_missing: bool = False
     # directory (prescribed layout)
     mrc_path: str | None = None
     zarr_path: str | None = None
@@ -352,6 +358,8 @@ class PostProcessedTomogram(_Base):
     image_size_y: int | None = None
     image_size_z: int | None = None
     voxel_size: float | None = None                   # angstrom; from MRC header voxel_size.x
+    # See RawTomogram.mrc_voxel_size_missing.
+    mrc_voxel_size_missing: bool = False
     # directory (prescribed layout)
     mrc_path: str | None = None
     zarr_path: str | None = None

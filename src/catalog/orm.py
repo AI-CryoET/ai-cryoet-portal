@@ -23,6 +23,7 @@ from sqlalchemy import (
     PrimaryKeyConstraint,
     String,
     UniqueConstraint,
+    false,
 )
 from sqlalchemy import Enum as SAEnum
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
@@ -289,6 +290,11 @@ class RawTomogramORM(Base):
     pipeline: Mapped[str | None] = mapped_column(String, nullable=True)
     software: Mapped[str | None] = mapped_column(String, nullable=True)
     voxel_size: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # MRC header has no voxel size (cella=0) -> viewer would be mis-scaled;
+    # frontend disables the Neuroglancer launch. See schema.RawTomogram.
+    mrc_voxel_size_missing: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=false()
+    )
     # the tilt_series id (under TiltSeries/) this was reconstructed from
     derived_from: Mapped[str | None] = mapped_column(
         String(_ID_MAX_LEN), nullable=True
@@ -328,6 +334,10 @@ class PostProcessedTomogramORM(Base):
     ctf_software: Mapped[str | None] = mapped_column(String, nullable=True)
     missing_wedge_software: Mapped[str | None] = mapped_column(String, nullable=True)
     voxel_size: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # See RawTomogramORM.mrc_voxel_size_missing.
+    mrc_voxel_size_missing: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=false()
+    )
     derived_from: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
     image_size_x: Mapped[int | None] = mapped_column(Integer, nullable=True)
     image_size_y: Mapped[int | None] = mapped_column(Integer, nullable=True)

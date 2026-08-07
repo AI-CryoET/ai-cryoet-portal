@@ -115,6 +115,9 @@ class _TomogramOutBase(BaseModel):
     # same-named tomograms in different groups apart.
     reconstruction_alignment_id: str
     voxel_size: float | None = None                  # angstrom
+    # MRC header has no voxel size (cella=0): the viewer would be mis-scaled, so
+    # the frontend disables the Neuroglancer launch button. See schema.RawTomogram.
+    mrc_voxel_size_missing: bool = False
     image_size_x: int | None = None
     image_size_y: int | None = None
     image_size_z: int | None = None

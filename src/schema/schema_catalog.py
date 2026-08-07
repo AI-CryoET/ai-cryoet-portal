@@ -279,8 +279,13 @@ CATALOG: list[CatalogEntity] = [
                          "Human description."),
             CatalogField("software", "text", "reconstruction.toml [[raw_tomogram]]"),
             CatalogField("voxel_size", "float", "MRC header",
-                         "Ångström/pixel. Populated by the catalog scanner from the "
-                         "reconstruction MRC header's voxel_size.x; not authored in any TOML."),
+                         "Ångström/pixel. Read by the scanner from the reconstruction MRC "
+                         "header's voxel_size.x; not authored in any TOML."),
+            CatalogField("mrc_voxel_size_missing", "boolean", "MRC header",
+                         "True when the MRC header carries no voxel size (cella=0) — what "
+                         "mrc-ng-server reads — so the Neuroglancer viewer would be mis-scaled "
+                         "and the frontend disables its launch button. An explicit flag, set "
+                         "alongside voxel_size when the header read comes back empty."),
             CatalogField("derived_from", "text", "reconstruction.toml [[raw_tomogram]]",
                          "The tilt series (under TiltSeries/) this was reconstructed from."),
             CatalogField("image_size_x", "integer", "MRC header"),
@@ -315,8 +320,13 @@ CATALOG: list[CatalogEntity] = [
             CatalogField("missing_wedge_software", "text",
                          "reconstruction.toml [[post_processed_tomogram]]"),
             CatalogField("voxel_size", "float", "MRC header",
-                         "Ångström/pixel. Populated by the catalog scanner from the "
-                         "reconstruction MRC header's voxel_size.x; not authored in any TOML."),
+                         "Ångström/pixel. Read by the scanner from the reconstruction MRC "
+                         "header's voxel_size.x; not authored in any TOML."),
+            CatalogField("mrc_voxel_size_missing", "boolean", "MRC header",
+                         "True when the MRC header carries no voxel size (cella=0) — what "
+                         "mrc-ng-server reads — so the Neuroglancer viewer would be mis-scaled "
+                         "and the frontend disables its launch button. An explicit flag, set "
+                         "alongside voxel_size when the header read comes back empty."),
             CatalogField("derived_from", "list[text]",
                          "reconstruction.toml [[post_processed_tomogram]]",
                          "Lineage; references a raw or post-processed tomogram_id in this "

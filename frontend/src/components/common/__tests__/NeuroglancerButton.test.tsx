@@ -56,6 +56,28 @@ describe('NeuroglancerButton — source={null}', () => {
   })
 })
 
+describe('NeuroglancerButton — disabledReason', () => {
+  it('disables the button and shows the reason underneath, even with a valid source', () => {
+    renderWithClient(
+      <NeuroglancerButton
+        source={{
+          kind: 'launch',
+          entity: 'tomogram',
+          sampleId: 's',
+          acquisitionId: 'a',
+          groupId: 'g',
+          entityId: 't',
+        }}
+        disabledReason="Viewer disabled: fix the MRC header."
+      />,
+    )
+    expect(
+      screen.getByRole('button', { name: /view in neuroglancer/i }),
+    ).toBeDisabled()
+    expect(screen.getByText(/fix the mrc header/i)).toBeInTheDocument()
+  })
+})
+
 describe('NeuroglancerButton — kind:zarr-link', () => {
   it('renders an anchor with the given href', () => {
     renderWithClient(
