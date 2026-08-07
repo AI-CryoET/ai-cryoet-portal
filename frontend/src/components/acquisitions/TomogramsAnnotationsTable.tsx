@@ -38,6 +38,13 @@ type TomogramRow =
 
 const dash = '—'
 
+// Shown under a disabled launch button when the tomogram's MRC header has no
+// voxel size (cella=0): mrc-ng-server serves a bogus default resolution, so the
+// viewer would be mis-scaled. Keyed off the tomogram's `mrc_voxel_size_missing`
+// flag (set by the assembler from the header read).
+const VOXEL_MISSING_MSG =
+  "Voxel size missing from MRC file header. Fix to enable viewer.";
+
 // Shared fixed width for the trailing "View in Neuroglancer" column so the
 // buttons line up (and stay the same size) across the tomogram and annotation
 // tables, both of which are full-width and right-align the button.
@@ -229,6 +236,9 @@ function TomogramsTable(props: {
                   }
                 : null
             }
+            disabledReason={
+              row.original.mrc_voxel_size_missing ? VOXEL_MISSING_MSG : undefined
+            }
           />
         ),
       },
@@ -276,8 +286,24 @@ function AnnotationsTable(props: {
   sampleId: string
   acquisitionId: string
   annotations: AnnotationOut[]
+  tomograms: TomogramRow[]
 }) {
-  const { sampleId, acquisitionId, annotations } = props
+  const { sampleId, acquisitionId, annotations, tomograms } = props
+  // A bbox annotation renders over a group tomogram (its `derived_from`, or —
+  // if unset — whichever the backend picks). If that tomogram's header has no
+  // voxel size, the overlay is mis-scaled, so disable the launch. Plain (own-
+  // mrc) annotations aren't covered by the tomogram flag, so they're left as-is.
+  const brokenTomoIds = new Set(
+    tomograms.filter((t) => t.mrc_voxel_size_missing).map((t) => t.tomogram_id),
+  )
+  const annotationDisabledReason = (a: AnnotationOut): string | undefined => {
+    const isBbox = a.files.some((f) => f.toLowerCase().endsWith('.json'))
+    if (!isBbox) return undefined
+    const targetBroken = a.derived_from
+      ? brokenTomoIds.has(a.derived_from)
+      : brokenTomoIds.size > 0
+    return targetBroken ? VOXEL_MISSING_MSG : undefined
+  }
   if (annotations.length === 0) {
     return (
       <Typography variant="body2" color="text.secondary">
@@ -388,6 +414,7 @@ function AnnotationsTable(props: {
                           }
                         : null
                     }
+                    disabledReason={annotationDisabledReason(a)}
                   />
                 </TableCell>
               </TableRow>
@@ -522,6 +549,7 @@ export function TomogramsAnnotationsTable(props: {
                         sampleId={sampleId}
                         acquisitionId={acquisitionId}
                         annotations={annotationsByGroup.get(groupId) ?? []}
+                        tomograms={tomogramsByGroup.get(groupId) ?? []}
                       />
                     </Stack>
                   </Stack>
