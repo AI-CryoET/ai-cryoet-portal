@@ -298,6 +298,8 @@ git push origin v1.0.0
 This builds and pushes all three images (`ai-cryoet-api`, `ai-cryoet-frontend`,
 `ai-cryoet-scanner`) to `ghcr.io/ai-cryoet/`.
 
+Don't forget to draft a new release to go along with the tag: https://github.com/AI-CryoET/ai-cryoet-portal/releases/new. Auto-generate the notes to include all the PRs since the last tag.
+
 Then pin the new tag in the overlay's `kustomization.yaml`. Note: the build
 workflow's `metadata-action` strips the leading `v`, so a `v1.0.0` git tag
 publishes image tag `1.0.0` (without the `v`) — use that here:
