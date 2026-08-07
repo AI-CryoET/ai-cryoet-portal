@@ -1,69 +1,96 @@
-import { useState } from 'react'
-import { Button, CircularProgress, Stack, Tooltip, Typography } from '@mui/material'
-import { useMutation } from '@tanstack/react-query'
-import type { ViewerLaunchOut } from '../../types'
-import { apiFetch } from '../../utils/api'
+import { useState } from 'react';
+import {
+  Button,
+  CircularProgress,
+  Stack,
+  Tooltip,
+  Typography
+} from '@mui/material';
+import { useMutation } from '@tanstack/react-query';
+import type { ViewerLaunchOut } from '../../types';
+import { apiFetch } from '../../utils/api';
 
 export type NeuroglancerSource =
   // `groupId` is the Reconstructions/{reconstruction_alignment_id}/ segment —
   // required for tomograms and annotations (their ids are only file stems,
   // unique within the group), absent for tilt series.
-  | { kind: 'launch'; entity: 'tomogram' | 'annotation'; sampleId: string; acquisitionId: string; groupId: string; entityId: string }
-  | { kind: 'launch'; entity: 'tilt-series'; sampleId: string; acquisitionId: string; entityId: string }
+  | {
+      kind: 'launch';
+      entity: 'tomogram' | 'annotation';
+      sampleId: string;
+      acquisitionId: string;
+      groupId: string;
+      entityId: string;
+    }
+  | {
+      kind: 'launch';
+      entity: 'tilt-series';
+      sampleId: string;
+      acquisitionId: string;
+      entityId: string;
+    }
   | { kind: 'zarr-link'; url: string }
-  | null
+  | null;
 
-const LAUNCH_SEGMENT: Record<Extract<NeuroglancerSource, { kind: 'launch' }>['entity'], string> = {
+const LAUNCH_SEGMENT: Record<
+  Extract<NeuroglancerSource, { kind: 'launch' }>['entity'],
+  string
+> = {
   tomogram: 'tomograms',
   'tilt-series': 'tilt-series',
-  annotation: 'annotations',
-}
+  annotation: 'annotations'
+};
 
 interface NeuroglancerButtonProps {
-  source: NeuroglancerSource
-  label?: string
+  readonly source: NeuroglancerSource;
+  readonly label?: string;
   // When set, the button is disabled and this text is shown as a tooltip and
   // as a warning caption underneath — used when launching would produce a
   // broken viewer (e.g. an MRC whose header has no voxel size). Takes
   // precedence over `source`.
-  disabledReason?: string | null
+  readonly disabledReason?: string | null;
 }
 
-function launchNeuroglancer(source: Extract<NeuroglancerSource, { kind: 'launch' }>): Promise<ViewerLaunchOut> {
-  const segment = LAUNCH_SEGMENT[source.entity]
-  const group = 'groupId' in source ? `/${source.groupId}` : ''
+function launchNeuroglancer(
+  source: Extract<NeuroglancerSource, { kind: 'launch' }>
+): Promise<ViewerLaunchOut> {
+  const segment = LAUNCH_SEGMENT[source.entity];
+  const group = 'groupId' in source ? `/${source.groupId}` : '';
   return apiFetch<ViewerLaunchOut>(
     `/${segment}/${source.sampleId}/${source.acquisitionId}${group}/${source.entityId}/neuroglancer`,
-    { method: 'POST' },
-  )
+    { method: 'POST' }
+  );
 }
 
-export function NeuroglancerButton(props: NeuroglancerButtonProps) {
-  const { source, label = 'View in Neuroglancer', disabledReason } = props
-  const [launchError, setLaunchError] = useState<string | null>(null)
+export function NeuroglancerButton({
+  source,
+  label = 'View in Neuroglancer',
+  disabledReason
+}: NeuroglancerButtonProps) {
+  const [launchError, setLaunchError] = useState<string | null>(null);
 
-  const mutation = useMutation({ mutationFn: launchNeuroglancer })
+  const mutation = useMutation({ mutationFn: launchNeuroglancer });
 
   if (disabledReason) {
     return (
-      <Stack spacing={0.5} alignItems="flex-end">
+      <Stack alignItems="flex-end" spacing={0.5}>
         <Tooltip title={disabledReason}>
           {/* span wrapper so the tooltip still fires on the disabled button */}
           <span>
-            <Button variant="contained" size="small" disabled>
+            <Button disabled size="small" variant="contained">
               {label}
             </Button>
           </span>
         </Tooltip>
         <Typography
-          variant="caption"
           color="warning.main"
           sx={{ maxWidth: 200, textAlign: 'right' }}
+          variant="caption"
         >
           {disabledReason}
         </Typography>
       </Stack>
-    )
+    );
   }
 
   if (source === null) {
@@ -71,34 +98,37 @@ export function NeuroglancerButton(props: NeuroglancerButtonProps) {
       <Tooltip title="Neuroglancer link coming soon">
         {/* span wrapper so the tooltip still fires on the disabled button */}
         <span>
-          <Button variant="contained" size="small" disabled>
+          <Button disabled size="small" variant="contained">
             {label}
           </Button>
         </span>
       </Tooltip>
-    )
+    );
   }
 
   if (source.kind === 'zarr-link') {
     return (
       <Button
-        variant="contained"
-        size="small"
         href={source.url}
-        target="_blank"
         rel="noopener noreferrer"
+        size="small"
+        target="_blank"
+        variant="contained"
       >
         {label}
       </Button>
-    )
+    );
   }
 
   // kind === 'launch'
   function handleClick() {
-    setLaunchError(null)
+    setLaunchError(null);
     // Open blank window synchronously to avoid popup blocker.
-    const w = window.open('about:blank', '_blank')
-    const launchSource = source as Extract<NeuroglancerSource, { kind: 'launch' }>
+    const w = window.open('about:blank', '_blank');
+    const launchSource = source as Extract<
+      NeuroglancerSource,
+      { kind: 'launch' }
+    >;
     mutation.mutate(launchSource, {
       onSuccess(data) {
         // Tomograms and annotations return a fully-formed external viewer URL
@@ -107,9 +137,12 @@ export function NeuroglancerButton(props: NeuroglancerButtonProps) {
         // re-rooting below only applies to tilt-series, still served by the
         // API's own in-process Neuroglancer port.
         // ponytail: drop this branch once tilt-series goes stateless too.
-        if (launchSource.entity === 'tomogram' || launchSource.entity === 'annotation') {
-          w!.location.href = data.url
-          return
+        if (
+          launchSource.entity === 'tomogram' ||
+          launchSource.entity === 'annotation'
+        ) {
+          w!.location.href = data.url;
+          return;
         }
         // DEV-ONLY same-origin re-rooting (pairs with the Neuroglancer reverse
         // proxy in vite.config.ts).
@@ -127,29 +160,34 @@ export function NeuroglancerButton(props: NeuroglancerButtonProps) {
         // NOTE: this assumes the dev proxy is present. In production Neuroglancer
         // is served on its own port and the backend URL would be used as-is, so
         // this rewrite would need revisiting for a non-dev deployment.
-        const u = new URL(data.url)
-        w!.location.href = window.location.origin + u.pathname + u.search + u.hash
+        const u = new URL(data.url);
+        w!.location.href =
+          window.location.origin + u.pathname + u.search + u.hash;
       },
       onError() {
-        w?.close()
-        setLaunchError('Failed to launch viewer')
-      },
-    })
+        w?.close();
+        setLaunchError('Failed to launch viewer');
+      }
+    });
   }
 
   return (
-    <Tooltip title={launchError ?? ''} open={!!launchError}>
+    <Tooltip open={!!launchError} title={launchError ?? ''}>
       <span>
         <Button
-          variant="contained"
-          size="small"
           disabled={mutation.isPending}
           onClick={handleClick}
-          startIcon={mutation.isPending ? <CircularProgress size={14} color="inherit" /> : undefined}
+          size="small"
+          startIcon={
+            mutation.isPending ? (
+              <CircularProgress color="inherit" size={14} />
+            ) : undefined
+          }
+          variant="contained"
         >
           {label}
         </Button>
       </span>
     </Tooltip>
-  )
+  );
 }

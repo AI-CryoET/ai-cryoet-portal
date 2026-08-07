@@ -1,5 +1,5 @@
-import { Box, Button } from '@mui/material'
-import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined'
+import { Box, Button } from '@mui/material';
+import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 
 // The button lives in two spots and only one shows at a time: in the page
 // title row from the `md` breakpoint up, and below the title/warnings below it
@@ -7,21 +7,21 @@ import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined'
 // the `display` breakpoints pick which is visible.
 export function ViewAllMetadataButton({
   onClick,
-  placement,
+  placement
 }: {
-  onClick: () => void
-  placement: 'title' | 'below'
+  readonly onClick: () => void;
+  readonly placement: 'title' | 'below';
 }) {
   const button = (
     <Button
-      variant="contained"
+      onClick={onClick}
       size="small"
       startIcon={<InfoOutlinedIcon />}
-      onClick={onClick}
+      variant="contained"
     >
       View all metadata
     </Button>
-  )
+  );
 
   // Title-row instance: only shown from `md` up.
   if (placement === 'title') {
@@ -29,11 +29,13 @@ export function ViewAllMetadataButton({
       <Box sx={{ flexShrink: 0, display: { xs: 'none', md: 'inline-flex' } }}>
         {button}
       </Box>
-    )
+    );
   }
 
   // Below-title instance (below `md`): a block wrapper puts it on its own line
   // (a bare Button is inline-flex and would tuck in beside the inline warning
   // text).
-  return <Box sx={{ mt: 2, display: { xs: 'block', md: 'none' } }}>{button}</Box>
+  return (
+    <Box sx={{ mt: 2, display: { xs: 'block', md: 'none' } }}>{button}</Box>
+  );
 }

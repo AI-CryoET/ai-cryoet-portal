@@ -1,89 +1,102 @@
-import { Box, Chip, Paper, Stack, Typography } from '@mui/material'
-import type { AcquisitionScanStatus, EntityScanStatus } from '~/types'
+import { Box, Chip, Paper, Stack, Typography } from '@mui/material';
+import type { AcquisitionScanStatus, EntityScanStatus } from '~/types';
 
 // Scan timestamps are Unix seconds; render in the viewer's locale.
 function formatTs(seconds: number | null | undefined): string {
-  if (seconds == null) return '—'
-  return new Date(seconds * 1000).toLocaleString(undefined, { timeZoneName: 'short' })
+  if (seconds == null) {
+    return '—';
+  }
+  return new Date(seconds * 1000).toLocaleString(undefined, {
+    timeZoneName: 'short'
+  });
 }
 
 function outcomeColor(
-  outcome: EntityScanStatus['last_outcome'],
+  outcome: EntityScanStatus['last_outcome']
 ): 'success' | 'error' | 'default' {
   switch (outcome) {
     case 'upserted':
-      return 'success'
+      return 'success';
     case 'failed':
-      return 'error'
+      return 'error';
     default:
-      return 'default'
+      return 'default';
   }
 }
 
 function outcomeLabel(outcome: EntityScanStatus['last_outcome']): string {
-  return outcome === 'upserted' ? 'updated' : outcome
+  return outcome === 'upserted' ? 'updated' : outcome;
 }
 
 function Row({
   label,
-  children,
+  children
 }: {
-  label: string
-  children: React.ReactNode
+  readonly label: string;
+  readonly children: React.ReactNode;
 }) {
   return (
     <Box
-      sx={{ display: 'flex', justifyContent: 'space-between', gap: 3, minWidth: 0 }}
+      sx={{
+        display: 'flex',
+        justifyContent: 'space-between',
+        gap: 3,
+        minWidth: 0
+      }}
     >
-      <Typography variant="body2" color="text.secondary">
+      <Typography color="text.secondary" variant="body2">
         {label}
       </Typography>
       <Box sx={{ minWidth: 0, textAlign: 'right' }}>{children}</Box>
     </Box>
-  )
+  );
 }
 
 // Thumbnail provenance block — acquisition-only. `missing_source` /
 // `render_failed` / a never-generated thumbnail drive the "no preview source"
 // and "never" states (plan §4.5, wireframe).
-function ThumbnailProvenance({ status }: { status: AcquisitionScanStatus }) {
+function ThumbnailProvenance({
+  status
+}: {
+  readonly status: AcquisitionScanStatus;
+}) {
   const noSource =
     status.thumbnail_status === 'missing_source' ||
     status.thumbnail_source_kind === 'none' ||
-    status.thumbnail_source_kind == null
-  const failed = status.thumbnail_status === 'render_failed'
+    status.thumbnail_source_kind == null;
+  const failed = status.thumbnail_status === 'render_failed';
 
   return (
     <>
       <Row label="Thumbnail source file">
         {noSource ? (
-          <Typography variant="body2" sx={{ color: 'warning.main' }}>
+          <Typography sx={{ color: 'warning.main' }} variant="body2">
             — no preview source found —
           </Typography>
         ) : failed ? (
-          <Typography variant="body2" sx={{ color: 'error.main' }}>
+          <Typography sx={{ color: 'error.main' }} variant="body2">
             render failed
           </Typography>
         ) : status.thumbnail_source_path ? (
           <Typography
-            variant="body2"
             sx={{
               fontFamily: 'monospace',
               fontSize: 12.5,
-              wordBreak: 'break-all',
+              wordBreak: 'break-all'
             }}
+            variant="body2"
           >
             {status.thumbnail_source_path}
           </Typography>
         ) : (
-          <Typography variant="body2" color="text.disabled">
+          <Typography color="text.disabled" variant="body2">
             —
           </Typography>
         )}
       </Row>
       <Row label="Thumbnail generated">
         {status.thumbnail_generated_at == null ? (
-          <Typography variant="body2" sx={{ color: 'warning.main' }}>
+          <Typography sx={{ color: 'warning.main' }} variant="body2">
             never
           </Typography>
         ) : (
@@ -93,37 +106,37 @@ function ThumbnailProvenance({ status }: { status: AcquisitionScanStatus }) {
         )}
       </Row>
     </>
-  )
+  );
 }
 
 // Priority 2 readout on the sample / acquisition detail pages (plan §1.6, §5.2).
 // A not-yet-rescanned entity has `status === null`.
 export function EntityFreshnessCard({
   status,
-  kind,
+  kind
 }: {
-  status: EntityScanStatus | AcquisitionScanStatus | null
-  kind: 'sample' | 'acquisition'
+  readonly status: EntityScanStatus | AcquisitionScanStatus | null;
+  readonly kind: 'sample' | 'acquisition';
 }) {
   return (
     <Paper
       elevation={0}
       sx={{ px: 2.5, py: 2, borderRadius: 2, bgcolor: 'grey.100' }}
     >
-      <Typography variant="subtitle2" gutterBottom>
+      <Typography gutterBottom variant="subtitle2">
         Data freshness &amp; preview
       </Typography>
       {status == null ? (
-        <Typography variant="body2" color="text.secondary">
+        <Typography color="text.secondary" variant="body2">
           This {kind} has not been scanned yet.
         </Typography>
       ) : (
         <Stack spacing={0.5}>
           <Row label="Last scan outcome">
             <Chip
+              color={outcomeColor(status.last_outcome)}
               label={outcomeLabel(status.last_outcome)}
               size="small"
-              color={outcomeColor(status.last_outcome)}
               variant="outlined"
             />
           </Row>
@@ -143,5 +156,5 @@ export function EntityFreshnessCard({
         </Stack>
       )}
     </Paper>
-  )
+  );
 }

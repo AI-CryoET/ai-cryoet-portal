@@ -212,10 +212,9 @@ export class FileglancerClient {
    * Returns the raw JSON payload from the server.
    */
   async listFiles(fsp: string, subpath = ''): Promise<unknown> {
-    const res = await this.request(
-      this.filesUrl('/api/files/', fsp, subpath),
-      { method: 'GET' }
-    );
+    const res = await this.request(this.filesUrl('/api/files/', fsp, subpath), {
+      method: 'GET'
+    });
     await this.assertOk(res);
     return res.json();
   }
@@ -362,7 +361,6 @@ export class FileglancerClient {
     return new Promise<boolean>(resolve => {
       let settled = false;
       let poll: ReturnType<typeof setInterval> | undefined;
-      let timer: ReturnType<typeof setTimeout> | undefined;
 
       const cleanup = () => {
         window.removeEventListener('message', onMessage);
@@ -393,7 +391,9 @@ export class FileglancerClient {
       };
 
       window.addEventListener('message', onMessage);
-      timer = setTimeout(() => finish(false), timeoutMs);
+      // Declared here (not with `poll` above) so it can be const — the cleanup
+      // closure reads it lazily, only after this synchronous setup completes.
+      const timer = setTimeout(() => finish(false), timeoutMs);
 
       const watched = getWindow();
       if (watched) {
@@ -429,7 +429,10 @@ export class FileglancerClient {
     if (res.status === 412) {
       return new ConflictError(detail || 'Precondition failed');
     }
-    return new FileglancerError(detail || `Request failed (${res.status})`, res.status);
+    return new FileglancerError(
+      detail || `Request failed (${res.status})`,
+      res.status
+    );
   }
 }
 

@@ -1,13 +1,13 @@
-import { readFileSync } from "node:fs";
-import { tanstackStart } from "@tanstack/react-start/plugin/vite";
-import { defineConfig, loadEnv } from "vite";
-import viteReact from "@vitejs/plugin-react";
+import { readFileSync } from 'node:fs';
+import { tanstackStart } from '@tanstack/react-start/plugin/vite';
+import { defineConfig, loadEnv } from 'vite';
+import viteReact from '@vitejs/plugin-react';
 
 /// <reference types="vitest" />
 
 export default defineConfig(({ mode }) => {
-  const env = loadEnv(mode, process.cwd(), "");
-  const apiTarget = env.API_PROXY_TARGET || "http://localhost:8000";
+  const env = loadEnv(mode, process.cwd(), '');
+  const apiTarget = env.API_PROXY_TARGET || 'http://localhost:8000';
   // SSR-side fetches read process.env.CRYOET_API_BASE_URL; mirror API_PROXY_TARGET into it
   // so a single .env.local var configures both the browser proxy and the SSR base URL.
   process.env.CRYOET_API_BASE_URL ??= apiTarget;
@@ -41,16 +41,16 @@ export default defineConfig(({ mode }) => {
     env.NEUROGLANCER_PROXY_TARGET ||
     `http://127.0.0.1:${env.NEUROGLANCER_PORT || 8050}`;
   const ngPaths = [
-    "/v",
-    "/neuroglancer",
-    "/events",
-    "/state",
-    "/action",
-    "/volume_response",
-    "/credentials",
+    '/v',
+    '/neuroglancer',
+    '/events',
+    '/state',
+    '/action',
+    '/volume_response',
+    '/credentials'
   ];
   const neuroglancerDevProxy = Object.fromEntries(
-    ngPaths.map((p) => [`^${p}/`, { target: ngTarget, ws: true }]),
+    ngPaths.map(p => [`^${p}/`, { target: ngTarget, ws: true }])
   );
 
   return {
@@ -60,29 +60,29 @@ export default defineConfig(({ mode }) => {
       // When serving HTTPS on a custom hostname, Vite 8 rejects Host headers not
       // in this allowlist; scope it to the internal Janelia domain. Only applied
       // alongside the cert so plain-HTTP dev is untouched.
-      ...(https ? { https, allowedHosts: [".int.janelia.org"] } : {}),
+      ...(https ? { https, allowedHosts: ['.int.janelia.org'] } : {}),
       proxy: {
-        "/api": {
+        '/api': {
           target: apiTarget,
           changeOrigin: true,
-          rewrite: (p) => p.replace(/^\/api/, ""),
+          rewrite: p => p.replace(/^\/api/, '')
         },
         // DEV-ONLY: Neuroglancer reverse proxy (see comment above). Not present
         // in any production build.
-        ...neuroglancerDevProxy,
-      },
+        ...neuroglancerDevProxy
+      }
     },
     ssr: {
-      noExternal: ["@mui/*"],
+      noExternal: ['@mui/*']
     },
     resolve: {
-      tsconfigPaths: true,
+      tsconfigPaths: true
     },
     plugins: [tanstackStart(), viteReact()],
     test: {
-      environment: "jsdom",
+      environment: 'jsdom',
       globals: true,
-      setupFiles: ["./src/test-setup.ts"],
-    },
+      setupFiles: ['./src/test-setup.ts']
+    }
   };
 });

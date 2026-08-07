@@ -1,13 +1,13 @@
-import { createFileRoute } from '@tanstack/react-router'
+import { createFileRoute } from '@tanstack/react-router';
 import {
   filtersOptionsQueryOptions,
-  samplesQueryOptions,
-} from '~/utils/queryOptions'
+  samplesQueryOptions
+} from '~/utils/queryOptions';
 import {
   samplesSearchSchema,
-  type SamplesSearchParams,
-} from '~/utils/samplesSearch'
-import { AllDataBrowser } from '~/components/landing/AllDataBrowser'
+  type SamplesSearchParams
+} from '~/utils/samplesSearch';
+import { AllDataBrowser } from '~/components/landing/AllDataBrowser';
 
 export const Route = createFileRoute('/data')({
   // The URL is the source of truth for filters: validate + coerce search params
@@ -21,17 +21,17 @@ export const Route = createFileRoute('/data')({
       // Prime both the filtered list (honouring the URL's data_source, if any)
       // and the unfiltered all-arms list (the "of N" denominator).
       queryClient.ensureQueryData(samplesQueryOptions(search)),
-      queryClient.ensureQueryData(samplesQueryOptions({})),
+      queryClient.ensureQueryData(samplesQueryOptions({}))
     ]),
-  component: AllData,
-})
+  component: AllData
+});
 
 function AllData() {
   return (
     <AllDataBrowser
-      title="All data"
-      search={Route.useSearch()}
       navigate={Route.useNavigate()}
+      search={Route.useSearch()}
+      title="All data"
     />
-  )
+  );
 }

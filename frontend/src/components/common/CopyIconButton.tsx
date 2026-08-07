@@ -1,36 +1,37 @@
-import { useState, type ReactNode } from 'react'
-import { IconButton, Tooltip } from '@mui/material'
-import ContentCopyIcon from '@mui/icons-material/ContentCopy'
-import CheckIcon from '@mui/icons-material/Check'
+import { useState, type ReactNode } from 'react';
+import { IconButton, Tooltip } from '@mui/material';
+import ContentCopyIcon from '@mui/icons-material/ContentCopy';
+import CheckIcon from '@mui/icons-material/Check';
 
 interface CopyIconButtonProps {
   // Text written to the clipboard on click.
-  text: string
+  readonly text: string;
   // Tooltip describing the action (e.g. "Copy path", "Copy Fileglancer link").
-  tooltip: string
+  readonly tooltip: string;
   // Optional custom resting icon; defaults to the copy glyph.
-  icon?: ReactNode
+  readonly icon?: ReactNode;
   // Tooltip shown briefly after a successful copy.
-  copiedTooltip?: string
-  size?: 'small' | 'medium'
+  readonly copiedTooltip?: string;
+  readonly size?: 'small' | 'medium';
 }
 
-export function CopyIconButton(props: CopyIconButtonProps) {
-  const {
-    text,
-    tooltip,
-    icon,
-    copiedTooltip = 'Copied!',
-    size = 'small',
-  } = props
-  const [copied, setCopied] = useState(false)
+export function CopyIconButton({
+  text,
+  tooltip,
+  icon,
+  copiedTooltip = 'Copied!',
+  size = 'small'
+}: CopyIconButtonProps) {
+  const [copied, setCopied] = useState(false);
 
   async function handleClick() {
-    if (typeof navigator === 'undefined' || !navigator.clipboard) return
+    if (typeof navigator === 'undefined' || !navigator.clipboard) {
+      return;
+    }
     try {
-      await navigator.clipboard.writeText(text)
-      setCopied(true)
-      setTimeout(() => setCopied(false), 1500)
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
     } catch {
       // Swallow clipboard errors silently — the user can retry.
     }
@@ -38,7 +39,7 @@ export function CopyIconButton(props: CopyIconButtonProps) {
 
   return (
     <Tooltip title={copied ? copiedTooltip : tooltip}>
-      <IconButton aria-label={tooltip} size={size} onClick={handleClick}>
+      <IconButton aria-label={tooltip} onClick={handleClick} size={size}>
         {copied ? (
           <CheckIcon fontSize="small" />
         ) : (
@@ -46,5 +47,5 @@ export function CopyIconButton(props: CopyIconButtonProps) {
         )}
       </IconButton>
     </Tooltip>
-  )
+  );
 }

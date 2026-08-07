@@ -1,4 +1,4 @@
-import { MenuItem, TextField } from '@mui/material'
+import { MenuItem, TextField } from '@mui/material';
 
 /**
  * Picks which Reconstructions/<group>/ folder's reconstruction.toml is being
@@ -15,33 +15,34 @@ import { MenuItem, TextField } from '@mui/material'
 export function GroupSelector({
   groups,
   value,
-  onChange,
+  onChange
 }: {
-  groups: string[]
-  value: string
-  onChange: (group: string) => void
+  readonly groups: string[];
+  readonly value: string;
+  readonly onChange: (group: string) => void;
 }) {
   // The deep link names a group before the list has loaded; without it as an
   // option MUI renders a blank box and warns about an out-of-range value.
-  const options = value && !groups.includes(value) ? [value, ...groups] : groups
+  const options =
+    value && !groups.includes(value) ? [value, ...groups] : groups;
   return (
     <TextField
-      select
+      helperText="Which Reconstructions/{id}/ folder this file belongs to"
       label="Group"
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
+      onChange={e => onChange(e.target.value)}
+      select
       size="small"
       sx={{ minWidth: 260, alignSelf: 'flex-start' }}
-      helperText="Which Reconstructions/{id}/ folder this file belongs to"
+      value={value}
     >
       <MenuItem value="">
         <em>New group…</em>
       </MenuItem>
-      {options.map((g) => (
+      {options.map(g => (
         <MenuItem key={g} value={g}>
           {g}
         </MenuItem>
       ))}
     </TextField>
-  )
+  );
 }

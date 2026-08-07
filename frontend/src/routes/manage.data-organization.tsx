@@ -1,4 +1,4 @@
-import { createFileRoute } from '@tanstack/react-router'
+import { createFileRoute } from '@tanstack/react-router';
 import {
   Box,
   Breadcrumbs,
@@ -7,115 +7,125 @@ import {
   Stack,
   Tab,
   Tabs,
-  Typography,
-} from '@mui/material'
-import DownloadIcon from '@mui/icons-material/Download'
-import { CustomLink } from '~/components/CustomLink'
-import { FileTree } from '~/components/dataOrganization/FileTree'
+  Typography
+} from '@mui/material';
+import DownloadIcon from '@mui/icons-material/Download';
+import { CustomLink } from '~/components/CustomLink';
+import { FileTree } from '~/components/dataOrganization/FileTree';
 import {
   dataRootTree,
   experimentalTree,
-  simulationTree,
-} from '~/components/dataOrganization/trees'
-import { SchemaExplorer } from '~/components/dataOrganization/schema/SchemaExplorer'
+  simulationTree
+} from '~/components/dataOrganization/trees';
+import { SchemaExplorer } from '~/components/dataOrganization/schema/SchemaExplorer';
 
-type DataOrgSearch = { tab: 'placing' | 'schema' }
+type DataOrgSearch = { tab: 'placing' | 'schema' };
 
 export const Route = createFileRoute('/manage/data-organization')({
   validateSearch: (search: Record<string, unknown>): DataOrgSearch => ({
-    tab: search.tab === 'schema' ? 'schema' : 'placing',
+    tab: search.tab === 'schema' ? 'schema' : 'placing'
   }),
-  component: DataOrganization,
-})
+  component: DataOrganization
+});
 
-function SectionHeading({ children }: { children: React.ReactNode }) {
+function SectionHeading({ children }: { readonly children: React.ReactNode }) {
   return (
-    <Typography variant="h6" component="h2">
+    <Typography component="h2" variant="h6">
       {children}
     </Typography>
-  )
+  );
 }
 
 function AuthorLinks({
-  tabs,
+  tabs
 }: {
-  tabs: ('sample' | 'acquisition' | 'md_run')[]
+  readonly tabs: ('sample' | 'acquisition' | 'md_run')[];
 }) {
   return (
     <>
       {tabs.map((tab, i) => (
         <span key={tab}>
-          {i > 0 && (
-            <Box component="span" aria-hidden>
+          {i > 0 ? (
+            <Box aria-hidden component="span">
               {' · '}
             </Box>
-          )}
-          <CustomLink to="/manage/author" search={{ tab }}>
+          ) : null}
+          <CustomLink search={{ tab }} to="/manage/author">
             {tab}.toml
           </CustomLink>
         </span>
       ))}
-      </>
-  )
+    </>
+  );
 }
 
 // Lettered step list (a, b, c) shared by the how-to sections.
-function Steps({ children }: { children: React.ReactNode }) {
+function Steps({ children }: { readonly children: React.ReactNode }) {
   return (
     <Box component="ol" sx={{ m: 0, pl: 3, listStyleType: 'lower-alpha' }}>
       {children}
     </Box>
-  )
+  );
 }
 
-function Step({ children }: { children: React.ReactNode }) {
+function Step({ children }: { readonly children: React.ReactNode }) {
   return (
-    <Typography component="li" variant="body1" sx={{ '&:not(:last-child)': { mb: 1 } }}>
+    <Typography
+      component="li"
+      sx={{ '&:not(:last-child)': { mb: 1 } }}
+      variant="body1"
+    >
       {children}
     </Typography>
-  )
+  );
 }
 
-function DownloadTemplate({ name, label }: { name: string; label: string }) {
+function DownloadTemplate({
+  name,
+  label
+}: {
+  readonly name: string;
+  readonly label: string;
+}) {
   return (
     <Button
       component="a"
-      href={`/templates/${name}.zip`}
       download
-      variant="outlined"
+      href={`/templates/${name}.zip`}
       size="small"
       startIcon={<DownloadIcon />}
       sx={{ alignSelf: 'flex-start', mb: '8px' }}
+      variant="outlined"
     >
       {label}
     </Button>
-  )
+  );
 }
 
 function DataOrganization() {
-  const { tab } = Route.useSearch()
-  const navigate = Route.useNavigate()
+  const { tab } = Route.useSearch();
+  const navigate = Route.useNavigate();
   return (
     <Stack spacing={4}>
       <Breadcrumbs aria-label="breadcrumb">
-        <CustomLink to="/" color="inherit" sx={{ fontWeight: 700 }}>
+        <CustomLink color="inherit" sx={{ fontWeight: 700 }} to="/">
           Home
         </CustomLink>
-        <CustomLink to="/manage" color="inherit">
+        <CustomLink color="inherit" to="/manage">
           Manage
         </CustomLink>
         <Typography color="text.primary">Data organization</Typography>
       </Breadcrumbs>
 
       <Tabs
-        value={tab}
-        sx={{ borderBottom: 1, borderColor: 'divider' }}
         onChange={(_e, value) =>
-          navigate({ search: (prev) => ({ ...prev, tab: value }) })
+          navigate({ search: prev => ({ ...prev, tab: value }) })
         }
+        sx={{ borderBottom: 1, borderColor: 'divider' }}
+        value={tab}
       >
-        <Tab value="placing" label="Directory layout" />
-        <Tab value="schema" label="Data schema" />
+        <Tab label="Directory layout" value="placing" />
+        <Tab label="Data schema" value="schema" />
       </Tabs>
 
       {tab === 'schema' ? (
@@ -123,137 +133,149 @@ function DataOrganization() {
       ) : (
         <>
           <Box>
-        <Typography variant="h5" component="h1">
-          Organizing data for ingestion
-        </Typography>
-        <Typography variant="body2" color="text.secondary">
-          How to place new cryoET data on the Janelia file share so the catalog
-          scanner ingests it correctly.
-        </Typography>
-      </Box>
+            <Typography component="h1" variant="h5">
+              Organizing data for ingestion
+            </Typography>
+            <Typography color="text.secondary" variant="body2">
+              How to place new cryoET data on the Janelia file share so the
+              catalog scanner ingests it correctly.
+            </Typography>
+          </Box>
 
-      {/* Section 1 — where the data lives */}
-      <Stack spacing={2}>
-        <SectionHeading>1. Where to find the data</SectionHeading>
-        <Typography variant="body1">
-          All data lives on the Janelia file share, reachable over the{' '}
-          <strong>Janelia VPN</strong>, under the <code>cryoet</code> share's{' '}
-          <code>data/</code> directory. Starter templates for a
-          new sample live on the same share at <code>data/scratch/templates/</code>.
-        </Typography>
-        <Typography variant="body1">
-          Under the <code>data/</code> directory are two top-level arms: <code>Experimental/</code> and <code>MdSimulation/</code>. The arm a sample lives under is
-          the source of truth for its <code>data_source</code>. </Typography>
-          <Typography variant="body1">
-            Within <code>MdSimulation/</code>, there are three subdirectories: <code>Bulk/</code>, <code>SingleMolecule/</code>, and <code>Slab/</code>.
-          The subdirectory a sample lives under determines its <code>dataset_type</code>.
-        </Typography>
-        <FileTree nodes={dataRootTree} />
-      </Stack>
+          {/* Section 1 — where the data lives */}
+          <Stack spacing={2}>
+            <SectionHeading>1. Where to find the data</SectionHeading>
+            <Typography variant="body1">
+              All data lives on the Janelia file share, reachable over the{' '}
+              <strong>Janelia VPN</strong>, under the <code>cryoet</code>{' '}
+              share's <code>data/</code> directory. Starter templates for a new
+              sample live on the same share at{' '}
+              <code>data/scratch/templates/</code>.
+            </Typography>
+            <Typography variant="body1">
+              Under the <code>data/</code> directory are two top-level arms:{' '}
+              <code>Experimental/</code> and <code>MdSimulation/</code>. The arm
+              a sample lives under is the source of truth for its{' '}
+              <code>data_source</code>.{' '}
+            </Typography>
+            <Typography variant="body1">
+              Within <code>MdSimulation/</code>, there are three subdirectories:{' '}
+              <code>Bulk/</code>, <code>SingleMolecule/</code>, and{' '}
+              <code>Slab/</code>. The subdirectory a sample lives under
+              determines its <code>dataset_type</code>.
+            </Typography>
+            <FileTree nodes={dataRootTree} />
+          </Stack>
 
-      <Divider />
+          <Divider />
 
-      {/* Section 2 — experimental */}
-      <Stack spacing={2}>
-        <SectionHeading>2. Adding an experimental dataset</SectionHeading>
-        <Steps>
-          <Step>
-            Either copy the starter template at{' '}
-            <code>data/scratch/templates/sample_id_experimental/</code> into{' '}
-            <code>data/Experimental/</code> or download the template.
-          </Step>
-                  <DownloadTemplate
-          name="sample_id_experimental"
-          label="Download experimental template"
-        />
-          <Step>
-            Rename the sample directory and add an acquisition subdirectory per
-            acquisition.
-          </Step>
-          <Step>
-            Author <code>sample.toml</code> at the sample root and{' '}
-            <code>acquisition.toml</code> in each acquisition directory. This can be done by manually editing the template files or by filling out the online form and downloading a completed file: <AuthorLinks tabs={['sample', 'acquisition']} />
-          </Step>
-          
-        </Steps>
+          {/* Section 2 — experimental */}
+          <Stack spacing={2}>
+            <SectionHeading>2. Adding an experimental dataset</SectionHeading>
+            <Steps>
+              <Step>
+                Either copy the starter template at{' '}
+                <code>data/scratch/templates/sample_id_experimental/</code> into{' '}
+                <code>data/Experimental/</code> or download the template.
+              </Step>
+              <DownloadTemplate
+                label="Download experimental template"
+                name="sample_id_experimental"
+              />
+              <Step>
+                Rename the sample directory and add an acquisition subdirectory
+                per acquisition.
+              </Step>
+              <Step>
+                Author <code>sample.toml</code> at the sample root and{' '}
+                <code>acquisition.toml</code> in each acquisition directory.
+                This can be done by manually editing the template files or by
+                filling out the online form and downloading a completed file:{' '}
+                <AuthorLinks tabs={['sample', 'acquisition']} />
+              </Step>
+            </Steps>
 
-        
-        <FileTree nodes={experimentalTree} />
+            <FileTree nodes={experimentalTree} />
+          </Stack>
 
-      </Stack>
+          <Divider />
 
-      <Divider />
+          {/* Section 3 — simulation */}
+          <Stack spacing={2}>
+            <SectionHeading>3. Adding an MD simulation dataset</SectionHeading>
+            <Steps>
+              <Step>
+                Copy the starter template at{' '}
+                <code>data/scratch/templates/sample_id_simulation/</code> into
+                the matching{' '}
+                <code>data/MdSimulation/{'{Bulk|SingleMolecule|Slab}'}/</code>{' '}
+                arm, or download the starter template.
+              </Step>
+              <DownloadTemplate
+                label="Download simulation template"
+                name="sample_id_simulation"
+              />
+              <Step>
+                Author <code>sample.toml</code>, one <code>md_run.toml</code>{' '}
+                per MD run under <code>MdRuns/</code>, and an{' '}
+                <code>acquisition.toml</code> per synthetic-cryoET acquisition
+                under <code>SyntheticCryoET/</code>. This can be done by
+                manually editing the template files or by filling out the online
+                form and downloading a completed file:{' '}
+                <AuthorLinks tabs={['sample', 'md_run', 'acquisition']} />
+              </Step>
+            </Steps>
 
-      {/* Section 3 — simulation */}
-      <Stack spacing={2}>
-        <SectionHeading>3. Adding an MD simulation dataset</SectionHeading>
-        <Steps>
-          <Step>
-            Copy the starter template at{' '}
-            <code>data/scratch/templates/sample_id_simulation/</code> into the
-            matching{' '}
-            <code>data/MdSimulation/{'{Bulk|SingleMolecule|Slab}'}/</code> arm,
-            or download the starter template.
-          </Step>
-                  <DownloadTemplate
-          name="sample_id_simulation"
-          label="Download simulation template"
-        />
-          <Step>
-            Author <code>sample.toml</code>, one <code>md_run.toml</code> per MD
-            run under <code>MdRuns/</code>, and an <code>acquisition.toml</code>{' '}
-            per synthetic-cryoET acquisition under <code>SyntheticCryoET/</code>. This can be done by manually editing the template files or by filling out the online form and downloading a completed file: <AuthorLinks tabs={['sample', 'md_run', 'acquisition']} />
-          </Step>
-        </Steps>
+            <FileTree nodes={simulationTree} />
+          </Stack>
 
-        
-        <FileTree nodes={simulationTree} />
+          <Divider />
 
-      </Stack>
-
-      <Divider />
-
-      {/* Section 4 — processing log */}
-      <Stack spacing={2}>
-        <SectionHeading>
-          4. Append to the processing log as outputs are produced
-        </SectionHeading>
-        <Typography variant="body1">
-          Each{' '}
-          <code>
-            Reconstructions/&#123;reconstruction_alignment_id&#125;/reconstruction.toml
-          </code>{' '}
-          grows over time.
-        </Typography>
-        <Steps>
-          <Step>
-            Record the raw
-          reconstruction once in <code>[[raw_tomogram]]</code>.</Step>
-          <Step>
-            For each new output
-          — a denoised version, a segmentation, an STA result — append a new{' '}
-          <code>[[post_processed_tomogram]]</code> or <code>[[annotation]]</code>{' '}
-          entry to the relevant group's file. Do not delete or modify a tomogram or annotation entry once added.
-            Reprocessing produces a new entry with a new <code>id</code>, placed
-            at the bottom of the file.
-          </Step>
-          <Step>
-            The <code>id</code> under the <code>[[raw_tomogram]]</code>, <code>[[post_processed_tomogram]]</code> or <code>[[annotation]]</code> block must match a{' '}
-            file name without its extension under that same group's{' '}
-            <code>Tomograms/</code> or <code>Annotations/</code> folder.
-          </Step>
-          <Step>
-            Use <code>derived_from</code> to record lineage: on{' '}
-            <code>[[raw_tomogram]]</code> it names the <code>[[tilt_series]]</code>{' '}
-            in the acquisition's <code>acquisition.toml</code> the reconstruction was
-            built from; on <code>[[post_processed_tomogram]]</code> it names the
-            tomogram id(s) it was derived from. An annotation needs no target — it
-            belongs to the whole 3D alignment group.
-          </Step>
-        </Steps>
-      </Stack>
+          {/* Section 4 — processing log */}
+          <Stack spacing={2}>
+            <SectionHeading>
+              4. Append to the processing log as outputs are produced
+            </SectionHeading>
+            <Typography variant="body1">
+              Each{' '}
+              <code>
+                Reconstructions/&#123;reconstruction_alignment_id&#125;/reconstruction.toml
+              </code>{' '}
+              grows over time.
+            </Typography>
+            <Steps>
+              <Step>
+                Record the raw reconstruction once in{' '}
+                <code>[[raw_tomogram]]</code>.
+              </Step>
+              <Step>
+                For each new output — a denoised version, a segmentation, an STA
+                result — append a new <code>[[post_processed_tomogram]]</code>{' '}
+                or <code>[[annotation]]</code> entry to the relevant group's
+                file. Do not delete or modify a tomogram or annotation entry
+                once added. Reprocessing produces a new entry with a new{' '}
+                <code>id</code>, placed at the bottom of the file.
+              </Step>
+              <Step>
+                The <code>id</code> under the <code>[[raw_tomogram]]</code>,{' '}
+                <code>[[post_processed_tomogram]]</code> or{' '}
+                <code>[[annotation]]</code> block must match a file name without
+                its extension under that same group's <code>Tomograms/</code> or{' '}
+                <code>Annotations/</code> folder.
+              </Step>
+              <Step>
+                Use <code>derived_from</code> to record lineage: on{' '}
+                <code>[[raw_tomogram]]</code> it names the{' '}
+                <code>[[tilt_series]]</code> in the acquisition's{' '}
+                <code>acquisition.toml</code> the reconstruction was built from;
+                on <code>[[post_processed_tomogram]]</code> it names the
+                tomogram id(s) it was derived from. An annotation needs no
+                target — it belongs to the whole 3D alignment group.
+              </Step>
+            </Steps>
+          </Stack>
         </>
       )}
     </Stack>
-  )
+  );
 }

@@ -1,6 +1,6 @@
 import {
   createStartHandler,
-  defaultStreamHandler,
-} from '@tanstack/react-start/server'
+  defaultStreamHandler
+} from '@tanstack/react-start/server';
 
-export default createStartHandler(defaultStreamHandler)
+export default createStartHandler(defaultStreamHandler);

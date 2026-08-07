@@ -1,4 +1,4 @@
-import type { ReactNode, SyntheticEvent } from 'react'
+import type { ReactNode, SyntheticEvent } from 'react';
 import {
   Accordion,
   AccordionDetails,
@@ -7,24 +7,24 @@ import {
   TableBody,
   TableCell,
   TableRow,
-  Typography,
-} from '@mui/material'
-import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
+  Typography
+} from '@mui/material';
+import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 
-export type MetadataRow = { label: string; value: ReactNode }
+export type MetadataRow = { label: string; value: ReactNode };
 
 export type MetadataSectionData = {
-  title: string
-  rows: MetadataRow[]
-  defaultExpanded?: boolean
-}
+  readonly title: string;
+  readonly rows: MetadataRow[];
+  readonly defaultExpanded?: boolean;
+};
 
 // Placeholder shown for fields that exist in the schema but aren't filled in
 // for this entity, so every applicable field stays visible.
-const EMPTY = '—'
+const EMPTY = '—';
 
 function isEmpty(value: ReactNode): boolean {
-  return value == null || value === ''
+  return value == null || value === '';
 }
 
 // One collapsible metadata section: a titled accordion wrapping a two-column
@@ -40,14 +40,16 @@ export function MetadataSection({
   rows,
   defaultExpanded,
   expanded,
-  onChange,
+  onChange
 }: MetadataSectionData & {
-  expanded?: boolean
-  onChange?: (value: boolean) => void
+  readonly expanded?: boolean;
+  readonly onChange?: (value: boolean) => void;
 }) {
-  if (rows.length === 0) return null
+  if (rows.length === 0) {
+    return null;
+  }
 
-  const controlled = expanded !== undefined
+  const controlled = expanded !== undefined;
 
   return (
     <Accordion
@@ -55,7 +57,7 @@ export function MetadataSection({
         ? {
             expanded,
             onChange: (_e: SyntheticEvent, isExpanded: boolean) =>
-              onChange?.(isExpanded),
+              onChange?.(isExpanded)
           }
         : { defaultExpanded })}
       disableGutters
@@ -65,13 +67,13 @@ export function MetadataSection({
         borderColor: 'divider',
         borderRadius: 2,
         overflow: 'hidden',
-        '&:before': { display: 'none' },
+        '&:before': { display: 'none' }
       }}
     >
       <AccordionSummary expandIcon={<ExpandMoreIcon />}>
         <Typography
-          variant="subtitle1"
           sx={{ fontWeight: 700, color: 'primary.main' }}
+          variant="subtitle1"
         >
           {title}
         </Typography>
@@ -80,13 +82,13 @@ export function MetadataSection({
         <Table size="small">
           <TableBody>
             {rows.map((row, i) => {
-              const empty = isEmpty(row.value)
+              const empty = isEmpty(row.value);
               return (
                 <TableRow
                   key={row.label}
                   sx={{
                     bgcolor: i % 2 === 0 ? 'action.hover' : 'transparent',
-                    '& td': { borderBottom: 'none' },
+                    '& td': { borderBottom: 'none' }
                   }}
                 >
                   <TableCell
@@ -94,7 +96,7 @@ export function MetadataSection({
                       width: '45%',
                       color: 'text.secondary',
                       fontWeight: 600,
-                      verticalAlign: 'top',
+                      verticalAlign: 'top'
                     }}
                   >
                     {row.label}
@@ -102,17 +104,17 @@ export function MetadataSection({
                   <TableCell
                     sx={{
                       verticalAlign: 'top',
-                      color: empty ? 'text.disabled' : undefined,
+                      color: empty ? 'text.disabled' : undefined
                     }}
                   >
                     {empty ? EMPTY : row.value}
                   </TableCell>
                 </TableRow>
-              )
+              );
             })}
           </TableBody>
         </Table>
       </AccordionDetails>
     </Accordion>
-  )
+  );
 }

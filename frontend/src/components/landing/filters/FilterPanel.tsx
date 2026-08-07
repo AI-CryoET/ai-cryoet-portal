@@ -1,85 +1,99 @@
-import { Stack } from '@mui/material'
-import { useState } from 'react'
-import type { FiltersOptionsOut } from '~/types'
-import { GROUPS } from '~/utils/filterFields'
-import type { SamplesSearchParams } from '~/utils/samplesSearch'
-import { FilterGroup } from './FilterGroup'
-import { FilterProperty } from './FilterProperty'
-import { FilterSection } from './FilterSection'
+import { Stack } from '@mui/material';
+import { useState } from 'react';
+import type { FiltersOptionsOut } from '~/types';
+import { GROUPS } from '~/utils/filterFields';
+import type { SamplesSearchParams } from '~/utils/samplesSearch';
+import { FilterGroup } from './FilterGroup';
+import { FilterProperty } from './FilterProperty';
+import { FilterSection } from './FilterSection';
 
 export type FilterPanelProps = {
-  options: FiltersOptionsOut
-  values: SamplesSearchParams // current URL search
-  onChange: (patch: Partial<SamplesSearchParams>) => void
-  disabledGroups?: Set<string> // group ids disabled by gating (Phase 5 supplies)
-  lockedDataSource?: 'experimental' | 'simulation' // when set, hide the data_source property
-}
+  readonly options: FiltersOptionsOut;
+  readonly values: SamplesSearchParams; // current URL search
+  readonly onChange: (patch: Partial<SamplesSearchParams>) => void;
+  readonly disabledGroups?: Set<string>; // group ids disabled by gating (Phase 5 supplies)
+  readonly lockedDataSource?: 'experimental' | 'simulation'; // when set, hide the data_source property
+};
 
 // ponytail: expand state is UI-only and resets on remount (acceptable — the URL
 // is the source of truth for the actual filter values). Groups are keyed by
 // group.id (collapsed by default); properties by field.key (options shown by
 // default once their group is open).
 
-export function FilterPanel(props: FilterPanelProps) {
-  const { options, values, onChange, disabledGroups, lockedDataSource } = props
-  const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({})
-  const [collapsedProps, setCollapsedProps] = useState<Record<string, boolean>>({})
+export function FilterPanel({
+  options,
+  values,
+  onChange,
+  disabledGroups,
+  lockedDataSource
+}: FilterPanelProps) {
+  const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({});
+  const [collapsedProps, setCollapsedProps] = useState<Record<string, boolean>>(
+    {}
+  );
 
   const toggleGroup = (id: string) =>
-    setOpenGroups((prev) => ({ ...prev, [id]: !prev[id] }))
+    setOpenGroups(prev => ({ ...prev, [id]: !prev[id] }));
 
   const toggleProp = (key: string) =>
-    setCollapsedProps((prev) => ({ ...prev, [key]: !prev[key] }))
+    setCollapsedProps(prev => ({ ...prev, [key]: !prev[key] }));
 
-  const sections: Array<{ section: 'sample' | 'acquisition'; title: string }> = [
-    { section: 'sample', title: 'Sample properties' },
-    { section: 'acquisition', title: 'Acquisition properties' },
-  ]
+  const sections: Array<{ section: 'sample' | 'acquisition'; title: string }> =
+    [
+      { section: 'sample', title: 'Sample properties' },
+      { section: 'acquisition', title: 'Acquisition properties' }
+    ];
 
   return (
     <Stack spacing={1}>
       {sections.map(({ section, title }) => (
         <FilterSection key={section} title={title}>
           {GROUPS.filter(
-            (g) =>
+            g =>
               g.section === section &&
               // On a single-arm page, drop groups that only apply to the other arm.
-              !(lockedDataSource && g.appliesTo && g.appliesTo !== lockedDataSource),
-          ).map((group) => {
-            const disabled = disabledGroups?.has(group.id) ?? false
+              !(
+                lockedDataSource &&
+                g.appliesTo &&
+                g.appliesTo !== lockedDataSource
+              )
+          ).map(group => {
+            const disabled = disabledGroups?.has(group.id) ?? false;
             const fields = group.fields.filter(
-              (f) => !(f.key === 'data_source' && lockedDataSource),
-            )
-            if (fields.length === 0) return null
+              f => !(f.key === 'data_source' && lockedDataSource)
+            );
+            if (fields.length === 0) {
+              return null;
+            }
             return (
               <FilterGroup
-                key={group.id}
-                title={group.title}
+                disabled={disabled}
                 // ponytail: a disabled group renders collapsed regardless of
                 // its remembered open state — MUI's `disabled` freezes the
                 // toggle, so without this it'd be stuck open and its checkboxes
                 // (which MUI does NOT auto-disable) would stay clickable.
-                expanded={!!openGroups[group.id] && !disabled}
+                expanded={openGroups[group.id] ? !disabled : false}
+                key={group.id}
                 onToggle={() => toggleGroup(group.id)}
-                disabled={disabled}
+                title={group.title}
               >
-                {fields.map((field) => (
+                {fields.map(field => (
                   <FilterProperty
-                    key={field.key}
+                    disabled={disabled}
+                    expanded={!collapsedProps[field.key]}
                     field={field}
+                    key={field.key}
+                    onChange={onChange}
+                    onToggle={() => toggleProp(field.key)}
                     options={options}
                     values={values}
-                    onChange={onChange}
-                    expanded={!collapsedProps[field.key]}
-                    onToggle={() => toggleProp(field.key)}
-                    disabled={disabled}
                   />
                 ))}
               </FilterGroup>
-            )
+            );
           })}
         </FilterSection>
       ))}
     </Stack>
-  )
+  );
 }
