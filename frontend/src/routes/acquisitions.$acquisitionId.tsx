@@ -118,11 +118,14 @@ function AcquisitionSummaryCard({ title, rows }: MetadataSectionData) {
 // "Acquisition summary" section: a heading on the page background above two
 // side-by-side grey cards. The card data reuses the metadata-drawer section
 // builders so the two stay in sync.
-function AcquisitionSummary(props: {
+function AcquisitionSummary({
+  acquisition,
+  tiltSeriesPlot
+}: {
   readonly acquisition: AcquisitionOut;
   readonly tiltSeriesPlot?: ReactNode;
 }) {
-  const sections = acquisitionMetadataSections(props.acquisition);
+  const sections = acquisitionMetadataSections(acquisition);
   const microscope = sections.find(s => s.title === 'Microscope & Imaging');
   // The drawer's full tilt geometry / per–tilt-series sections carry many rows;
   // the summary box shows only the overall tilt count and range, kept under the
@@ -147,7 +150,7 @@ function AcquisitionSummary(props: {
         <Typography color="text.secondary" variant="body2">
           Quality
         </Typography>
-        <QualityBadge quality={props.acquisition.acquisition_quality} />
+        <QualityBadge quality={acquisition.acquisition_quality} />
       </Box>
       {/* Boxes sit side by side and wrap to a single column only when they no
           longer fit (flex-basis + flexWrap), rather than at a fixed breakpoint.
@@ -177,7 +180,7 @@ function AcquisitionSummary(props: {
             }}
           >
             <AcquisitionSummaryCard {...tiltSeries} />
-            {props.tiltSeriesPlot}
+            {tiltSeriesPlot}
           </Box>
         ) : null}
       </Box>

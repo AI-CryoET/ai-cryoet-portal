@@ -6,7 +6,10 @@ import { Box } from '@mui/material';
 // Grid) so the columns sit flush with the page title, `minWidth: 0` lets long
 // paths wrap instead of overflowing to the right, and the columns wrap to a
 // single column once the viewport is too narrow to fit both.
-export function DetailHero(props: {
+export function DetailHero({
+  thumbnail,
+  details
+}: {
   readonly thumbnail: ReactNode;
   readonly details: ReactNode;
 }) {
@@ -19,8 +22,8 @@ export function DetailHero(props: {
         alignItems: 'flex-start'
       }}
     >
-      <Box sx={{ flex: '1 1 240px', minWidth: 0 }}>{props.thumbnail}</Box>
-      <Box sx={{ flex: '2 1 320px', minWidth: 0 }}>{props.details}</Box>
+      <Box sx={{ flex: '1 1 240px', minWidth: 0 }}>{thumbnail}</Box>
+      <Box sx={{ flex: '2 1 320px', minWidth: 0 }}>{details}</Box>
     </Box>
   );
 }

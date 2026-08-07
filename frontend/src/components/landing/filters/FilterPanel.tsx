@@ -73,7 +73,7 @@ export function FilterPanel({
                 // its remembered open state — MUI's `disabled` freezes the
                 // toggle, so without this it'd be stuck open and its checkboxes
                 // (which MUI does NOT auto-disable) would stay clickable.
-                expanded={!!openGroups[group.id] && !disabled}
+                expanded={openGroups[group.id] ? !disabled : false}
                 key={group.id}
                 onToggle={() => toggleGroup(group.id)}
               >

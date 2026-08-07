@@ -67,6 +67,62 @@ const DATA_MANAGEMENT_LINKS = [
   { to: '/manage/deletions' as const, label: 'View deletions and renames' }
 ];
 
+// The mobile nav lives in its own component so Header's JSX stays under the
+// max-depth limit; "Data management" expands inline as an accordion rather
+// than opening a second menu layer.
+function MobileNavMenu({
+  anchorEl,
+  open,
+  onClose
+}: {
+  readonly anchorEl: HTMLElement | null;
+  readonly open: boolean;
+  readonly onClose: () => void;
+}) {
+  return (
+    <Menu
+      anchorEl={anchorEl}
+      anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+      id="nav-menu"
+      onClose={onClose}
+      open={open}
+      transformOrigin={{ vertical: 'top', horizontal: 'right' }}
+    >
+      <MenuItem onClick={onClose}>
+        <MenuLink to="/data">All Data</MenuLink>
+      </MenuItem>
+      <MenuItem onClick={onClose}>
+        <MenuLink to="/experimental">Experimental Data</MenuLink>
+      </MenuItem>
+      <MenuItem onClick={onClose}>
+        <MenuLink to="/md-simulation">MD Simulations</MenuLink>
+      </MenuItem>
+      <Accordion
+        disableGutters
+        elevation={0}
+        square
+        sx={{ '&:before': { display: 'none' } }}
+      >
+        <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+          {/* AccordionSummary doesn't inject MenuItem's body1 typography,
+              so match it explicitly to keep the row's text the same
+              size as its sibling nav links. */}
+          <Typography variant="body1">Data management</Typography>
+        </AccordionSummary>
+        <AccordionDetails sx={{ p: 0 }}>
+          <Stack>
+            {DATA_MANAGEMENT_LINKS.map(link => (
+              <MenuItem key={link.to} onClick={onClose} sx={{ pl: 4 }}>
+                <MenuLink to={link.to}>{link.label}</MenuLink>
+              </MenuItem>
+            ))}
+          </Stack>
+        </AccordionDetails>
+      </Accordion>
+    </Menu>
+  );
+}
+
 export function Header() {
   const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null);
   const menuOpen = Boolean(anchorEl);
@@ -152,50 +208,11 @@ export function Header() {
             >
               <MenuIcon />
             </IconButton>
-            <Menu
+            <MobileNavMenu
               anchorEl={anchorEl}
-              anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
-              id="nav-menu"
               onClose={closeMenu}
               open={menuOpen}
-              transformOrigin={{ vertical: 'top', horizontal: 'right' }}
-            >
-              <MenuItem onClick={closeMenu}>
-                <MenuLink to="/data">All Data</MenuLink>
-              </MenuItem>
-              <MenuItem onClick={closeMenu}>
-                <MenuLink to="/experimental">Experimental Data</MenuLink>
-              </MenuItem>
-              <MenuItem onClick={closeMenu}>
-                <MenuLink to="/md-simulation">MD Simulations</MenuLink>
-              </MenuItem>
-              <Accordion
-                disableGutters
-                elevation={0}
-                square
-                sx={{ '&:before': { display: 'none' } }}
-              >
-                <AccordionSummary expandIcon={<ExpandMoreIcon />}>
-                  {/* AccordionSummary doesn't inject MenuItem's body1 typography,
-                      so match it explicitly to keep the row's text the same
-                      size as its sibling nav links. */}
-                  <Typography variant="body1">Data management</Typography>
-                </AccordionSummary>
-                <AccordionDetails sx={{ p: 0 }}>
-                  <Stack>
-                    {DATA_MANAGEMENT_LINKS.map(link => (
-                      <MenuItem
-                        key={link.to}
-                        onClick={closeMenu}
-                        sx={{ pl: 4 }}
-                      >
-                        <MenuLink to={link.to}>{link.label}</MenuLink>
-                      </MenuItem>
-                    ))}
-                  </Stack>
-                </AccordionDetails>
-              </Accordion>
-            </Menu>
+            />
           </Box>
         </Toolbar>
       </AppBar>

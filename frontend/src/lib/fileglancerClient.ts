@@ -361,7 +361,6 @@ export class FileglancerClient {
     return new Promise<boolean>(resolve => {
       let settled = false;
       let poll: ReturnType<typeof setInterval> | undefined;
-      let timer: ReturnType<typeof setTimeout> | undefined;
 
       const cleanup = () => {
         window.removeEventListener('message', onMessage);
@@ -392,7 +391,9 @@ export class FileglancerClient {
       };
 
       window.addEventListener('message', onMessage);
-      timer = setTimeout(() => finish(false), timeoutMs);
+      // Declared here (not with `poll` above) so it can be const — the cleanup
+      // closure reads it lazily, only after this synchronous setup completes.
+      const timer = setTimeout(() => finish(false), timeoutMs);
 
       const watched = getWindow();
       if (watched) {

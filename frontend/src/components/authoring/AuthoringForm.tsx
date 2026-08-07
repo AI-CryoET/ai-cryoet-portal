@@ -79,7 +79,10 @@ type Props = {
   // unique only within (initialSampleId, initialAcquisitionId).
   readonly initialAcquisitionId?: string;
   // Reports the id the form's current content was actually loaded by, so a
-  // parent record picker can follow a load the child initiated.
+  // parent record picker can follow a load the child initiated. Consumed by
+  // SectionedAuthoringForm; GroupedAuthoringForm shares this Props type but
+  // forwards its own handler, so the rule can't see it used there.
+  // eslint-disable-next-line react/no-unused-prop-types
   readonly onLoadedId?: (id: string) => void;
 };
 
@@ -92,7 +95,7 @@ function isProjectGated(form: FormKind): boolean {
 
 // Dispatch to the renderer matching the form's shape. Both consume the same
 // authored-field registry (ADR-0002); they differ only in section semantics.
-export function AuthoringForm(props: Props) {
+export function AuthoringForm({ form, initialId, ...rest }: Props) {
   // Pre-warm the Fileglancer session on mount (hidden iframe, no popup) so a
   // logged-in user's "Save to file share" is popup-free. Runs once for whichever
   // renderer is dispatched below; failures are ignored (Save's connect() retries
@@ -102,17 +105,15 @@ export function AuthoringForm(props: Props) {
       .connectSilently()
       .catch(() => {});
   }, []);
-  if (isProjectGated(props.form)) {
-    return (
-      <CompositeAuthoringForm autoLoadId={props.initialId} form={props.form} />
-    );
+  if (isProjectGated(form)) {
+    return <CompositeAuthoringForm autoLoadId={initialId} form={form} />;
   }
   // One reconstruction.toml per Reconstructions/<group>/ folder, so this form
   // needs a record picker on top of the generic renderer.
-  if (props.form === 'reconstruction') {
-    return <GroupedAuthoringForm {...props} />;
+  if (form === 'reconstruction') {
+    return <GroupedAuthoringForm {...rest} form={form} initialId={initialId} />;
   }
-  return <SectionedAuthoringForm {...props} />;
+  return <SectionedAuthoringForm {...rest} form={form} initialId={initialId} />;
 }
 
 // The generic renderer plus a group picker. Picking a group in the selector
@@ -547,26 +548,26 @@ function SectionedAuthoringForm({
         {loaded ? <NotSavedToDiskWarning /> : null}
         <UploadLoadToolbar
           extra={
-            (needsSampleId || needsAcquisitionId) && (
+            needsSampleId || needsAcquisitionId ? (
               <>
-                {needsSampleId && (
+                {needsSampleId ? (
                   <TextField
                     label="Sample id"
                     value={sampleId}
                     onChange={e => setSampleId(e.target.value)}
                     size="small"
                   />
-                )}
-                {needsAcquisitionId && (
+                ) : null}
+                {needsAcquisitionId ? (
                   <TextField
                     label="Acquisition id"
                     value={acquisitionId}
                     onChange={e => setAcquisitionId(e.target.value)}
                     size="small"
                   />
-                )}
+                ) : null}
               </>
-            )
+            ) : null
           }
           filename={meta.filename}
           loadId={loadId}
