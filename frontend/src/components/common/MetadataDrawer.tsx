@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import type { ReactNode } from 'react'
+import { useState } from 'react';
+import type { ReactNode } from 'react';
 import {
   Box,
   Divider,
@@ -8,11 +8,11 @@ import {
   Stack,
   Tab,
   Tabs,
-  Typography,
-} from '@mui/material'
-import CloseIcon from '@mui/icons-material/Close'
+  Typography
+} from '@mui/material';
+import CloseIcon from '@mui/icons-material/Close';
 
-export type MetadataTab = { label: string; content: ReactNode }
+export type MetadataTab = { label: string; content: ReactNode };
 
 // Right-anchored drawer that surfaces the full metadata tree for an entity.
 // Header mirrors the data-portal reference: a small eyebrow label, the entity
@@ -26,23 +26,23 @@ export function MetadataDrawer({
   eyebrow,
   title,
   tabs,
-  children,
+  children
 }: {
-  open: boolean
-  onClose: () => void
-  eyebrow: string
-  title: string
-  tabs?: MetadataTab[]
-  children?: ReactNode
+  readonly open: boolean;
+  readonly onClose: () => void;
+  readonly eyebrow: string;
+  readonly title: string;
+  readonly tabs?: MetadataTab[];
+  readonly children?: ReactNode;
 }) {
-  const [tab, setTab] = useState(0)
-  const active = tabs ? Math.min(tab, tabs.length - 1) : 0
+  const [tab, setTab] = useState(0);
+  const active = tabs ? Math.min(tab, tabs.length - 1) : 0;
 
   return (
     <Drawer
       anchor="right"
-      open={open}
       onClose={onClose}
+      open={open}
       slotProps={{ paper: { sx: { width: { xs: '100%', sm: 460 } } } }}
     >
       <Box sx={{ px: 3, pt: 2.5, pb: tabs ? 0 : 2 }}>
@@ -51,35 +51,35 @@ export function MetadataDrawer({
             display: 'flex',
             alignItems: 'flex-start',
             justifyContent: 'space-between',
-            gap: 2,
+            gap: 2
           }}
         >
           <Typography
-            variant="overline"
             color="text.secondary"
             sx={{ letterSpacing: 1, fontWeight: 700 }}
+            variant="overline"
           >
             {eyebrow}
           </Typography>
           <IconButton
             aria-label="Close metadata"
-            onClick={onClose}
             edge="end"
+            onClick={onClose}
             sx={{ mt: -1 }}
           >
             <CloseIcon />
           </IconButton>
         </Box>
-        <Typography variant="h6" component="h2" sx={{ mt: 0.5 }}>
+        <Typography component="h2" sx={{ mt: 0.5 }} variant="h6">
           {title}
         </Typography>
         {tabs ? (
           <Tabs
-            value={active}
             onChange={(_e, value) => setTab(value)}
             sx={{ mt: 1 }}
+            value={active}
           >
-            {tabs.map((t) => (
+            {tabs.map(t => (
               <Tab key={t.label} label={t.label} />
             ))}
           </Tabs>
@@ -90,5 +90,5 @@ export function MetadataDrawer({
         <Stack spacing={1.5}>{tabs ? tabs[active].content : children}</Stack>
       </Box>
     </Drawer>
-  )
+  );
 }

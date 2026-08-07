@@ -1,4 +1,4 @@
-import FileglancerClient from '~/lib/fileglancerClient'
+import FileglancerClient from '~/lib/fileglancerClient';
 
 // Fileglancer browses by share name: the data mount `/groups/cryoet/cryoet`
 // is exposed as the share `groups_cryoet_cryoet`, followed by the path relative
@@ -9,27 +9,28 @@ import FileglancerClient from '~/lib/fileglancerClient'
 // VITE_* env vars (e.g. .env.local) for local testing against a different
 // Fileglancer instance and data location. Unset -> prod defaults (no-op).
 const FILEGLANCER_DOMAIN =
-  import.meta.env.VITE_FILEGLANCER_URL ?? 'https://fileglancer.int.janelia.org'
-const FILEGLANCER_BASE = `${FILEGLANCER_DOMAIN}/browse`
+  import.meta.env.VITE_FILEGLANCER_URL ?? 'https://fileglancer.int.janelia.org';
+const FILEGLANCER_BASE = `${FILEGLANCER_DOMAIN}/browse`;
 const FILEGLANCER_MOUNT =
-  import.meta.env.VITE_FILEGLANCER_MOUNT ?? '/groups/cryoet/cryoet'
+  import.meta.env.VITE_FILEGLANCER_MOUNT ?? '/groups/cryoet/cryoet';
 const FILEGLANCER_SHARE =
-  import.meta.env.VITE_FILEGLANCER_SHARE ?? 'groups_cryoet_cryoet'
+  import.meta.env.VITE_FILEGLANCER_SHARE ?? 'groups_cryoet_cryoet';
 
 // Maps an absolute on-disk path under the data mount to its Fileglancer API
 // target (file share name + subpath relative to the mount, no leading slash).
 // Returns null for paths outside the mount.
 export function toFileglancerTarget(
-  absPath: string,
+  absPath: string
 ): { fsp: string; subpath: string } | null {
   if (
     absPath !== FILEGLANCER_MOUNT &&
     !absPath.startsWith(`${FILEGLANCER_MOUNT}/`)
-  )
-    return null
-  const rel = absPath.slice(FILEGLANCER_MOUNT.length) // leading '/' or empty
-  const subpath = rel.startsWith('/') ? rel.slice(1) : rel
-  return { fsp: FILEGLANCER_SHARE, subpath }
+  ) {
+    return null;
+  }
+  const rel = absPath.slice(FILEGLANCER_MOUNT.length); // leading '/' or empty
+  const subpath = rel.startsWith('/') ? rel.slice(1) : rel;
+  return { fsp: FILEGLANCER_SHARE, subpath };
 }
 
 // Maps an absolute on-disk path under the data mount to its Fileglancer browse
@@ -38,12 +39,14 @@ export function toFileglancerTarget(
 // from the raw remainder (leading '/' or empty) so trailing slashes are
 // preserved verbatim — the browse URL must be byte-identical for all inputs.
 export function toFileglancerUrl(absPath: string): string | null {
-  if (!toFileglancerTarget(absPath)) return null
-  const rel = absPath.slice(FILEGLANCER_MOUNT.length) // leading '/' or empty
-  return `${FILEGLANCER_BASE}/${FILEGLANCER_SHARE}${rel}`
+  if (!toFileglancerTarget(absPath)) {
+    return null;
+  }
+  const rel = absPath.slice(FILEGLANCER_MOUNT.length); // leading '/' or empty
+  return `${FILEGLANCER_BASE}/${FILEGLANCER_SHARE}${rel}`;
 }
 
-let client: FileglancerClient | undefined
+let client: FileglancerClient | undefined;
 
 // Lazy module-level singleton for the vendored Fileglancer API client. Callers
 // should only invoke this from event handlers / effects, not at module load
@@ -52,8 +55,8 @@ let client: FileglancerClient | undefined
 export function getFileglancerClient(): FileglancerClient {
   if (!client) {
     client = new FileglancerClient({
-      baseUrl: FILEGLANCER_DOMAIN,
-    })
+      baseUrl: FILEGLANCER_DOMAIN
+    });
   }
-  return client
+  return client;
 }

@@ -25,261 +25,1234 @@ export interface SchemaEntity {
 
 export const SCHEMA: SchemaEntity[] = [
   {
-    id: 'sample', name: 'Sample',
+    id: 'sample',
+    name: 'Sample',
     cardinality: 'one per sample',
     fields: [
-        { field: 'sample_id', type: 'text', source: 'directory', kind: 'derived', notes: 'Sample folder name.' },
-        { field: 'lab_name', type: 'enum', source: 'sample.toml [sample]', kind: 'authored', notes: 'collepardo, gouaux, rosen, or villa.' },
-        { field: 'data_source', type: 'enum', source: 'directory', kind: 'derived', notes: 'experimental (under Experimental/) or simulation (under MdSimulation/); not authored in sample.toml.' },
-        { field: 'project', type: 'enum', source: 'sample.toml [sample]', kind: 'authored', notes: 'chromatin, synapse, or nanogold.' },
-        { field: 'type', type: 'text', source: 'sample.toml [sample]', kind: 'authored', notes: 'e.g. cellular / reconstituted.' },
-        { field: 'cell_type', type: 'text', source: 'sample.toml [sample]', kind: 'authored', notes: 'Required when type = cellular.' },
-        { field: 'description', type: 'text', source: 'sample.toml [sample]', kind: 'authored', notes: 'Free text.' },
-        { field: 'path', type: 'text', source: 'directory', kind: 'derived', notes: 'Absolute sample-directory path; surfaced for the UI\'s copy-path / open-in-file-browser buttons. Works even for samples with no acquisitions.' },
-        { field: 'renamed_from', type: 'text', source: 'sample.toml [sample]', kind: 'authored', notes: 'Scan-time-only rename directive; not stored in the DB.' },
+      {
+        field: 'sample_id',
+        type: 'text',
+        source: 'directory',
+        kind: 'derived',
+        notes: 'Sample folder name.'
+      },
+      {
+        field: 'lab_name',
+        type: 'enum',
+        source: 'sample.toml [sample]',
+        kind: 'authored',
+        notes: 'collepardo, gouaux, rosen, or villa.'
+      },
+      {
+        field: 'data_source',
+        type: 'enum',
+        source: 'directory',
+        kind: 'derived',
+        notes:
+          'experimental (under Experimental/) or simulation (under MdSimulation/); not authored in sample.toml.'
+      },
+      {
+        field: 'project',
+        type: 'enum',
+        source: 'sample.toml [sample]',
+        kind: 'authored',
+        notes: 'chromatin, synapse, or nanogold.'
+      },
+      {
+        field: 'type',
+        type: 'text',
+        source: 'sample.toml [sample]',
+        kind: 'authored',
+        notes: 'e.g. cellular / reconstituted.'
+      },
+      {
+        field: 'cell_type',
+        type: 'text',
+        source: 'sample.toml [sample]',
+        kind: 'authored',
+        notes: 'Required when type = cellular.'
+      },
+      {
+        field: 'description',
+        type: 'text',
+        source: 'sample.toml [sample]',
+        kind: 'authored',
+        notes: 'Free text.'
+      },
+      {
+        field: 'path',
+        type: 'text',
+        source: 'directory',
+        kind: 'derived',
+        notes:
+          "Absolute sample-directory path; surfaced for the UI's copy-path / open-in-file-browser buttons. Works even for samples with no acquisitions."
+      },
+      {
+        field: 'renamed_from',
+        type: 'text',
+        source: 'sample.toml [sample]',
+        kind: 'authored',
+        notes: 'Scan-time-only rename directive; not stored in the DB.'
+      }
     ],
     children: [
       {
-        id: 'chromatin', name: 'Chromatin',
+        id: 'chromatin',
+        name: 'Chromatin',
         cardinality: 'one per sample',
         chromatinOnly: true,
         fields: [
-        { field: 'sample_id', type: 'text', source: 'directory', kind: 'derived', notes: 'Parent sample directory name.' },
-        { field: 'substrate', type: 'text', source: 'sample.toml [chromatin]', kind: 'authored', notes: 'e.g. synthetic / native / n/a.' },
-        { field: 'linker_length_bp', type: 'float', source: 'sample.toml [chromatin]', kind: 'authored', notes: 'Homogenous linker length.' },
-        { field: 'linker_pattern', type: 'list[int]', source: 'sample.toml [chromatin]', kind: 'authored', notes: 'Patterned linker lengths.' },
-        { field: 'linker_distribution', type: 'text', source: 'sample.toml [chromatin]', kind: 'authored', notes: 'Free-text distribution description.' },
-        { field: 'buffer', type: 'text', source: 'sample.toml [chromatin]', kind: 'authored', notes: 'Monovalent/divalent species + conc + additives.' },
-        { field: 'ptm', type: 'text', source: 'sample.toml [chromatin]', kind: 'authored', notes: '' },
-        { field: 'histone_variants', type: 'text', source: 'sample.toml [chromatin]', kind: 'authored', notes: '' },
-        { field: 'transcription_factors', type: 'text', source: 'sample.toml [chromatin]', kind: 'authored', notes: '' },
-        { field: 'nucleosome_count', type: 'integer', source: 'sample.toml [chromatin]', kind: 'authored', notes: '' },
-        { field: 'dna_length_bp', type: 'integer', source: 'sample.toml [chromatin]', kind: 'authored', notes: '' },
-        { field: 'nucleosome_uM', type: 'float', source: 'sample.toml [chromatin]', kind: 'authored', notes: '' },
-        { field: 'sequence_identity', type: 'text', source: 'sample.toml [chromatin]', kind: 'authored', notes: 'Native-substrate only.' },
-        { field: 'nucleosome_footprint', type: 'list', source: 'sample.toml [chromatin]', kind: 'authored', notes: 'Native-substrate only.' },
-        { field: 'linker_length_fraction', type: 'float', source: 'derived', kind: 'derived', notes: 'sequence_footprint minus 1; computed on ingest.' },
-        ],
+          {
+            field: 'sample_id',
+            type: 'text',
+            source: 'directory',
+            kind: 'derived',
+            notes: 'Parent sample directory name.'
+          },
+          {
+            field: 'substrate',
+            type: 'text',
+            source: 'sample.toml [chromatin]',
+            kind: 'authored',
+            notes: 'e.g. synthetic / native / n/a.'
+          },
+          {
+            field: 'linker_length_bp',
+            type: 'float',
+            source: 'sample.toml [chromatin]',
+            kind: 'authored',
+            notes: 'Homogenous linker length.'
+          },
+          {
+            field: 'linker_pattern',
+            type: 'list[int]',
+            source: 'sample.toml [chromatin]',
+            kind: 'authored',
+            notes: 'Patterned linker lengths.'
+          },
+          {
+            field: 'linker_distribution',
+            type: 'text',
+            source: 'sample.toml [chromatin]',
+            kind: 'authored',
+            notes: 'Free-text distribution description.'
+          },
+          {
+            field: 'buffer',
+            type: 'text',
+            source: 'sample.toml [chromatin]',
+            kind: 'authored',
+            notes: 'Monovalent/divalent species + conc + additives.'
+          },
+          {
+            field: 'ptm',
+            type: 'text',
+            source: 'sample.toml [chromatin]',
+            kind: 'authored',
+            notes: ''
+          },
+          {
+            field: 'histone_variants',
+            type: 'text',
+            source: 'sample.toml [chromatin]',
+            kind: 'authored',
+            notes: ''
+          },
+          {
+            field: 'transcription_factors',
+            type: 'text',
+            source: 'sample.toml [chromatin]',
+            kind: 'authored',
+            notes: ''
+          },
+          {
+            field: 'nucleosome_count',
+            type: 'integer',
+            source: 'sample.toml [chromatin]',
+            kind: 'authored',
+            notes: ''
+          },
+          {
+            field: 'dna_length_bp',
+            type: 'integer',
+            source: 'sample.toml [chromatin]',
+            kind: 'authored',
+            notes: ''
+          },
+          {
+            field: 'nucleosome_uM',
+            type: 'float',
+            source: 'sample.toml [chromatin]',
+            kind: 'authored',
+            notes: ''
+          },
+          {
+            field: 'sequence_identity',
+            type: 'text',
+            source: 'sample.toml [chromatin]',
+            kind: 'authored',
+            notes: 'Native-substrate only.'
+          },
+          {
+            field: 'nucleosome_footprint',
+            type: 'list',
+            source: 'sample.toml [chromatin]',
+            kind: 'authored',
+            notes: 'Native-substrate only.'
+          },
+          {
+            field: 'linker_length_fraction',
+            type: 'float',
+            source: 'derived',
+            kind: 'derived',
+            notes: 'sequence_footprint minus 1; computed on ingest.'
+          }
+        ]
       },
       {
-        id: 'label', name: 'Label',
+        id: 'label',
+        name: 'Label',
         cardinality: '0..N per sample',
         arm: 'experimental',
         fields: [
-        { field: 'sample_id', type: 'text', source: 'directory', kind: 'derived', notes: 'Parent sample directory name.' },
-        { field: 'label_target', type: 'text', source: 'sample.toml [label]', kind: 'authored', notes: 'Protein name, e.g. AMPAR, NMDAR.' },
-        { field: 'aunp_type', type: 'text', source: 'sample.toml [label]', kind: 'authored', notes: 'monomer, dimer, trimer, etc.' },
-        { field: 'aunp_size_nm', type: 'float or list of floats', source: 'sample.toml [label]', kind: 'authored', notes: '' },
-        { field: 'conjugation', type: 'text', source: 'sample.toml [label]', kind: 'authored', notes: 'Fab / nanobody / chemical_tag / none.' },
-        { field: 'conjugation_target', type: 'text', source: 'sample.toml [label]', kind: 'authored', notes: 'e.g. GluA2.' },
-        { field: 'fluorophore', type: 'text', source: 'sample.toml [label]', kind: 'authored', notes: '' },
-        { field: 'notes', type: 'text', source: 'sample.toml [label]', kind: 'authored', notes: '' },
-        ],
+          {
+            field: 'sample_id',
+            type: 'text',
+            source: 'directory',
+            kind: 'derived',
+            notes: 'Parent sample directory name.'
+          },
+          {
+            field: 'label_target',
+            type: 'text',
+            source: 'sample.toml [label]',
+            kind: 'authored',
+            notes: 'Protein name, e.g. AMPAR, NMDAR.'
+          },
+          {
+            field: 'aunp_type',
+            type: 'text',
+            source: 'sample.toml [label]',
+            kind: 'authored',
+            notes: 'monomer, dimer, trimer, etc.'
+          },
+          {
+            field: 'aunp_size_nm',
+            type: 'float or list of floats',
+            source: 'sample.toml [label]',
+            kind: 'authored',
+            notes: ''
+          },
+          {
+            field: 'conjugation',
+            type: 'text',
+            source: 'sample.toml [label]',
+            kind: 'authored',
+            notes: 'Fab / nanobody / chemical_tag / none.'
+          },
+          {
+            field: 'conjugation_target',
+            type: 'text',
+            source: 'sample.toml [label]',
+            kind: 'authored',
+            notes: 'e.g. GluA2.'
+          },
+          {
+            field: 'fluorophore',
+            type: 'text',
+            source: 'sample.toml [label]',
+            kind: 'authored',
+            notes: ''
+          },
+          {
+            field: 'notes',
+            type: 'text',
+            source: 'sample.toml [label]',
+            kind: 'authored',
+            notes: ''
+          }
+        ]
       },
       {
-        id: 'fiducial', name: 'Fiducial AuNP',
+        id: 'fiducial',
+        name: 'Fiducial AuNP',
         cardinality: 'one per sample',
         arm: 'experimental',
         fields: [
-        { field: 'sample_id', type: 'text', source: 'directory', kind: 'derived', notes: 'Parent sample directory name.' },
-        { field: 'aunp_size_nm', type: 'float or list of floats', source: 'sample.toml [fiducial]', kind: 'authored', notes: '' },
-        { field: 'vendor', type: 'text', source: 'sample.toml [fiducial]', kind: 'authored', notes: '' },
-        { field: 'catalog_number', type: 'text', source: 'sample.toml [fiducial]', kind: 'authored', notes: '' },
-        { field: 'product_name', type: 'text', source: 'sample.toml [fiducial]', kind: 'authored', notes: '' },
-        { field: 'concentration_value', type: 'float', source: 'sample.toml [fiducial]', kind: 'authored', notes: '' },
-        { field: 'concentration_unit', type: 'text', source: 'sample.toml [fiducial]', kind: 'authored', notes: '' },
-        ],
+          {
+            field: 'sample_id',
+            type: 'text',
+            source: 'directory',
+            kind: 'derived',
+            notes: 'Parent sample directory name.'
+          },
+          {
+            field: 'aunp_size_nm',
+            type: 'float or list of floats',
+            source: 'sample.toml [fiducial]',
+            kind: 'authored',
+            notes: ''
+          },
+          {
+            field: 'vendor',
+            type: 'text',
+            source: 'sample.toml [fiducial]',
+            kind: 'authored',
+            notes: ''
+          },
+          {
+            field: 'catalog_number',
+            type: 'text',
+            source: 'sample.toml [fiducial]',
+            kind: 'authored',
+            notes: ''
+          },
+          {
+            field: 'product_name',
+            type: 'text',
+            source: 'sample.toml [fiducial]',
+            kind: 'authored',
+            notes: ''
+          },
+          {
+            field: 'concentration_value',
+            type: 'float',
+            source: 'sample.toml [fiducial]',
+            kind: 'authored',
+            notes: ''
+          },
+          {
+            field: 'concentration_unit',
+            type: 'text',
+            source: 'sample.toml [fiducial]',
+            kind: 'authored',
+            notes: ''
+          }
+        ]
       },
       {
-        id: 'simulation', name: 'Simulation',
+        id: 'simulation',
+        name: 'Simulation',
         cardinality: 'one per sample',
         arm: 'simulation',
         fields: [
-        { field: 'sample_id', type: 'text', source: 'directory', kind: 'derived', notes: 'Parent sample directory name.' },
-        { field: 'dataset_type', type: 'enum', source: 'directory', kind: 'derived', notes: 'One of bulk, single_molecule, slab — derived from the MdSimulation/{Bulk,SingleMolecule,Slab}/ subdirectory, not authored in sample.toml.' },
-        ],
+          {
+            field: 'sample_id',
+            type: 'text',
+            source: 'directory',
+            kind: 'derived',
+            notes: 'Parent sample directory name.'
+          },
+          {
+            field: 'dataset_type',
+            type: 'enum',
+            source: 'directory',
+            kind: 'derived',
+            notes:
+              'One of bulk, single_molecule, slab — derived from the MdSimulation/{Bulk,SingleMolecule,Slab}/ subdirectory, not authored in sample.toml.'
+          }
+        ]
       },
       {
-        id: 'freezing', name: 'Freezing',
+        id: 'freezing',
+        name: 'Freezing',
         cardinality: 'one per sample',
         arm: 'experimental',
         fields: [
-        { field: 'sample_id', type: 'text', source: 'directory', kind: 'derived', notes: 'Parent sample directory name.' },
-        { field: 'grid_type', type: 'text', source: 'sample.toml [freezing]', kind: 'authored', notes: 'e.g. "Quantifoil R2/2".' },
-        { field: 'solution_type', type: 'text', source: 'sample.toml [freezing]', kind: 'authored', notes: 'e.g. "HEPES-based".' },
-        { field: 'cryoprotectant', type: 'text', source: 'sample.toml [freezing]', kind: 'authored', notes: 'or "none".' },
-        { field: 'method', type: 'text', source: 'sample.toml [freezing]', kind: 'authored', notes: 'plunge_frozen / HPF.' },
-        { field: 'planchette_size', type: 'text', source: 'sample.toml [freezing]', kind: 'authored', notes: 'HPF only.' },
-        { field: 'spacer_thickness', type: 'text', source: 'sample.toml [freezing]', kind: 'authored', notes: 'HPF only.' },
-        ],
+          {
+            field: 'sample_id',
+            type: 'text',
+            source: 'directory',
+            kind: 'derived',
+            notes: 'Parent sample directory name.'
+          },
+          {
+            field: 'grid_type',
+            type: 'text',
+            source: 'sample.toml [freezing]',
+            kind: 'authored',
+            notes: 'e.g. "Quantifoil R2/2".'
+          },
+          {
+            field: 'solution_type',
+            type: 'text',
+            source: 'sample.toml [freezing]',
+            kind: 'authored',
+            notes: 'e.g. "HEPES-based".'
+          },
+          {
+            field: 'cryoprotectant',
+            type: 'text',
+            source: 'sample.toml [freezing]',
+            kind: 'authored',
+            notes: 'or "none".'
+          },
+          {
+            field: 'method',
+            type: 'text',
+            source: 'sample.toml [freezing]',
+            kind: 'authored',
+            notes: 'plunge_frozen / HPF.'
+          },
+          {
+            field: 'planchette_size',
+            type: 'text',
+            source: 'sample.toml [freezing]',
+            kind: 'authored',
+            notes: 'HPF only.'
+          },
+          {
+            field: 'spacer_thickness',
+            type: 'text',
+            source: 'sample.toml [freezing]',
+            kind: 'authored',
+            notes: 'HPF only.'
+          }
+        ]
       },
       {
-        id: 'milling', name: 'Milling',
+        id: 'milling',
+        name: 'Milling',
         cardinality: 'one per sample',
         arm: 'experimental',
         fields: [
-        { field: 'sample_id', type: 'text', source: 'directory', kind: 'derived', notes: 'Parent sample directory name.' },
-        { field: 'scheme', type: 'text', source: 'sample.toml [milling]', kind: 'authored', notes: 'e.g. cryo-FIB.' },
-        { field: 'date', type: 'date', source: 'sample.toml [milling]', kind: 'authored', notes: 'YYYY-MM-DD.' },
-        { field: 'quality', type: 'text', source: 'sample.toml [milling]', kind: 'authored', notes: '' },
-        ],
+          {
+            field: 'sample_id',
+            type: 'text',
+            source: 'directory',
+            kind: 'derived',
+            notes: 'Parent sample directory name.'
+          },
+          {
+            field: 'scheme',
+            type: 'text',
+            source: 'sample.toml [milling]',
+            kind: 'authored',
+            notes: 'e.g. cryo-FIB.'
+          },
+          {
+            field: 'date',
+            type: 'date',
+            source: 'sample.toml [milling]',
+            kind: 'authored',
+            notes: 'YYYY-MM-DD.'
+          },
+          {
+            field: 'quality',
+            type: 'text',
+            source: 'sample.toml [milling]',
+            kind: 'authored',
+            notes: ''
+          }
+        ]
       },
       {
-        id: 'md_run', name: 'MD run',
+        id: 'md_run',
+        name: 'MD run',
         cardinality: '0..N per sample',
         arm: 'simulation',
         fields: [
-        { field: 'md_run_id', type: 'text', source: 'directory', kind: 'derived', notes: 'Run folder name under MdRuns/ — the source of identity.' },
-        { field: 'sample_id', type: 'text', source: 'directory', kind: 'derived', notes: 'Parent sample directory name.' },
-        { field: 'seed', type: 'integer', source: 'md_run.toml', kind: 'authored', notes: 'RNG seed for the run.' },
-        { field: 'sample_time', type: 'float', source: 'md_run.toml', kind: 'authored', notes: 'Total simulated time.' },
-        { field: 'timestep', type: 'float', source: 'md_run.toml', kind: 'authored', notes: 'Integration timestep.' },
-        { field: 'computer', type: 'text', source: 'md_run.toml', kind: 'authored', notes: 'Name of the computer used.' },
-        { field: 'reference_contact', type: 'text', source: 'md_run.toml', kind: 'authored', notes: 'Reference or contact for the run.' },
-        { field: 'force_field_version', type: 'text', source: 'md_run.toml', kind: 'authored', notes: 'Force-field version used.' },
-        ],
-      },
-    ],
+          {
+            field: 'md_run_id',
+            type: 'text',
+            source: 'directory',
+            kind: 'derived',
+            notes: 'Run folder name under MdRuns/ — the source of identity.'
+          },
+          {
+            field: 'sample_id',
+            type: 'text',
+            source: 'directory',
+            kind: 'derived',
+            notes: 'Parent sample directory name.'
+          },
+          {
+            field: 'seed',
+            type: 'integer',
+            source: 'md_run.toml',
+            kind: 'authored',
+            notes: 'RNG seed for the run.'
+          },
+          {
+            field: 'sample_time',
+            type: 'float',
+            source: 'md_run.toml',
+            kind: 'authored',
+            notes: 'Total simulated time.'
+          },
+          {
+            field: 'timestep',
+            type: 'float',
+            source: 'md_run.toml',
+            kind: 'authored',
+            notes: 'Integration timestep.'
+          },
+          {
+            field: 'computer',
+            type: 'text',
+            source: 'md_run.toml',
+            kind: 'authored',
+            notes: 'Name of the computer used.'
+          },
+          {
+            field: 'reference_contact',
+            type: 'text',
+            source: 'md_run.toml',
+            kind: 'authored',
+            notes: 'Reference or contact for the run.'
+          },
+          {
+            field: 'force_field_version',
+            type: 'text',
+            source: 'md_run.toml',
+            kind: 'authored',
+            notes: 'Force-field version used.'
+          }
+        ]
+      }
+    ]
   },
   {
-    id: 'acquisition', name: 'Acquisition',
+    id: 'acquisition',
+    name: 'Acquisition',
     cardinality: 'one per imaging position',
     fields: [
-        { field: 'acquisition_id', type: 'text', source: 'directory', kind: 'derived', notes: 'Acquisition folder name, e.g. Position_86.' },
-        { field: 'sample_id', type: 'text', source: 'directory', kind: 'derived', notes: 'Parent sample directory name.' },
-        { field: 'resolution', type: 'float', source: 'acquisition.toml [acquisition]', kind: 'authored', notes: 'Angstrom. Nominal target.' },
-        { field: 'tilt_spacing', type: 'float', source: 'acquisition.toml [acquisition]', kind: 'authored', notes: 'Degrees. Target tilt step set at acquisition — researcher intent, distinct from the MDOC-derived actual tilt_angles.' },
-        { field: 'defocus_range', type: 'text', source: 'acquisition.toml [acquisition]', kind: 'authored', notes: 'Micrometres, free-text. Target defocus range set before collection — researcher intent, distinct from the MDOC-derived per-image actuals (defocus_per_image).' },
-        { field: 'energy_filter', type: 'text', source: 'acquisition.toml [acquisition]', kind: 'authored', notes: 'Model name.' },
-        { field: 'phase_plate', type: 'boolean', source: 'acquisition.toml [acquisition]', kind: 'authored', notes: '' },
-        { field: 'microscope', type: 'text', source: 'acquisition.toml [acquisition]', kind: 'authored', notes: 'Model name.' },
-        { field: 'facility', type: 'text', source: 'acquisition.toml [acquisition]', kind: 'authored', notes: 'Imaging facility, e.g. Janelia.' },
-        { field: 'acquisition_quality', type: 'integer', source: 'acquisition.toml [acquisition]', kind: 'authored', notes: '1-5 rubric, the author\'s estimate of the acquisition quality (alignability + projection-image survival): 5 Excellent, 4 Good, 3 Medium, 2 Marginal, 1 Low.' },
-        { field: 'pixel_size', type: 'float', source: 'MDOC', kind: 'derived', notes: 'Angstrom.' },
-        { field: 'dose_per_tilt', type: 'list[float]', source: 'MDOC', kind: 'derived', notes: 'e/Å² per tilt.' },
-        { field: 'total_dose', type: 'float', source: 'MDOC', kind: 'derived', notes: 'e/Å², summed.' },
-        { field: 'tilt_min', type: 'float', source: 'MDOC', kind: 'derived', notes: 'Degrees. Minimum tilt angle recorded.' },
-        { field: 'tilt_max', type: 'float', source: 'MDOC', kind: 'derived', notes: 'Degrees.' },
-        { field: 'tilt_axis', type: 'float', source: 'MDOC', kind: 'derived', notes: 'Degrees.' },
-        { field: 'tilt_angles', type: 'list[float]', source: 'MDOC', kind: 'derived', notes: 'Full per-image tilt-angle list parsed from the Frames/ MDOC. Describes the acquisition\'s tilt scheme, shared by all of its tilt series, and powers the acquisition-level polar plot.' },
-        { field: 'defocus_per_image', type: 'list[float]', source: 'MDOC', kind: 'derived', notes: 'Micrometres, per tilt.' },
-        { field: 'date_collected', type: 'date', source: 'MDOC', kind: 'derived', notes: '' },
-        { field: 'voltage', type: 'float', source: 'MDOC', kind: 'derived', notes: 'kV.' },
-        { field: 'energy_filter_slit_width', type: 'float', source: 'MDOC', kind: 'derived', notes: 'eV.' },
-        { field: 'camera', type: 'text', source: '.eer / .tiff', kind: 'derived', notes: 'Derived from frame extension (.eer -> Falcon; .tiff -> K3).' },
-        { field: 'frame_count', type: 'integer', source: 'MDOC', kind: 'derived', notes: 'Number of tilts.' },
-        { field: 'path', type: 'text', source: 'directory', kind: 'derived', notes: 'Absolute acquisition-directory path; surfaced for the UI\'s copy-path / open-in-file-browser buttons. Synthesized acquisitions record the directory the scanner walked.' },
-        { field: 'renamed_from', type: 'text', source: 'acquisition.toml [acquisition]', kind: 'authored', notes: 'Scan-time-only rename directive; not stored in the DB.' },
+      {
+        field: 'acquisition_id',
+        type: 'text',
+        source: 'directory',
+        kind: 'derived',
+        notes: 'Acquisition folder name, e.g. Position_86.'
+      },
+      {
+        field: 'sample_id',
+        type: 'text',
+        source: 'directory',
+        kind: 'derived',
+        notes: 'Parent sample directory name.'
+      },
+      {
+        field: 'resolution',
+        type: 'float',
+        source: 'acquisition.toml [acquisition]',
+        kind: 'authored',
+        notes: 'Angstrom. Nominal target.'
+      },
+      {
+        field: 'tilt_spacing',
+        type: 'float',
+        source: 'acquisition.toml [acquisition]',
+        kind: 'authored',
+        notes:
+          'Degrees. Target tilt step set at acquisition — researcher intent, distinct from the MDOC-derived actual tilt_angles.'
+      },
+      {
+        field: 'defocus_range',
+        type: 'text',
+        source: 'acquisition.toml [acquisition]',
+        kind: 'authored',
+        notes:
+          'Micrometres, free-text. Target defocus range set before collection — researcher intent, distinct from the MDOC-derived per-image actuals (defocus_per_image).'
+      },
+      {
+        field: 'energy_filter',
+        type: 'text',
+        source: 'acquisition.toml [acquisition]',
+        kind: 'authored',
+        notes: 'Model name.'
+      },
+      {
+        field: 'phase_plate',
+        type: 'boolean',
+        source: 'acquisition.toml [acquisition]',
+        kind: 'authored',
+        notes: ''
+      },
+      {
+        field: 'microscope',
+        type: 'text',
+        source: 'acquisition.toml [acquisition]',
+        kind: 'authored',
+        notes: 'Model name.'
+      },
+      {
+        field: 'facility',
+        type: 'text',
+        source: 'acquisition.toml [acquisition]',
+        kind: 'authored',
+        notes: 'Imaging facility, e.g. Janelia.'
+      },
+      {
+        field: 'acquisition_quality',
+        type: 'integer',
+        source: 'acquisition.toml [acquisition]',
+        kind: 'authored',
+        notes:
+          "1-5 rubric, the author's estimate of the acquisition quality (alignability + projection-image survival): 5 Excellent, 4 Good, 3 Medium, 2 Marginal, 1 Low."
+      },
+      {
+        field: 'pixel_size',
+        type: 'float',
+        source: 'MDOC',
+        kind: 'derived',
+        notes: 'Angstrom.'
+      },
+      {
+        field: 'dose_per_tilt',
+        type: 'list[float]',
+        source: 'MDOC',
+        kind: 'derived',
+        notes: 'e/Å² per tilt.'
+      },
+      {
+        field: 'total_dose',
+        type: 'float',
+        source: 'MDOC',
+        kind: 'derived',
+        notes: 'e/Å², summed.'
+      },
+      {
+        field: 'tilt_min',
+        type: 'float',
+        source: 'MDOC',
+        kind: 'derived',
+        notes: 'Degrees. Minimum tilt angle recorded.'
+      },
+      {
+        field: 'tilt_max',
+        type: 'float',
+        source: 'MDOC',
+        kind: 'derived',
+        notes: 'Degrees.'
+      },
+      {
+        field: 'tilt_axis',
+        type: 'float',
+        source: 'MDOC',
+        kind: 'derived',
+        notes: 'Degrees.'
+      },
+      {
+        field: 'tilt_angles',
+        type: 'list[float]',
+        source: 'MDOC',
+        kind: 'derived',
+        notes:
+          "Full per-image tilt-angle list parsed from the Frames/ MDOC. Describes the acquisition's tilt scheme, shared by all of its tilt series, and powers the acquisition-level polar plot."
+      },
+      {
+        field: 'defocus_per_image',
+        type: 'list[float]',
+        source: 'MDOC',
+        kind: 'derived',
+        notes: 'Micrometres, per tilt.'
+      },
+      {
+        field: 'date_collected',
+        type: 'date',
+        source: 'MDOC',
+        kind: 'derived',
+        notes: ''
+      },
+      {
+        field: 'voltage',
+        type: 'float',
+        source: 'MDOC',
+        kind: 'derived',
+        notes: 'kV.'
+      },
+      {
+        field: 'energy_filter_slit_width',
+        type: 'float',
+        source: 'MDOC',
+        kind: 'derived',
+        notes: 'eV.'
+      },
+      {
+        field: 'camera',
+        type: 'text',
+        source: '.eer / .tiff',
+        kind: 'derived',
+        notes: 'Derived from frame extension (.eer -> Falcon; .tiff -> K3).'
+      },
+      {
+        field: 'frame_count',
+        type: 'integer',
+        source: 'MDOC',
+        kind: 'derived',
+        notes: 'Number of tilts.'
+      },
+      {
+        field: 'path',
+        type: 'text',
+        source: 'directory',
+        kind: 'derived',
+        notes:
+          "Absolute acquisition-directory path; surfaced for the UI's copy-path / open-in-file-browser buttons. Synthesized acquisitions record the directory the scanner walked."
+      },
+      {
+        field: 'renamed_from',
+        type: 'text',
+        source: 'acquisition.toml [acquisition]',
+        kind: 'authored',
+        notes: 'Scan-time-only rename directive; not stored in the DB.'
+      }
     ],
     children: [
       {
-        id: 'md_source', name: 'MD source',
+        id: 'md_source',
+        name: 'MD source',
         cardinality: 'one per acquisition',
         arm: 'simulation',
         fields: [
-        { field: 'sample_id', type: 'text', source: 'directory', kind: 'derived', notes: 'Parent sample directory name.' },
-        { field: 'acquisition_id', type: 'text', source: 'directory', kind: 'derived', notes: 'Parent acquisition directory name.' },
-        { field: 'md_run_id', type: 'text', source: 'acquisition.toml [md_source]', kind: 'authored', notes: 'Should match an MdRuns/{id}/ folder name in the sample; a dangling ref warns rather than failing the acquisition.' },
-        { field: 'frame', type: 'integer', source: 'acquisition.toml [md_source]', kind: 'authored', notes: 'Frame/snapshot index within the MD run.' },
-        ],
+          {
+            field: 'sample_id',
+            type: 'text',
+            source: 'directory',
+            kind: 'derived',
+            notes: 'Parent sample directory name.'
+          },
+          {
+            field: 'acquisition_id',
+            type: 'text',
+            source: 'directory',
+            kind: 'derived',
+            notes: 'Parent acquisition directory name.'
+          },
+          {
+            field: 'md_run_id',
+            type: 'text',
+            source: 'acquisition.toml [md_source]',
+            kind: 'authored',
+            notes:
+              'Should match an MdRuns/{id}/ folder name in the sample; a dangling ref warns rather than failing the acquisition.'
+          },
+          {
+            field: 'frame',
+            type: 'integer',
+            source: 'acquisition.toml [md_source]',
+            kind: 'authored',
+            notes: 'Frame/snapshot index within the MD run.'
+          }
+        ]
       },
       {
-        id: 'reconstruction_alignment', name: '3D alignment group',
+        id: 'reconstruction_alignment',
+        name: '3D alignment group',
         cardinality: '0..N per acquisition',
         fields: [
-        { field: 'reconstruction_alignment_id', type: 'text', source: 'directory', kind: 'derived', notes: 'Folder name under Reconstructions/. Does NOT have to match any tilt_series_id — a tomogram\'s tilt-series lineage is recorded on raw_tomogram.derived_from instead.' },
-        { field: 'acquisition_id', type: 'text', source: 'directory', kind: 'derived', notes: 'Parent acquisition folder name.' },
-        { field: 'sample_id', type: 'text', source: 'directory', kind: 'derived', notes: 'Parent sample folder name.' },
-        { field: 'alignment_software', type: 'text', source: 'reconstruction.toml [reconstruction_alignment]', kind: 'authored', notes: 'e.g. IMOD, RELION, AreTomo3.' },
-        { field: 'alignment_method', type: 'text', source: 'reconstruction.toml [reconstruction_alignment]', kind: 'authored', notes: 'e.g. patch_tracking, fiducial, subtomogram_averaging.' },
-        { field: 'alignment_files', type: 'list[text]', source: 'directory', kind: 'derived', notes: '3D-alignment artifacts discovered under Reconstructions/{id}/Alignment/.' },
-        { field: 'mtime', type: 'float', source: 'directory', kind: 'derived', notes: 'Modification time, used to gate re-parsing.' },
-        { field: 'renamed_from', type: 'text', source: 'reconstruction.toml [reconstruction_alignment]', kind: 'authored', notes: 'Scan-time-only rename directive; not stored in the DB.' },
+          {
+            field: 'reconstruction_alignment_id',
+            type: 'text',
+            source: 'directory',
+            kind: 'derived',
+            notes:
+              "Folder name under Reconstructions/. Does NOT have to match any tilt_series_id — a tomogram's tilt-series lineage is recorded on raw_tomogram.derived_from instead."
+          },
+          {
+            field: 'acquisition_id',
+            type: 'text',
+            source: 'directory',
+            kind: 'derived',
+            notes: 'Parent acquisition folder name.'
+          },
+          {
+            field: 'sample_id',
+            type: 'text',
+            source: 'directory',
+            kind: 'derived',
+            notes: 'Parent sample folder name.'
+          },
+          {
+            field: 'alignment_software',
+            type: 'text',
+            source: 'reconstruction.toml [reconstruction_alignment]',
+            kind: 'authored',
+            notes: 'e.g. IMOD, RELION, AreTomo3.'
+          },
+          {
+            field: 'alignment_method',
+            type: 'text',
+            source: 'reconstruction.toml [reconstruction_alignment]',
+            kind: 'authored',
+            notes: 'e.g. patch_tracking, fiducial, subtomogram_averaging.'
+          },
+          {
+            field: 'alignment_files',
+            type: 'list[text]',
+            source: 'directory',
+            kind: 'derived',
+            notes:
+              '3D-alignment artifacts discovered under Reconstructions/{id}/Alignment/.'
+          },
+          {
+            field: 'mtime',
+            type: 'float',
+            source: 'directory',
+            kind: 'derived',
+            notes: 'Modification time, used to gate re-parsing.'
+          },
+          {
+            field: 'renamed_from',
+            type: 'text',
+            source: 'reconstruction.toml [reconstruction_alignment]',
+            kind: 'authored',
+            notes: 'Scan-time-only rename directive; not stored in the DB.'
+          }
         ],
         children: [
           {
-            id: 'raw_tomogram', name: 'Raw tomogram',
+            id: 'raw_tomogram',
+            name: 'Raw tomogram',
             cardinality: '0..N per 3D alignment group',
             fields: [
-        { field: 'tomogram_id', type: 'text', source: 'directory', kind: 'derived', notes: 'Reconstruction file\'s name without its extension, e.g. bp_3dctf_bin4; the TOML id must match the stem.' },
-        { field: 'acquisition_id', type: 'text', source: 'directory', kind: 'derived', notes: 'Parent acquisition folder name.' },
-        { field: 'sample_id', type: 'text', source: 'directory', kind: 'derived', notes: 'Parent sample folder name.' },
-        { field: 'reconstruction_alignment_id', type: 'text', source: 'directory', kind: 'derived', notes: 'Enclosing Reconstructions/{id}/ folder — the 3D-alignment group this belongs to. Part of the key: two groups may hold the same file stem.' },
-        { field: 'pipeline', type: 'text', source: 'reconstruction.toml [[raw_tomogram]]', kind: 'authored', notes: 'Human description.' },
-        { field: 'software', type: 'text', source: 'reconstruction.toml [[raw_tomogram]]', kind: 'authored', notes: '' },
-        { field: 'voxel_size', type: 'float', source: 'MRC header', kind: 'derived', notes: 'Ångström/pixel. Read by the scanner from the reconstruction MRC header\'s voxel_size.x; not authored in any TOML.' },
-        { field: 'mrc_voxel_size_missing', type: 'boolean', source: 'MRC header', kind: 'derived', notes: 'True when the MRC header carries no voxel size (cella=0) — what mrc-ng-server reads — so the Neuroglancer viewer would be mis-scaled and the frontend disables its launch button. An explicit flag, set alongside voxel_size when the header read comes back empty.' },
-        { field: 'derived_from', type: 'text', source: 'reconstruction.toml [[raw_tomogram]]', kind: 'authored', notes: 'The tilt series (under TiltSeries/) this was reconstructed from.' },
-        { field: 'image_size_x', type: 'integer', source: 'MRC header', kind: 'derived', notes: '' },
-        { field: 'image_size_y', type: 'integer', source: 'MRC header', kind: 'derived', notes: '' },
-        { field: 'image_size_z', type: 'integer', source: 'MRC header', kind: 'derived', notes: '' },
-        { field: 'mrc_path', type: 'text', source: 'directory', kind: 'derived', notes: 'Derived from prescribed layout.' },
-        { field: 'zarr_path', type: 'text', source: 'directory', kind: 'derived', notes: 'Derived from prescribed layout.' },
-        { field: 'zarr_axes', type: 'text', source: 'OME-Zarr .zattrs', kind: 'derived', notes: 'Axis order.' },
-        { field: 'zarr_scale', type: 'list[float]', source: 'OME-Zarr .zattrs', kind: 'derived', notes: 'Multiscale scale factors.' },
-        { field: 'renamed_from', type: 'text', source: 'reconstruction.toml [[raw_tomogram]]', kind: 'authored', notes: 'Scan-time-only rename directive; not stored in the DB.' },
-            ],
+              {
+                field: 'tomogram_id',
+                type: 'text',
+                source: 'directory',
+                kind: 'derived',
+                notes:
+                  "Reconstruction file's name without its extension, e.g. bp_3dctf_bin4; the TOML id must match the stem."
+              },
+              {
+                field: 'acquisition_id',
+                type: 'text',
+                source: 'directory',
+                kind: 'derived',
+                notes: 'Parent acquisition folder name.'
+              },
+              {
+                field: 'sample_id',
+                type: 'text',
+                source: 'directory',
+                kind: 'derived',
+                notes: 'Parent sample folder name.'
+              },
+              {
+                field: 'reconstruction_alignment_id',
+                type: 'text',
+                source: 'directory',
+                kind: 'derived',
+                notes:
+                  'Enclosing Reconstructions/{id}/ folder — the 3D-alignment group this belongs to. Part of the key: two groups may hold the same file stem.'
+              },
+              {
+                field: 'pipeline',
+                type: 'text',
+                source: 'reconstruction.toml [[raw_tomogram]]',
+                kind: 'authored',
+                notes: 'Human description.'
+              },
+              {
+                field: 'software',
+                type: 'text',
+                source: 'reconstruction.toml [[raw_tomogram]]',
+                kind: 'authored',
+                notes: ''
+              },
+              {
+                field: 'voxel_size',
+                type: 'float',
+                source: 'MRC header',
+                kind: 'derived',
+                notes:
+                  "Ångström/pixel. Read by the scanner from the reconstruction MRC header's voxel_size.x; not authored in any TOML."
+              },
+              {
+                field: 'mrc_voxel_size_missing',
+                type: 'boolean',
+                source: 'MRC header',
+                kind: 'derived',
+                notes:
+                  'True when the MRC header carries no voxel size (cella=0) — what mrc-ng-server reads — so the Neuroglancer viewer would be mis-scaled and the frontend disables its launch button. An explicit flag, set alongside voxel_size when the header read comes back empty.'
+              },
+              {
+                field: 'derived_from',
+                type: 'text',
+                source: 'reconstruction.toml [[raw_tomogram]]',
+                kind: 'authored',
+                notes:
+                  'The tilt series (under TiltSeries/) this was reconstructed from.'
+              },
+              {
+                field: 'image_size_x',
+                type: 'integer',
+                source: 'MRC header',
+                kind: 'derived',
+                notes: ''
+              },
+              {
+                field: 'image_size_y',
+                type: 'integer',
+                source: 'MRC header',
+                kind: 'derived',
+                notes: ''
+              },
+              {
+                field: 'image_size_z',
+                type: 'integer',
+                source: 'MRC header',
+                kind: 'derived',
+                notes: ''
+              },
+              {
+                field: 'mrc_path',
+                type: 'text',
+                source: 'directory',
+                kind: 'derived',
+                notes: 'Derived from prescribed layout.'
+              },
+              {
+                field: 'zarr_path',
+                type: 'text',
+                source: 'directory',
+                kind: 'derived',
+                notes: 'Derived from prescribed layout.'
+              },
+              {
+                field: 'zarr_axes',
+                type: 'text',
+                source: 'OME-Zarr .zattrs',
+                kind: 'derived',
+                notes: 'Axis order.'
+              },
+              {
+                field: 'zarr_scale',
+                type: 'list[float]',
+                source: 'OME-Zarr .zattrs',
+                kind: 'derived',
+                notes: 'Multiscale scale factors.'
+              },
+              {
+                field: 'renamed_from',
+                type: 'text',
+                source: 'reconstruction.toml [[raw_tomogram]]',
+                kind: 'authored',
+                notes: 'Scan-time-only rename directive; not stored in the DB.'
+              }
+            ]
           },
           {
-            id: 'post_processed_tomogram', name: 'Post-processed tomogram',
+            id: 'post_processed_tomogram',
+            name: 'Post-processed tomogram',
             cardinality: '0..N per 3D alignment group',
             fields: [
-        { field: 'tomogram_id', type: 'text', source: 'directory', kind: 'derived', notes: 'Reconstruction file\'s name without its extension; the TOML id must match the stem.' },
-        { field: 'acquisition_id', type: 'text', source: 'directory', kind: 'derived', notes: 'Parent acquisition folder name.' },
-        { field: 'sample_id', type: 'text', source: 'directory', kind: 'derived', notes: 'Parent sample folder name.' },
-        { field: 'reconstruction_alignment_id', type: 'text', source: 'directory', kind: 'derived', notes: 'Enclosing Reconstructions/{id}/ folder — the 3D-alignment group this belongs to. Part of the key: two groups may hold the same file stem.' },
-        { field: 'denoising_software', type: 'text', source: 'reconstruction.toml [[post_processed_tomogram]]', kind: 'authored', notes: '' },
-        { field: 'ctf_software', type: 'text', source: 'reconstruction.toml [[post_processed_tomogram]]', kind: 'authored', notes: '' },
-        { field: 'missing_wedge_software', type: 'text', source: 'reconstruction.toml [[post_processed_tomogram]]', kind: 'authored', notes: '' },
-        { field: 'voxel_size', type: 'float', source: 'MRC header', kind: 'derived', notes: 'Ångström/pixel. Read by the scanner from the reconstruction MRC header\'s voxel_size.x; not authored in any TOML.' },
-        { field: 'mrc_voxel_size_missing', type: 'boolean', source: 'MRC header', kind: 'derived', notes: 'True when the MRC header carries no voxel size (cella=0) — what mrc-ng-server reads — so the Neuroglancer viewer would be mis-scaled and the frontend disables its launch button. An explicit flag, set alongside voxel_size when the header read comes back empty.' },
-        { field: 'derived_from', type: 'list[text]', source: 'reconstruction.toml [[post_processed_tomogram]]', kind: 'authored', notes: 'Lineage; references a raw or post-processed tomogram_id in this acquisition (resolvable across sibling groups).' },
-        { field: 'image_size_x', type: 'integer', source: 'MRC header', kind: 'derived', notes: '' },
-        { field: 'image_size_y', type: 'integer', source: 'MRC header', kind: 'derived', notes: '' },
-        { field: 'image_size_z', type: 'integer', source: 'MRC header', kind: 'derived', notes: '' },
-        { field: 'mrc_path', type: 'text', source: 'directory', kind: 'derived', notes: 'Derived from prescribed layout.' },
-        { field: 'zarr_path', type: 'text', source: 'directory', kind: 'derived', notes: 'Derived from prescribed layout.' },
-        { field: 'zarr_axes', type: 'text', source: 'OME-Zarr .zattrs', kind: 'derived', notes: 'Axis order.' },
-        { field: 'zarr_scale', type: 'list[float]', source: 'OME-Zarr .zattrs', kind: 'derived', notes: 'Multiscale scale factors.' },
-        { field: 'size_bytes', type: 'integer', source: 'filesystem', kind: 'derived', notes: 'On-disk size recorded by the scanner via os.stat at parse time; powers the home-page size stats and per-card size badges.' },
-        { field: 'renamed_from', type: 'text', source: 'reconstruction.toml [[post_processed_tomogram]]', kind: 'authored', notes: 'Scan-time-only rename directive; not stored in the DB.' },
-            ],
+              {
+                field: 'tomogram_id',
+                type: 'text',
+                source: 'directory',
+                kind: 'derived',
+                notes:
+                  "Reconstruction file's name without its extension; the TOML id must match the stem."
+              },
+              {
+                field: 'acquisition_id',
+                type: 'text',
+                source: 'directory',
+                kind: 'derived',
+                notes: 'Parent acquisition folder name.'
+              },
+              {
+                field: 'sample_id',
+                type: 'text',
+                source: 'directory',
+                kind: 'derived',
+                notes: 'Parent sample folder name.'
+              },
+              {
+                field: 'reconstruction_alignment_id',
+                type: 'text',
+                source: 'directory',
+                kind: 'derived',
+                notes:
+                  'Enclosing Reconstructions/{id}/ folder — the 3D-alignment group this belongs to. Part of the key: two groups may hold the same file stem.'
+              },
+              {
+                field: 'denoising_software',
+                type: 'text',
+                source: 'reconstruction.toml [[post_processed_tomogram]]',
+                kind: 'authored',
+                notes: ''
+              },
+              {
+                field: 'ctf_software',
+                type: 'text',
+                source: 'reconstruction.toml [[post_processed_tomogram]]',
+                kind: 'authored',
+                notes: ''
+              },
+              {
+                field: 'missing_wedge_software',
+                type: 'text',
+                source: 'reconstruction.toml [[post_processed_tomogram]]',
+                kind: 'authored',
+                notes: ''
+              },
+              {
+                field: 'voxel_size',
+                type: 'float',
+                source: 'MRC header',
+                kind: 'derived',
+                notes:
+                  "Ångström/pixel. Read by the scanner from the reconstruction MRC header's voxel_size.x; not authored in any TOML."
+              },
+              {
+                field: 'mrc_voxel_size_missing',
+                type: 'boolean',
+                source: 'MRC header',
+                kind: 'derived',
+                notes:
+                  'True when the MRC header carries no voxel size (cella=0) — what mrc-ng-server reads — so the Neuroglancer viewer would be mis-scaled and the frontend disables its launch button. An explicit flag, set alongside voxel_size when the header read comes back empty.'
+              },
+              {
+                field: 'derived_from',
+                type: 'list[text]',
+                source: 'reconstruction.toml [[post_processed_tomogram]]',
+                kind: 'authored',
+                notes:
+                  'Lineage; references a raw or post-processed tomogram_id in this acquisition (resolvable across sibling groups).'
+              },
+              {
+                field: 'image_size_x',
+                type: 'integer',
+                source: 'MRC header',
+                kind: 'derived',
+                notes: ''
+              },
+              {
+                field: 'image_size_y',
+                type: 'integer',
+                source: 'MRC header',
+                kind: 'derived',
+                notes: ''
+              },
+              {
+                field: 'image_size_z',
+                type: 'integer',
+                source: 'MRC header',
+                kind: 'derived',
+                notes: ''
+              },
+              {
+                field: 'mrc_path',
+                type: 'text',
+                source: 'directory',
+                kind: 'derived',
+                notes: 'Derived from prescribed layout.'
+              },
+              {
+                field: 'zarr_path',
+                type: 'text',
+                source: 'directory',
+                kind: 'derived',
+                notes: 'Derived from prescribed layout.'
+              },
+              {
+                field: 'zarr_axes',
+                type: 'text',
+                source: 'OME-Zarr .zattrs',
+                kind: 'derived',
+                notes: 'Axis order.'
+              },
+              {
+                field: 'zarr_scale',
+                type: 'list[float]',
+                source: 'OME-Zarr .zattrs',
+                kind: 'derived',
+                notes: 'Multiscale scale factors.'
+              },
+              {
+                field: 'size_bytes',
+                type: 'integer',
+                source: 'filesystem',
+                kind: 'derived',
+                notes:
+                  'On-disk size recorded by the scanner via os.stat at parse time; powers the home-page size stats and per-card size badges.'
+              },
+              {
+                field: 'renamed_from',
+                type: 'text',
+                source: 'reconstruction.toml [[post_processed_tomogram]]',
+                kind: 'authored',
+                notes: 'Scan-time-only rename directive; not stored in the DB.'
+              }
+            ]
           },
           {
-            id: 'annotation', name: 'Annotation',
+            id: 'annotation',
+            name: 'Annotation',
             cardinality: '0..N per 3D alignment group',
             fields: [
-        { field: 'annotation_id', type: 'text', source: 'directory', kind: 'derived', notes: 'Annotation file\'s name without its extension, e.g. membrain_seg_v10; the TOML id must match the stem.' },
-        { field: 'acquisition_id', type: 'text', source: 'directory', kind: 'derived', notes: 'Parent acquisition folder name.' },
-        { field: 'sample_id', type: 'text', source: 'directory', kind: 'derived', notes: 'Parent sample folder name.' },
-        { field: 'reconstruction_alignment_id', type: 'text', source: 'directory', kind: 'derived', notes: 'Enclosing Reconstructions/{id}/ folder — the 3D-alignment group this belongs to. Part of the key: two groups may hold the same file stem.' },
-        { field: 'type', type: 'text', source: 'reconstruction.toml [[annotation]]', kind: 'authored', notes: 'e.g. membrane_segmentation, nucleosome_placement, nucleosome_orientation, sta_result.' },
-        { field: 'derived_from', type: 'text', source: 'reconstruction.toml [[annotation]]', kind: 'authored', notes: 'Id of the tomogram in this group the annotation was derived from.' },
-        { field: 'bounding_box', type: 'text', source: 'reconstruction.toml [[annotation]]', kind: 'authored', notes: 'Id of the annotation file (under Annotations/) holding the bounding box this annotation is associated with.' },
-        { field: 'files', type: 'list[text]', source: 'directory', kind: 'derived', notes: '.star, .mrc, .ome.zarr, .png artifacts sharing this stem.' },
-        { field: 'renamed_from', type: 'text', source: 'reconstruction.toml [[annotation]]', kind: 'authored', notes: 'Scan-time-only rename directive; not stored in the DB.' },
-            ],
-          },
-        ],
+              {
+                field: 'annotation_id',
+                type: 'text',
+                source: 'directory',
+                kind: 'derived',
+                notes:
+                  "Annotation file's name without its extension, e.g. membrain_seg_v10; the TOML id must match the stem."
+              },
+              {
+                field: 'acquisition_id',
+                type: 'text',
+                source: 'directory',
+                kind: 'derived',
+                notes: 'Parent acquisition folder name.'
+              },
+              {
+                field: 'sample_id',
+                type: 'text',
+                source: 'directory',
+                kind: 'derived',
+                notes: 'Parent sample folder name.'
+              },
+              {
+                field: 'reconstruction_alignment_id',
+                type: 'text',
+                source: 'directory',
+                kind: 'derived',
+                notes:
+                  'Enclosing Reconstructions/{id}/ folder — the 3D-alignment group this belongs to. Part of the key: two groups may hold the same file stem.'
+              },
+              {
+                field: 'type',
+                type: 'text',
+                source: 'reconstruction.toml [[annotation]]',
+                kind: 'authored',
+                notes:
+                  'e.g. membrane_segmentation, nucleosome_placement, nucleosome_orientation, sta_result.'
+              },
+              {
+                field: 'derived_from',
+                type: 'text',
+                source: 'reconstruction.toml [[annotation]]',
+                kind: 'authored',
+                notes:
+                  'Id of the tomogram in this group the annotation was derived from.'
+              },
+              {
+                field: 'bounding_box',
+                type: 'text',
+                source: 'reconstruction.toml [[annotation]]',
+                kind: 'authored',
+                notes:
+                  'Id of the annotation file (under Annotations/) holding the bounding box this annotation is associated with.'
+              },
+              {
+                field: 'files',
+                type: 'list[text]',
+                source: 'directory',
+                kind: 'derived',
+                notes:
+                  '.star, .mrc, .ome.zarr, .png artifacts sharing this stem.'
+              },
+              {
+                field: 'renamed_from',
+                type: 'text',
+                source: 'reconstruction.toml [[annotation]]',
+                kind: 'authored',
+                notes: 'Scan-time-only rename directive; not stored in the DB.'
+              }
+            ]
+          }
+        ]
       },
       {
-        id: 'tilt_series', name: 'Tilt series',
+        id: 'tilt_series',
+        name: 'Tilt series',
         cardinality: '0..N per acquisition',
         fields: [
-        { field: 'tilt_series_id', type: 'text', source: 'directory', kind: 'derived', notes: 'Folder name under TiltSeries/; the TOML id must match the folder.' },
-        { field: 'acquisition_id', type: 'text', source: 'directory', kind: 'derived', notes: 'Parent acquisition folder name.' },
-        { field: 'sample_id', type: 'text', source: 'directory', kind: 'derived', notes: 'Parent sample folder name.' },
-        { field: 'derived_from', type: 'text', source: 'acquisition.toml [[tilt_series]]', kind: 'authored', notes: 'Either the literal "Frames" or another tilt_series_id in the same acquisition.' },
-        { field: 'is_aligned', type: 'boolean', source: 'acquisition.toml [[tilt_series]]', kind: 'authored', notes: 'Whether the stack is already geometrically transformed (aligned).' },
-        { field: 'alignment_software', type: 'text', source: 'acquisition.toml [[tilt_series]]', kind: 'authored', notes: 'e.g. IMOD, AreTomo3.' },
-        { field: 'alignment_method', type: 'text', source: 'acquisition.toml [[tilt_series]]', kind: 'authored', notes: 'e.g. fiducial, patch_tracking, feature_tracking.' },
-        { field: 'st_path', type: 'text', source: 'directory', kind: 'derived', notes: 'Path to the stacked tilt-series .mrc file, resolved under {tilt_series_id}/Stack/.' },
-        { field: 'zarr_path', type: 'text', source: 'directory', kind: 'derived', notes: 'Path to the OME-Zarr rendering under {tilt_series_id}/Stack/, when present.' },
-        { field: 'alignment_files', type: 'list[text]', source: 'directory', kind: 'derived', notes: 'Alignment artifacts discovered under {tilt_series_id}/Alignment/.' },
-        { field: 'mtime', type: 'float', source: 'directory', kind: 'derived', notes: 'Modification time, used to gate re-parsing.' },
-        { field: 'renamed_from', type: 'text', source: 'acquisition.toml [[tilt_series]]', kind: 'authored', notes: 'Scan-time-only rename directive; not stored in the DB.' },
-        ],
-      },
-    ],
-  },
+          {
+            field: 'tilt_series_id',
+            type: 'text',
+            source: 'directory',
+            kind: 'derived',
+            notes:
+              'Folder name under TiltSeries/; the TOML id must match the folder.'
+          },
+          {
+            field: 'acquisition_id',
+            type: 'text',
+            source: 'directory',
+            kind: 'derived',
+            notes: 'Parent acquisition folder name.'
+          },
+          {
+            field: 'sample_id',
+            type: 'text',
+            source: 'directory',
+            kind: 'derived',
+            notes: 'Parent sample folder name.'
+          },
+          {
+            field: 'derived_from',
+            type: 'text',
+            source: 'acquisition.toml [[tilt_series]]',
+            kind: 'authored',
+            notes:
+              'Either the literal "Frames" or another tilt_series_id in the same acquisition.'
+          },
+          {
+            field: 'is_aligned',
+            type: 'boolean',
+            source: 'acquisition.toml [[tilt_series]]',
+            kind: 'authored',
+            notes:
+              'Whether the stack is already geometrically transformed (aligned).'
+          },
+          {
+            field: 'alignment_software',
+            type: 'text',
+            source: 'acquisition.toml [[tilt_series]]',
+            kind: 'authored',
+            notes: 'e.g. IMOD, AreTomo3.'
+          },
+          {
+            field: 'alignment_method',
+            type: 'text',
+            source: 'acquisition.toml [[tilt_series]]',
+            kind: 'authored',
+            notes: 'e.g. fiducial, patch_tracking, feature_tracking.'
+          },
+          {
+            field: 'st_path',
+            type: 'text',
+            source: 'directory',
+            kind: 'derived',
+            notes:
+              'Path to the stacked tilt-series .mrc file, resolved under {tilt_series_id}/Stack/.'
+          },
+          {
+            field: 'zarr_path',
+            type: 'text',
+            source: 'directory',
+            kind: 'derived',
+            notes:
+              'Path to the OME-Zarr rendering under {tilt_series_id}/Stack/, when present.'
+          },
+          {
+            field: 'alignment_files',
+            type: 'list[text]',
+            source: 'directory',
+            kind: 'derived',
+            notes:
+              'Alignment artifacts discovered under {tilt_series_id}/Alignment/.'
+          },
+          {
+            field: 'mtime',
+            type: 'float',
+            source: 'directory',
+            kind: 'derived',
+            notes: 'Modification time, used to gate re-parsing.'
+          },
+          {
+            field: 'renamed_from',
+            type: 'text',
+            source: 'acquisition.toml [[tilt_series]]',
+            kind: 'authored',
+            notes: 'Scan-time-only rename directive; not stored in the DB.'
+          }
+        ]
+      }
+    ]
+  }
 ];

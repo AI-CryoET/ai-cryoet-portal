@@ -1,13 +1,13 @@
-import { createFileRoute } from '@tanstack/react-router'
-import { Stack } from '@mui/material'
+import { createFileRoute } from '@tanstack/react-router';
+import { Stack } from '@mui/material';
 import {
   samplesQueryOptions,
   statsOverviewQueryOptions,
   useSamplesQuery,
-  useStatsOverviewQuery,
-} from '~/utils/queryOptions'
-import { StatsBanner } from '~/components/landing/StatsBanner'
-import { CoverageSummary } from '~/components/landing/CoverageSummary'
+  useStatsOverviewQuery
+} from '~/utils/queryOptions';
+import { StatsBanner } from '~/components/landing/StatsBanner';
+import { CoverageSummary } from '~/components/landing/CoverageSummary';
 
 export const Route = createFileRoute('/')({
   loader: ({ context: { queryClient } }) =>
@@ -15,29 +15,29 @@ export const Route = createFileRoute('/')({
       queryClient.ensureQueryData(statsOverviewQueryOptions),
       // Coverage cross-tabulates the full data set (no filters on the landing
       // page), so prime the unfiltered samples list.
-      queryClient.ensureQueryData(samplesQueryOptions()),
+      queryClient.ensureQueryData(samplesQueryOptions())
     ]),
-  component: Landing,
-})
+  component: Landing
+});
 
 function Landing() {
-  const { data: stats } = useStatsOverviewQuery()
-  const { data: samples } = useSamplesQuery()
-  const rows = samples ?? []
+  const { data: stats } = useStatsOverviewQuery();
+  const { data: samples } = useSamplesQuery();
+  const rows = samples ?? [];
 
   return (
     // The root layout caps content at `xl` on wide screens; the landing page
     // reads better narrower, so cap it at `lg` and center it.
     <Stack
       spacing={4}
-      sx={(theme) => ({
+      sx={theme => ({
         width: '100%',
         maxWidth: theme.breakpoints.values.lg,
-        mx: 'auto',
+        mx: 'auto'
       })}
     >
       <StatsBanner stats={stats} />
       <CoverageSummary rows={rows} />
     </Stack>
-  )
+  );
 }

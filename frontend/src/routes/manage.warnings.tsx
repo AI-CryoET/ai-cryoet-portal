@@ -1,25 +1,25 @@
-import { createFileRoute } from '@tanstack/react-router'
-import { Box, Breadcrumbs, Stack, Typography } from '@mui/material'
-import { CustomLink } from '~/components/CustomLink'
-import { StatusCadenceCard } from '~/components/manage/StatusCadenceCard'
-import { SectionHeader } from '~/components/manage/SectionHeader'
-import { OutstandingIssuesTable } from '~/components/manage/OutstandingIssuesTable'
-import { RecentlyResolvedTable } from '~/components/manage/RecentlyResolvedTable'
+import { createFileRoute } from '@tanstack/react-router';
+import { Box, Breadcrumbs, Stack, Typography } from '@mui/material';
+import { CustomLink } from '~/components/CustomLink';
+import { StatusCadenceCard } from '~/components/manage/StatusCadenceCard';
+import { SectionHeader } from '~/components/manage/SectionHeader';
+import { OutstandingIssuesTable } from '~/components/manage/OutstandingIssuesTable';
+import { RecentlyResolvedTable } from '~/components/manage/RecentlyResolvedTable';
 import {
   manageSummaryQueryOptions,
   outstandingIssuesQueryOptions,
   recentlyResolvedQueryOptions,
   useManageSummaryQuery,
-  useRecentlyResolvedQuery,
-} from '~/utils/queryOptions'
+  useRecentlyResolvedQuery
+} from '~/utils/queryOptions';
 
 // Free-text search carried in the URL (e.g. /manage/warnings?q=villa_004 from a
 // detail page's "view metadata errors" link, or typed into the search box).
-type ManageSearch = { q?: string }
+type ManageSearch = { q?: string };
 
 export const Route = createFileRoute('/manage/warnings')({
   validateSearch: (search: Record<string, unknown>): ManageSearch => ({
-    q: typeof search.q === 'string' && search.q ? search.q : undefined,
+    q: typeof search.q === 'string' && search.q ? search.q : undefined
   }),
   loaderDeps: ({ search }) => search,
   loader: ({ context: { queryClient }, deps }) =>
@@ -29,34 +29,34 @@ export const Route = createFileRoute('/manage/warnings')({
       // Unfiltered list primes the "X out of Y total" denominator so a
       // deep-linked (?q=…) table shows the right total immediately.
       queryClient.ensureQueryData(outstandingIssuesQueryOptions({})),
-      queryClient.ensureQueryData(recentlyResolvedQueryOptions(24)),
+      queryClient.ensureQueryData(recentlyResolvedQueryOptions(24))
     ]),
-  component: ManageRoute,
-})
+  component: ManageRoute
+});
 
 function ManageRoute() {
-  const { q } = Route.useSearch()
-  const navigate = Route.useNavigate()
-  const { data: summary } = useManageSummaryQuery()
-  const { data: resolved } = useRecentlyResolvedQuery(24)
+  const { q } = Route.useSearch();
+  const navigate = Route.useNavigate();
+  const { data: summary } = useManageSummaryQuery();
+  const { data: resolved } = useRecentlyResolvedQuery(24);
 
   return (
     <Stack spacing={3}>
       <Breadcrumbs aria-label="breadcrumb">
-        <CustomLink to="/" color="inherit" sx={{ fontWeight: 700 }}>
+        <CustomLink color="inherit" sx={{ fontWeight: 700 }} to="/">
           Home
         </CustomLink>
-        <CustomLink to="/manage" color="inherit">
+        <CustomLink color="inherit" to="/manage">
           Manage
         </CustomLink>
         <Typography color="text.primary">Warnings &amp; errors</Typography>
       </Breadcrumbs>
 
       <Box>
-        <Typography variant="h5" component="h1">
+        <Typography component="h1" variant="h5">
           Review warnings &amp; errors
         </Typography>
-        <Typography variant="body2" color="text.secondary">
+        <Typography color="text.secondary" variant="body2">
           File system scan health, data freshness, and scan logs.
         </Typography>
       </Box>
@@ -71,14 +71,14 @@ function ManageRoute() {
 
       <Box>
         <OutstandingIssuesTable
-          q={q ?? ''}
-          onQueryChange={(value) =>
+          onQueryChange={value =>
             navigate({
               // replace: typing shouldn't stack a history entry per keystroke.
-              search: (prev) => ({ ...prev, q: value || undefined }),
-              replace: true,
+              search: prev => ({ ...prev, q: value || undefined }),
+              replace: true
             })
           }
+          q={q ?? ''}
         />
       </Box>
 
@@ -90,5 +90,5 @@ function ManageRoute() {
         <RecentlyResolvedTable withinHours={24} />
       </Box>
     </Stack>
-  )
+  );
 }

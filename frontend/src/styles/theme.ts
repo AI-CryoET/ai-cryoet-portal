@@ -1,33 +1,33 @@
-import { createTheme } from '@mui/material/styles'
+import { createTheme } from '@mui/material/styles';
 
 // Palette derived from the AI+CryoET snowflake icon:
 //   #145266 — dark petrol blue (icon background)
 //   #a8d4f0 — icy blue-white (icon nodes/branches)
 // See create_ai_cryoet_icon.py / create_ai_cryoet_svg.py.
-const PETROL = '#145266'
-const ICY = '#a8d4f0'
+const PETROL = '#145266';
+const ICY = '#a8d4f0';
 // A deeper, still-saturated petrol used for `primary.dark` (hero banner, the
 // big stat numbers, button text). Chosen explicitly instead of MUI's default
 // `darken(main)`, which produced a muddy desaturated tone.
-const DEEP_PETROL = '#0e3d4b'
+const DEEP_PETROL = '#0e3d4b';
 
-const HEADING_VARIANTS = ['h1', 'h2', 'h3', 'h4', 'h5', 'h6']
+const HEADING_VARIANTS = ['h1', 'h2', 'h3', 'h4', 'h5', 'h6'];
 
 export const theme = createTheme({
   typography: {
-    fontFamily: "'Roboto Variable', sans-serif",
+    fontFamily: "'Roboto Variable', sans-serif"
   },
   palette: {
     primary: {
       main: PETROL,
       dark: DEEP_PETROL,
-      contrastText: '#ffffff',
+      contrastText: '#ffffff'
     },
     secondary: {
       main: ICY,
       // Icy blue is light, so dark petrol reads better than white on top of it.
-      contrastText: PETROL,
-    },
+      contrastText: PETROL
+    }
   },
   components: {
     MuiTypography: {
@@ -40,10 +40,10 @@ export const theme = createTheme({
           ...(ownerState.variant &&
             HEADING_VARIANTS.includes(ownerState.variant) &&
             ownerState.color == null && {
-              color: PETROL,
-            }),
-        }),
-      },
-    },
-  },
-})
+              color: PETROL
+            })
+        })
+      }
+    }
+  }
+});

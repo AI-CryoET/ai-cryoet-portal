@@ -1,13 +1,13 @@
-import { createFileRoute } from '@tanstack/react-router'
+import { createFileRoute } from '@tanstack/react-router';
 import {
   filtersOptionsQueryOptions,
-  samplesQueryOptions,
-} from '~/utils/queryOptions'
+  samplesQueryOptions
+} from '~/utils/queryOptions';
 import {
   samplesSearchSchema,
-  type SamplesSearchParams,
-} from '~/utils/samplesSearch'
-import { SamplesBrowser } from '~/components/landing/SamplesBrowser'
+  type SamplesSearchParams
+} from '~/utils/samplesSearch';
+import { SamplesBrowser } from '~/components/landing/SamplesBrowser';
 
 export const Route = createFileRoute('/experimental')({
   // The URL is the source of truth for filters: validate + coerce search params
@@ -21,22 +21,22 @@ export const Route = createFileRoute('/experimental')({
       // Prime both the filtered list and the arm's full list (the "of N"
       // denominator), each scoped to experimental data.
       queryClient.ensureQueryData(
-        samplesQueryOptions({ ...search, data_source: ['experimental'] }),
+        samplesQueryOptions({ ...search, data_source: ['experimental'] })
       ),
       queryClient.ensureQueryData(
-        samplesQueryOptions({ data_source: ['experimental'] }),
-      ),
+        samplesQueryOptions({ data_source: ['experimental'] })
+      )
     ]),
-  component: Experimental,
-})
+  component: Experimental
+});
 
 function Experimental() {
   return (
     <SamplesBrowser
-      title="Experimental data"
       dataSource="experimental"
-      search={Route.useSearch()}
       navigate={Route.useNavigate()}
+      search={Route.useSearch()}
+      title="Experimental data"
     />
-  )
+  );
 }

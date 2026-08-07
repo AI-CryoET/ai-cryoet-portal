@@ -1,55 +1,59 @@
-import { useMemo } from 'react'
-import { Box, Chip, Paper, Stack, Typography } from '@mui/material'
-import ScheduleIcon from '@mui/icons-material/Schedule'
-import { CronExpressionParser } from 'cron-parser'
-import cronstrue from 'cronstrue'
-import type { ManageLatestScan, ManageSummary } from '~/types'
+import { useMemo } from 'react';
+import { Box, Chip, Paper, Stack, Typography } from '@mui/material';
+import ScheduleIcon from '@mui/icons-material/Schedule';
+import { CronExpressionParser } from 'cron-parser';
+import cronstrue from 'cronstrue';
+import type { ManageLatestScan, ManageSummary } from '~/types';
 
 // Scan timestamps are Unix seconds; render in the viewer's locale.
 function formatTs(seconds: number | null | undefined): string {
-  if (seconds == null) return '—'
-  return new Date(seconds * 1000).toLocaleString(undefined, { timeZoneName: 'short' })
+  if (seconds == null) {
+    return '—';
+  }
+  return new Date(seconds * 1000).toLocaleString(undefined, {
+    timeZoneName: 'short'
+  });
 }
 
 // Map the scan status onto a brand-themed chip colour.
 function statusColor(
-  status: string,
+  status: string
 ): 'success' | 'error' | 'warning' | 'default' {
   switch (status) {
     case 'completed':
-      return 'success'
+      return 'success';
     case 'failed':
-      return 'error'
+      return 'error';
     case 'running':
-      return 'warning'
+      return 'warning';
     default:
-      return 'default'
+      return 'default';
   }
 }
 
 function Field({
   label,
-  children,
+  children
 }: {
-  label: string
-  children: React.ReactNode
+  readonly label: string;
+  readonly children: React.ReactNode;
 }) {
   return (
     <Box sx={{ minWidth: 150 }}>
       <Typography
-        variant="caption"
         sx={{
           textTransform: 'uppercase',
           letterSpacing: '.05em',
           color: 'text.secondary',
-          display: 'block',
+          display: 'block'
         }}
+        variant="caption"
       >
         {label}
       </Typography>
       <Box sx={{ mt: 0.5 }}>{children}</Box>
     </Box>
-  )
+  );
 }
 
 // Compute "Every hour · next ≈ HH:MM" from the cron expression. The cron fires
@@ -58,81 +62,85 @@ function Field({
 // null when the expression can't be parsed.
 function useCadence(
   cron: string,
-  tz: string,
+  tz: string
 ): { human: string; nextLocal: string } | null {
   return useMemo(() => {
     try {
-      const human = cronstrue.toString(cron, { verbose: false })
+      const human = cronstrue.toString(cron, { verbose: false });
       const interval = CronExpressionParser.parse(cron, {
         currentDate: new Date(),
-        tz,
-      })
-      const next = interval.next().toDate()
+        tz
+      });
+      const next = interval.next().toDate();
       const nextLocal = next.toLocaleTimeString([], {
         hour: '2-digit',
         minute: '2-digit',
-        timeZoneName: 'short',
-      })
-      return { human, nextLocal }
+        timeZoneName: 'short'
+      });
+      return { human, nextLocal };
     } catch {
-      return null
+      return null;
     }
-  }, [cron, tz])
+  }, [cron, tz]);
 }
 
-function LastScanFields({ scan }: { scan: ManageLatestScan }) {
+function LastScanFields({ scan }: { readonly scan: ManageLatestScan }) {
   return (
-    <Stack direction="row" spacing={4} flexWrap="wrap" useFlexGap>
+    <Stack direction="row" flexWrap="wrap" spacing={4} useFlexGap>
       <Field label="Last scan started">
-        <Typography variant="body2" sx={{ fontWeight: 600 }}>
+        <Typography sx={{ fontWeight: 600 }} variant="body2">
           {formatTs(scan.started_at)}
         </Typography>
       </Field>
       <Field label="Last scan ended">
-        <Typography variant="body2" sx={{ fontWeight: 600 }}>
+        <Typography sx={{ fontWeight: 600 }} variant="body2">
           {formatTs(scan.ended_at)}
         </Typography>
       </Field>
       <Field label="Status">
         <Chip
+          color={statusColor(scan.status)}
           label={scan.status}
           size="small"
-          color={statusColor(scan.status)}
           variant="outlined"
         />
       </Field>
     </Stack>
-  )
+  );
 }
 
-export function StatusCadenceCard({ summary }: { summary: ManageSummary }) {
-  const cadence = useCadence(summary.cadence_cron, summary.cadence_tz)
-  const { latest_scan } = summary
+export function StatusCadenceCard({
+  summary
+}: {
+  readonly summary: ManageSummary;
+}) {
+  const cadence = useCadence(summary.cadence_cron, summary.cadence_tz);
+  const { latest_scan } = summary;
 
   return (
     <Stack spacing={2}>
       <Stack
-        direction="row"
-        spacing={2}
-        flexWrap="wrap"
-        useFlexGap
         alignItems="stretch"
+        direction="row"
+        flexWrap="wrap"
+        spacing={2}
+        useFlexGap
       >
-        <Paper variant="outlined" sx={{ px: 2.5, py: 2, borderRadius: 2 }}>
+        <Paper sx={{ px: 2.5, py: 2, borderRadius: 2 }} variant="outlined">
           {latest_scan ? (
             <LastScanFields scan={latest_scan} />
           ) : (
-            <Typography variant="body2" color="text.secondary">
+            <Typography color="text.secondary" variant="body2">
               No completed scans yet.
             </Typography>
           )}
         </Paper>
 
-        <Paper variant="outlined" sx={{ px: 2.5, py: 2, borderRadius: 2 }}>
-          <Stack direction="row" spacing={1.5} alignItems="center">
+        <Paper sx={{ px: 2.5, py: 2, borderRadius: 2 }} variant="outlined">
+          <Stack alignItems="center" direction="row" spacing={1.5}>
             <ScheduleIcon color="action" />
             <Field label="Scan cadence">
-              <Typography variant="body2" sx={{ fontWeight: 600 }}>
+              <Typography sx={{ fontWeight: 600 }} variant="body2">
                 {cadence
                   ? `${cadence.human} · next ≈ ${cadence.nextLocal}`
                   : summary.cadence_cron}
@@ -142,7 +150,7 @@ export function StatusCadenceCard({ summary }: { summary: ManageSummary }) {
         </Paper>
       </Stack>
 
-      <Typography variant="body2" color="text.secondary">
+      <Typography color="text.secondary" variant="body2">
         Edited a{' '}
         <Box
           component="code"
@@ -150,7 +158,7 @@ export function StatusCadenceCard({ summary }: { summary: ManageSummary }) {
             fontFamily: 'monospace',
             bgcolor: 'action.hover',
             px: 0.5,
-            borderRadius: 0.5,
+            borderRadius: 0.5
           }}
         >
           .toml
@@ -159,5 +167,5 @@ export function StatusCadenceCard({ summary }: { summary: ManageSummary }) {
         {cadence ? ` (~${cadence.nextLocal}).` : '.'}
       </Typography>
     </Stack>
-  )
+  );
 }

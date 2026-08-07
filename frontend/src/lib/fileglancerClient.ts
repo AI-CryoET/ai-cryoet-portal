@@ -212,10 +212,9 @@ export class FileglancerClient {
    * Returns the raw JSON payload from the server.
    */
   async listFiles(fsp: string, subpath = ''): Promise<unknown> {
-    const res = await this.request(
-      this.filesUrl('/api/files/', fsp, subpath),
-      { method: 'GET' }
-    );
+    const res = await this.request(this.filesUrl('/api/files/', fsp, subpath), {
+      method: 'GET'
+    });
     await this.assertOk(res);
     return res.json();
   }
@@ -429,7 +428,10 @@ export class FileglancerClient {
     if (res.status === 412) {
       return new ConflictError(detail || 'Precondition failed');
     }
-    return new FileglancerError(detail || `Request failed (${res.status})`, res.status);
+    return new FileglancerError(
+      detail || `Request failed (${res.status})`,
+      res.status
+    );
   }
 }
 

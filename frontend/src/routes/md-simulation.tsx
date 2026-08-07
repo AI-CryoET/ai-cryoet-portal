@@ -1,13 +1,13 @@
-import { createFileRoute } from '@tanstack/react-router'
+import { createFileRoute } from '@tanstack/react-router';
 import {
   filtersOptionsQueryOptions,
-  samplesQueryOptions,
-} from '~/utils/queryOptions'
+  samplesQueryOptions
+} from '~/utils/queryOptions';
 import {
   samplesSearchSchema,
-  type SamplesSearchParams,
-} from '~/utils/samplesSearch'
-import { SamplesBrowser } from '~/components/landing/SamplesBrowser'
+  type SamplesSearchParams
+} from '~/utils/samplesSearch';
+import { SamplesBrowser } from '~/components/landing/SamplesBrowser';
 
 export const Route = createFileRoute('/md-simulation')({
   // The URL is the source of truth for filters: validate + coerce search params
@@ -21,22 +21,22 @@ export const Route = createFileRoute('/md-simulation')({
       // Prime both the filtered list and the arm's full list (the "of N"
       // denominator), each scoped to MD simulation data.
       queryClient.ensureQueryData(
-        samplesQueryOptions({ ...search, data_source: ['simulation'] }),
+        samplesQueryOptions({ ...search, data_source: ['simulation'] })
       ),
       queryClient.ensureQueryData(
-        samplesQueryOptions({ data_source: ['simulation'] }),
-      ),
+        samplesQueryOptions({ data_source: ['simulation'] })
+      )
     ]),
-  component: MdSimulation,
-})
+  component: MdSimulation
+});
 
 function MdSimulation() {
   return (
     <SamplesBrowser
-      title="MD simulation data"
       dataSource="simulation"
-      search={Route.useSearch()}
       navigate={Route.useNavigate()}
+      search={Route.useSearch()}
+      title="MD simulation data"
     />
-  )
+  );
 }

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState } from 'react';
 import {
   Accordion,
   AccordionDetails,
@@ -13,19 +13,19 @@ import {
   Toolbar,
   Typography,
   css,
-  styled,
-} from "@mui/material";
-import MenuIcon from "@mui/icons-material/Menu";
-import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
-import ArrowDropDownIcon from "@mui/icons-material/ArrowDropDown";
-import { CustomLink } from "./CustomLink";
-import snowflakeLogo from "~/assets/snowflake-logo.svg";
+  styled
+} from '@mui/material';
+import MenuIcon from '@mui/icons-material/Menu';
+import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
+import ArrowDropDownIcon from '@mui/icons-material/ArrowDropDown';
+import { CustomLink } from './CustomLink';
+import snowflakeLogo from '~/assets/snowflake-logo.svg';
 
 const StyledCustomLink = styled(CustomLink)(
   ({ theme }) => css`
     color: ${theme.palette.common.white};
     font-weight: 500;
-  `,
+  `
 );
 
 // The app name doubles as a "home" link, so style it like a heading but keep
@@ -35,7 +35,7 @@ const BrandLink = styled(CustomLink)(
     color: ${theme.palette.secondary.main};
     text-decoration: none;
     font-weight: 700;
-  `,
+  `
 );
 
 // Links inside the mobile menu fill the whole MenuItem so the entire row is a
@@ -57,14 +57,14 @@ const NavMenuButton = styled(Button)(
     font-size: 1rem;
     padding: 0;
     min-width: 0;
-  `,
+  `
 );
 
 const DATA_MANAGEMENT_LINKS = [
-  { to: "/manage/data-organization" as const, label: "Data organization" },
-  { to: "/manage/author" as const, label: "Author metadata" },
-  { to: "/manage/warnings" as const, label: "Review warnings and errors" },
-  { to: "/manage/deletions" as const, label: "View deletions and renames" },
+  { to: '/manage/data-organization' as const, label: 'Data organization' },
+  { to: '/manage/author' as const, label: 'Author metadata' },
+  { to: '/manage/warnings' as const, label: 'Review warnings and errors' },
+  { to: '/manage/deletions' as const, label: 'View deletions and renames' }
 ];
 
 export function Header() {
@@ -81,23 +81,29 @@ export function Header() {
       <AppBar position="static">
         <Toolbar sx={{ gap: 3 }}>
           <BrandLink
+            sx={{ display: 'flex', alignItems: 'center', gap: 1 }}
             to="/"
-            sx={{ display: "flex", alignItems: "center", gap: 1 }}
           >
             <Box
+              alt=""
               component="img"
               src={snowflakeLogo}
-              alt=""
-              sx={{ width: 36, height: 36, display: "block" }}
+              sx={{ width: 36, height: 36, display: 'block' }}
             />
-            <Typography variant="h6" component="span" color="inherit">
+            <Typography color="inherit" component="span" variant="h6">
               AI+CryoET Data Portal
             </Typography>
           </BrandLink>
           <Box sx={{ flexGrow: 1 }} />
 
           {/* Desktop / tablet: inline links, "Data management" opens a dropdown. */}
-          <Box sx={{ display: { xs: "none", md: "flex" }, gap: 3, alignItems: "center" }}>
+          <Box
+            sx={{
+              display: { xs: 'none', md: 'flex' },
+              gap: 3,
+              alignItems: 'center'
+            }}
+          >
             <StyledCustomLink to="/data">All Data</StyledCustomLink>
             <StyledCustomLink to="/experimental">
               Experimental Data
@@ -106,23 +112,23 @@ export function Header() {
               MD Simulations
             </StyledCustomLink>
             <NavMenuButton
-              id="data-management-button"
-              aria-controls={dmOpen ? "data-management-menu" : undefined}
+              aria-controls={dmOpen ? 'data-management-menu' : undefined}
+              aria-expanded={dmOpen ? 'true' : undefined}
               aria-haspopup="true"
-              aria-expanded={dmOpen ? "true" : undefined}
-              onClick={(e) => setDmAnchorEl(e.currentTarget)}
               endIcon={<ArrowDropDownIcon />}
+              id="data-management-button"
+              onClick={e => setDmAnchorEl(e.currentTarget)}
             >
               Data management
             </NavMenuButton>
             <Menu
-              id="data-management-menu"
+              MenuListProps={{ 'aria-labelledby': 'data-management-button' }}
               anchorEl={dmAnchorEl}
-              open={dmOpen}
+              id="data-management-menu"
               onClose={closeDm}
-              MenuListProps={{ "aria-labelledby": "data-management-button" }}
+              open={dmOpen}
             >
-              {DATA_MANAGEMENT_LINKS.map((link) => (
+              {DATA_MANAGEMENT_LINKS.map(link => (
                 <MenuItem key={link.to} onClick={closeDm}>
                   <MenuLink to={link.to}>{link.label}</MenuLink>
                 </MenuItem>
@@ -134,25 +140,25 @@ export function Header() {
               management" expands inline as an accordion rather than
               navigating, so its sublinks stay reachable without a second
               menu layer. */}
-          <Box sx={{ display: { xs: "flex", md: "none" } }}>
+          <Box sx={{ display: { xs: 'flex', md: 'none' } }}>
             <IconButton
+              aria-controls={menuOpen ? 'nav-menu' : undefined}
+              aria-expanded={menuOpen ? 'true' : undefined}
+              aria-haspopup="true"
+              aria-label="Open navigation menu"
               color="inherit"
               edge="end"
-              aria-label="Open navigation menu"
-              aria-controls={menuOpen ? "nav-menu" : undefined}
-              aria-haspopup="true"
-              aria-expanded={menuOpen ? "true" : undefined}
-              onClick={(e) => setAnchorEl(e.currentTarget)}
+              onClick={e => setAnchorEl(e.currentTarget)}
             >
               <MenuIcon />
             </IconButton>
             <Menu
-              id="nav-menu"
               anchorEl={anchorEl}
-              open={menuOpen}
+              anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+              id="nav-menu"
               onClose={closeMenu}
-              anchorOrigin={{ vertical: "bottom", horizontal: "right" }}
-              transformOrigin={{ vertical: "top", horizontal: "right" }}
+              open={menuOpen}
+              transformOrigin={{ vertical: 'top', horizontal: 'right' }}
             >
               <MenuItem onClick={closeMenu}>
                 <MenuLink to="/data">All Data</MenuLink>
@@ -167,7 +173,7 @@ export function Header() {
                 disableGutters
                 elevation={0}
                 square
-                sx={{ "&:before": { display: "none" } }}
+                sx={{ '&:before': { display: 'none' } }}
               >
                 <AccordionSummary expandIcon={<ExpandMoreIcon />}>
                   {/* AccordionSummary doesn't inject MenuItem's body1 typography,
@@ -177,8 +183,12 @@ export function Header() {
                 </AccordionSummary>
                 <AccordionDetails sx={{ p: 0 }}>
                   <Stack>
-                    {DATA_MANAGEMENT_LINKS.map((link) => (
-                      <MenuItem key={link.to} onClick={closeMenu} sx={{ pl: 4 }}>
+                    {DATA_MANAGEMENT_LINKS.map(link => (
+                      <MenuItem
+                        key={link.to}
+                        onClick={closeMenu}
+                        sx={{ pl: 4 }}
+                      >
                         <MenuLink to={link.to}>{link.label}</MenuLink>
                       </MenuItem>
                     ))}
