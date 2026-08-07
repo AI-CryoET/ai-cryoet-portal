@@ -1042,6 +1042,8 @@ export interface components {
             reference_contact?: string | null;
             /** Force Field Version */
             force_field_version?: string | null;
+            /** Preview Path */
+            preview_path?: string | null;
         };
         /** MdSourceOut */
         MdSourceOut: {
@@ -1280,6 +1282,8 @@ export interface components {
             n_tilt_series: number;
             /** Thumbnail Path */
             thumbnail_path?: string | null;
+            /** Md Preview Path */
+            md_preview_path?: string | null;
         };
         /** ScanLogLine */
         ScanLogLine: {

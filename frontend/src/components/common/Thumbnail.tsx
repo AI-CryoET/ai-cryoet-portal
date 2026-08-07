@@ -261,26 +261,11 @@ export function thumbnailUrl(relpath?: string | null): string | null {
     : null;
 }
 
-// Cached OVITO/MD preview PNG served from the aicryoet-tools .portal_cache.
-// Pass the full cached filename, e.g. "Bulk_25_dna_wrap_preview.png". For now
-// this only serves the cache; generation/scanning lands later.
-export function mdPreviewUrl(filename: string): string {
-  return `/api/md-previews/${enc(filename)}`;
-}
-
-// Resolve an MD preview from a simulation sample without knowing the exact
-// cached filename. Simulation sample ids are subdir-namespaced (e.g.
-// "Slab_12mer_25_0.073"), which already matches the portal-cache filename
-// prefix "{SubDir}_{name}"; the backend globs the unpredictable suffix. The
-// `path` gate keeps the previous contract (no path → no preview).
-export function mdPreviewBySampleUrl(
-  sampleId: string,
-  path?: string | null
-): string | null {
-  if (!path) {
-    return null;
-  }
-  return `/api/md-previews/by-prefix/${encodeURIComponent(sampleId)}`;
+// Cached OVITO MD-run preview PNG served from the scanner-generated cache.
+// Pass an MD run's `preview_path` relpath ({sample}/{run}.png); returns null
+// when the run (or sample) has no rendered preview.
+export function mdPreviewUrl(relpath?: string | null): string | null {
+  return relpath ? `/api/md-previews/${enc(relpath)}` : null;
 }
 
 // On-demand median/middle tilt-series image (rendered fresh at higher

@@ -11,7 +11,7 @@ import { CustomLink } from '~/components/CustomLink';
 import {
   PreviewThumbnail,
   thumbnailUrl,
-  mdPreviewBySampleUrl
+  mdPreviewUrl
 } from '~/components/common/Thumbnail';
 import { AcquisitionsSubTable } from './AcquisitionsSubTable';
 
@@ -59,7 +59,7 @@ export const SamplesPortalTable = memo(
             // rows show the cached tilt-series thumbnail.
             const showMd = s.data_source === 'simulation';
             const src = showMd
-              ? mdPreviewBySampleUrl(s.sample_id, s.path)
+              ? mdPreviewUrl(s.md_preview_path)
               : thumbnailUrl(s.thumbnail_path);
             const alt = showMd
               ? `OVITO preview for ${s.sample_id}`

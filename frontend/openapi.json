@@ -3020,6 +3020,17 @@
               }
             ],
             "title": "Force Field Version"
+          },
+          "preview_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Preview Path"
           }
         },
         "type": "object",
@@ -3813,6 +3824,17 @@
               }
             ],
             "title": "Thumbnail Path"
+          },
+          "md_preview_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Md Preview Path"
           }
         },
         "type": "object",
