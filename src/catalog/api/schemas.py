@@ -30,6 +30,9 @@ class SampleSummary(BaseModel):
     n_tomograms: int = 0
     n_tilt_series: int = 0
     thumbnail_path: str | None = None
+    # Representative OVITO MD-run preview relpath (served by /md-previews) for
+    # the sample-list hero on simulation samples; None when no run has a preview.
+    md_preview_path: str | None = None
 
 
 # ── Sample detail: typed sub-entities ────────────────────────────────────
@@ -100,6 +103,9 @@ class MdRunOut(BaseModel):
     timestep: float | None = None
     reference_contact: str | None = None
     force_field_version: str | None = None
+    # Cache-relative path of the OVITO preview PNG (served by /md-previews),
+    # or None when no preview was rendered for this run.
+    preview_path: str | None = None
 
 
 class _TomogramOutBase(BaseModel):
