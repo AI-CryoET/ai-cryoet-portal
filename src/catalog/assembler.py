@@ -47,6 +47,7 @@ ScanIssueCategory = Literal[
     "unparseable_acquisition_toml",
     "unparseable_mdoc",
     "unparseable_mrc_header",
+    "mrc_header_missing_voxel_size",
     "unparseable_zarr_attrs",
     "ambiguous_frame_extension",
     "undeclared_tomogram_folder",
@@ -710,9 +711,36 @@ def assemble_sample(sample_loc: SampleLocation) -> AssemblyResult:
                         tomo.image_size_y = mrc_result.fields.get("image_size_y")
                     if tomo.image_size_z is None:
                         tomo.image_size_z = mrc_result.fields.get("image_size_z")
+                    header_voxel = mrc_result.fields.get("voxel_spacing_angstrom")
                     if tomo.voxel_size is None:
-                        tomo.voxel_size = mrc_result.fields.get(
-                            "voxel_spacing_angstrom"
+                        tomo.voxel_size = header_voxel
+                    # A zero/absent header voxel size (cella=0) is what
+                    # mrc-ng-server sees, regardless of the authored TOML
+                    # voxel_size above: it then serves a 1 Angstrom default and
+                    # the viewer is mis-scaled ~10x. Flag it so the frontend
+                    # disables the launch button, and warn the acquisition to
+                    # get the header fixed.
+                    if not header_voxel:
+                        tomo.mrc_voxel_size_missing = True
+                        result.warnings.append(
+                            _make_issue(
+                                sample_loc,
+                                category="mrc_header_missing_voxel_size",
+                                location=(
+                                    f"acquisitions.{acq_loc.acquisition_id}"
+                                    f".tomogram[{tomo_loc.tomogram_id}]"
+                                ),
+                                message=(
+                                    f"tomogram '{tomo_loc.tomogram_id}' has no "
+                                    "voxel size in its MRC header (cella=0); the "
+                                    "Neuroglancer viewer would be mis-scaled and "
+                                    "is disabled. Write the voxel size into the "
+                                    "MRC header (e.g. re-run the step that emits "
+                                    "it, or set it with a header tool) and re-scan."
+                                ),
+                                file_kind="mrc_header",
+                                file_path=mrc_path_str,
+                            )
                         )
                 if tomo.mrc_path is None:
                     tomo.mrc_path = mrc_path_str

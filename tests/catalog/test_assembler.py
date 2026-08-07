@@ -524,6 +524,49 @@ def test_undeclared_reconstruction_alignment_folder_warns(tmp_path):
     assert "grp_ghost" in warned[0].message
 
 
+def test_zero_voxel_header_flags_tomogram_and_warns(tmp_path):
+    """An MRC whose header has no voxel size (cella=0) sets
+    ``mrc_voxel_size_missing`` on the tomogram and emits an acquisition-scoped
+    ``mrc_header_missing_voxel_size`` warning — a good header does neither."""
+    sample_dir = tmp_path / "sample_test"
+    _write_minimal_sample_toml(sample_dir)
+    _write(
+        sample_dir / "acq1" / "acquisition.toml",
+        """
+        [acquisition]
+        microscope = "Krios"
+
+        [[reconstruction_alignment]]
+        id = "grp"
+
+        [[raw_tomogram]]
+        id = "good"
+
+        [[raw_tomogram]]
+        id = "bad"
+        """,
+    )
+    tomos = sample_dir / "acq1" / "Reconstructions" / "grp" / "Tomograms"
+    _make_mrc(tomos / "good.mrc", voxel_size_x=10.0)
+    _make_mrc(tomos / "bad.mrc", voxel_size_x=0.0)  # cella=0 -> no voxel size
+
+    result = assemble_sample(_sample_loc(sample_dir))
+    assert result.record is not None
+    by_id = {t.tomogram_id: t for t in result.record.acquisitions["acq1"].raw_tomogram}
+    assert by_id["good"].mrc_voxel_size_missing is False
+    assert by_id["bad"].mrc_voxel_size_missing is True
+
+    warns = [
+        w for w in result.warnings if w.category == "mrc_header_missing_voxel_size"
+    ]
+    assert len(warns) == 1
+    w = warns[0]
+    assert w.scope == "acquisition"
+    assert w.acquisition_id == "acq1"
+    assert "bad" in w.location
+    assert w.file_kind == "mrc_header"
+
+
 def test_same_tomogram_stem_in_two_groups_yields_two_entries(tmp_path):
     """The same stem under two Reconstructions/{id}/ groups is legal: each is a
     distinct tomogram, keyed by its group. No warning, no overwrite."""
