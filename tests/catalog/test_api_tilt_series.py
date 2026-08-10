@@ -202,6 +202,17 @@ def test_preview_no_viewable_images_422(client):
     assert r.status_code == 422
 
 
+def test_preview_sets_etag_and_304_roundtrip(client):
+    r1 = client.get("/tilt-series/sample_a/acq1/ts_zarr/preview.png")
+    assert r1.status_code == 200
+    etag = r1.headers["etag"]
+    r2 = client.get(
+        "/tilt-series/sample_a/acq1/ts_zarr/preview.png",
+        headers={"If-None-Match": etag},
+    )
+    assert r2.status_code == 304
+
+
 def test_preview_unknown_tilt_series_404(client):
     r = client.get("/tilt-series/sample_a/acq1/nope/preview.png")
     assert r.status_code == 404
@@ -226,6 +237,17 @@ def test_polar_cache_returns_same_bytes(client):
     r2 = client.get("/acquisitions/sample_a/acq1/polar.png")
     assert r1.status_code == 200 and r2.status_code == 200
     assert r1.content == r2.content
+
+
+def test_polar_sets_etag_and_304_roundtrip(client):
+    r1 = client.get("/acquisitions/sample_a/acq1/polar.png")
+    assert r1.status_code == 200
+    etag = r1.headers["etag"]
+    r2 = client.get(
+        "/acquisitions/sample_a/acq1/polar.png",
+        headers={"If-None-Match": etag},
+    )
+    assert r2.status_code == 304
 
 
 def test_polar_missing_angles_422(client):

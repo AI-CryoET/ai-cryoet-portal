@@ -8,9 +8,10 @@ rather than on any one tilt series (it used to be a per-series
 """
 from __future__ import annotations
 
+import hashlib
 from functools import lru_cache
 
-from fastapi import APIRouter, Depends, HTTPException, Response
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi.concurrency import run_in_threadpool
 from sqlalchemy.orm import Session
 
@@ -53,6 +54,7 @@ def _cached_polar_png(
 async def acquisition_polar(
     sample_id: str,
     acquisition_id: str,
+    request: Request,
     session: Session = Depends(get_session),
 ):
     """Semicircular polar plot of the acquisition's cached ``tilt_angles``.
@@ -66,15 +68,24 @@ async def acquisition_polar(
     if not angles:
         raise HTTPException(status_code=422, detail="no cached tilt angles")
 
+    angles_tuple = tuple(float(a) for a in angles)
+    # ETag over the exact render inputs (angles + render version) — a
+    # revalidating browser 304s out before the plot is re-rendered. The angles
+    # are the acquisition's, so they change only on a re-scan.
+    etag_seed = f"{POLAR_RENDER_VERSION}:{angles_tuple}".encode()
+    etag = f'W/"{hashlib.md5(etag_seed).hexdigest()}"'
+    if request.headers.get("if-none-match") == etag:
+        return Response(status_code=304, headers={"ETag": etag})
+
     png_bytes = await run_in_threadpool(
         _cached_polar_png,
         sample_id,
         acquisition_id,
         POLAR_RENDER_VERSION,
-        tuple(float(a) for a in angles),
+        angles_tuple,
     )
     return Response(
         content=png_bytes,
         media_type="image/png",
-        headers={"Cache-Control": "public, max-age=3600"},
+        headers={"ETag": etag, "Cache-Control": "public, max-age=3600"},
     )

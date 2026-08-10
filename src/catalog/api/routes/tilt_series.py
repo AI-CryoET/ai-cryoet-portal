@@ -16,6 +16,8 @@ acquisition. See ``routes/acquisitions.py`` for ``/acquisitions/.../polar.png``.
 """
 from __future__ import annotations
 
+import hashlib
+from functools import lru_cache
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
@@ -70,6 +72,21 @@ def _resolve_acq_frames_dir(
 # ── Preview ───────────────────────────────────────────────────────────────
 
 
+@lru_cache(maxsize=64)
+def _cached_tilt_preview_png(kind: str, src: str, mtime: float) -> bytes:
+    """LRU-cached median-tilt render keyed on ``(kind, src, mtime)``.
+
+    ``mtime`` is in the key so a re-scan/re-write invalidates the entry (mirrors
+    ``tomograms._cached_preview_png``). ``kind`` selects the renderer so the
+    three sources never collide on a shared path string.
+    """
+    if kind == "zarr":
+        return render_zarr_median_png(src)
+    if kind == "st":
+        return render_st_median_png(src)
+    return render_frames_median_png(src)
+
+
 @router.get("/{sample_id}/{acquisition_id}/{tilt_series_id}/preview.png")
 async def tilt_series_preview(
     sample_id: str,
@@ -89,12 +106,12 @@ async def tilt_series_preview(
         resolved = validate_under_data_root(request, row.zarr_path)
         if not resolved.exists():
             raise HTTPException(status_code=422, detail="zarr path missing on disk")
-        png_bytes = await run_in_threadpool(render_zarr_median_png, str(resolved))
+        kind, src = "zarr", str(resolved)
     elif row.st_path:
         resolved = validate_under_data_root(request, row.st_path)
         if not resolved.exists():
             raise HTTPException(status_code=422, detail="stack path missing on disk")
-        png_bytes = await run_in_threadpool(render_st_median_png, str(resolved))
+        kind, src = "st", str(resolved)
     else:
         frames_dir = _resolve_acq_frames_dir(
             session, request, sample_id, acquisition_id
@@ -104,17 +121,26 @@ async def tilt_series_preview(
                 status_code=422,
                 detail="no stack artifact and no acquisition Frames dir",
             )
-        try:
-            png_bytes = await run_in_threadpool(
-                render_frames_median_png, str(frames_dir)
-            )
-        except FileNotFoundError as e:
-            raise HTTPException(status_code=422, detail=str(e)) from e
+        kind, src = "frames", str(frames_dir)
+
+    # ETag = source kind + path + mtime — a cheap stat lets a revalidating
+    # browser 304 out *before* we touch the (expensive) renderer.
+    mtime = Path(src).stat().st_mtime
+    etag = f'W/"{hashlib.md5(f"{kind}:{src}:{mtime}".encode()).hexdigest()}"'
+    if request.headers.get("if-none-match") == etag:
+        return Response(status_code=304, headers={"ETag": etag})
+
+    try:
+        png_bytes = await run_in_threadpool(
+            _cached_tilt_preview_png, kind, src, mtime
+        )
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from e
 
     return Response(
         content=png_bytes,
         media_type="image/png",
-        headers={"Cache-Control": "public, max-age=3600"},
+        headers={"ETag": etag, "Cache-Control": "public, max-age=3600"},
     )
 
 
