@@ -21,7 +21,11 @@ def _serve(resolved, root):
     return FileResponse(
         resolved,
         media_type="image/png",
-        headers={"Cache-Control": "public, max-age=3600"},
+        # 1-day fresh window, then revalidate. NOT immutable: previews are
+        # path-addressed (a re-scan rewrites the same URL), so the browser must
+        # be able to revalidate and pick up a regenerated image — cheap because
+        # FileResponse serves a 304 off its mtime/size ETag on the unchanged case.
+        headers={"Cache-Control": "public, max-age=86400"},
     )
 
 
