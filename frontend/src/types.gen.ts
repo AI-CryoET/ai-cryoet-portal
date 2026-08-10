@@ -1242,6 +1242,23 @@ export interface components {
             thumbnail_path?: string | null;
             scan_status?: components["schemas"]["EntityScanStatus"] | null;
         };
+        /**
+         * SampleMatch
+         * @description Where a browse-page `q` search matched inside a sample. Sample-level
+         *     matches carry ``acquisition_id=None``; descendant matches carry the
+         *     acquisition so the frontend can auto-expand and mark it.
+         */
+        SampleMatch: {
+            /** Acquisition Id */
+            acquisition_id?: string | null;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "sample" | "acquisition" | "tomogram" | "annotation";
+            /** Matched Id */
+            matched_id: string;
+        };
         /** SampleSummary */
         SampleSummary: {
             /** Sample Id */
@@ -1284,6 +1301,11 @@ export interface components {
             thumbnail_path?: string | null;
             /** Md Preview Path */
             md_preview_path?: string | null;
+            /**
+             * Matches
+             * @default []
+             */
+            matches: components["schemas"]["SampleMatch"][];
         };
         /** ScanLogLine */
         ScanLogLine: {

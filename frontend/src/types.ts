@@ -29,6 +29,7 @@ type Defined<T> = T extends (infer U)[]
 // ── Sample list / summary ────────────────────────────────────────────────
 
 export type SampleSummary = Defined<Schemas['SampleSummary']>;
+export type SampleMatch = Defined<Schemas['SampleMatch']>;
 
 // ── Sample detail: typed sub-entities ────────────────────────────────────
 

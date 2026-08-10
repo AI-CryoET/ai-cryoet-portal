@@ -7,11 +7,22 @@ schema. Frontend ``frontend/src/api/types.ts`` mirrors these field-by-field.
 from __future__ import annotations
 
 import datetime as _dt
+from typing import Literal
 
 from pydantic import BaseModel
 
 
 # ── Sample list / summary ────────────────────────────────────────────────
+
+
+class SampleMatch(BaseModel):
+    """Where a browse-page `q` search matched inside a sample. Sample-level
+    matches carry ``acquisition_id=None``; descendant matches carry the
+    acquisition so the frontend can auto-expand and mark it."""
+
+    acquisition_id: str | None = None
+    kind: Literal["sample", "acquisition", "tomogram", "annotation"]
+    matched_id: str
 
 
 class SampleSummary(BaseModel):
@@ -33,6 +44,10 @@ class SampleSummary(BaseModel):
     # Representative OVITO MD-run preview relpath (served by /md-previews) for
     # the sample-list hero on simulation samples; None when no run has a preview.
     md_preview_path: str | None = None
+    # Populated only when the list is called with `q`: the IDs (and their
+    # acquisition, if any) that matched, so the browse table can auto-expand
+    # the matching acquisitions. Empty when there is no `q`.
+    matches: list[SampleMatch] = []
 
 
 # ── Sample detail: typed sub-entities ────────────────────────────────────
