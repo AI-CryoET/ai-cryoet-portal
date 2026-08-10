@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { Box } from '@mui/material';
+import { alpha, Box } from '@mui/material';
 import {
   MaterialReactTable,
   useMaterialReactTable,
@@ -22,7 +22,8 @@ export function SampleAcquisitionsTable({
   sampleId,
   acquisitions,
   compact = false,
-  isLoading
+  isLoading,
+  highlightAcquisitionIds
 }: {
   readonly sampleId: string;
   readonly acquisitions: AcquisitionOut[];
@@ -30,6 +31,8 @@ export function SampleAcquisitionsTable({
   // sample dropdown; the default is the roomier sample-detail-page styling.
   readonly compact?: boolean;
   readonly isLoading?: boolean;
+  // Acquisition ids to tint as search matches (landing-page dropdown only).
+  readonly highlightAcquisitionIds?: Set<string>;
 }) {
   const columns = useMemo<MRT_ColumnDef<AcquisitionOut>[]>(
     () => [
@@ -120,6 +123,21 @@ export function SampleAcquisitionsTable({
     data: acquisitions,
     getRowId: a => a.acquisition_id,
     state: { isLoading },
+    // Tint rows whose acquisition contains a search hit. Applied to cells (not
+    // the row) so the grid layout's per-cell background shows the color.
+    muiTableBodyRowProps:
+      highlightAcquisitionIds && highlightAcquisitionIds.size > 0
+        ? ({ row }) =>
+            highlightAcquisitionIds.has(row.original.acquisition_id)
+              ? {
+                  sx: {
+                    '& > td, & > .MuiTableCell-root': {
+                      bgcolor: t => alpha(t.palette.primary.main, 0.12)
+                    }
+                  }
+                }
+              : {}
+        : undefined,
     enableSorting: !compact,
     enableColumnActions: false,
     enableColumnFilters: false,

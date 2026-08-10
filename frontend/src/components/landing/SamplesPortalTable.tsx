@@ -2,6 +2,7 @@ import { memo, useMemo } from 'react';
 import { alpha, Box, Tooltip } from '@mui/material';
 import {
   MaterialReactTable,
+  MRT_TablePagination,
   useMaterialReactTable,
   type MRT_ColumnDef
 } from 'material-react-table';
@@ -14,6 +15,7 @@ import {
   mdPreviewUrl
 } from '~/components/common/Thumbnail';
 import { AcquisitionsSubTable } from './AcquisitionsSubTable';
+import { SampleSearchField } from './SampleSearchField';
 
 const dash = (v: unknown) => (v == null || v === '' ? '—' : String(v));
 
@@ -40,8 +42,22 @@ export const SamplesPortalTable = memo(
     // acquisition-entity filter is active, so every detail panel opens to show
     // the filtered acquisitions.
     readonly expandAllDetails?: boolean;
+    // Free-text id search rendered in the table's top toolbar (like the
+    // /manage warnings table). `searchValue` is the immediate URL `q` so typing
+    // is responsive; `onSearchChange` MUST be stable (useCallback in the
+    // browser) so it doesn't bust the memo on every render — otherwise filter
+    // typing would re-render the table again (the lag this memo prevents).
+    readonly searchValue?: string;
+    readonly onSearchChange?: (q: string) => void;
   }) => {
-    const { rows, loading, filters, expandAllDetails } = props;
+    const {
+      rows,
+      loading,
+      filters,
+      expandAllDetails,
+      searchValue,
+      onSearchChange
+    } = props;
 
     const columns = useMemo<MRT_ColumnDef<SampleSummary>[]>(
       () => [
@@ -160,6 +176,7 @@ export const SamplesPortalTable = memo(
       renderDetailPanel: ({ row }) => (
         <AcquisitionsSubTable
           filters={filters}
+          matches={row.original.matches}
           sampleId={row.original.sample_id}
         />
       ),
@@ -167,25 +184,46 @@ export const SamplesPortalTable = memo(
       enableColumnFilters: false,
       enableGlobalFilter: false,
       enableDensityToggle: false,
-      // Drop the whole internal-actions cluster (search/hide-columns/fullscreen)
-      // so the top toolbar holds only pagination, mirroring the /manage tables.
+      // Drop the whole internal-actions cluster (search/hide-columns/fullscreen);
+      // the custom top toolbar below owns the id-search field + pagination,
+      // mirroring the /manage warnings table (OutstandingIssuesTable).
       enableToolbarInternalActions: false,
       enablePagination: true,
-      positionPagination: 'both',
-      // The bottom toolbar already reads as separate from the body via the last
-      // row's border; add the same line under the top controls so both toolbars
-      // are visually set off from the table the same way. Background matches
-      // the /manage tables' top toolbar (e.g. RecentlyResolvedTable).
-      muiTopToolbarProps: {
-        sx: {
-          bgcolor: t => alpha(t.palette.primary.main, 0.12),
-          borderBottom: 1,
-          borderColor: 'divider'
-        }
-      },
+      // Pagination lives in the default bottom toolbar and is also rendered in
+      // the custom top toolbar below (was 'both' with the stock top toolbar).
+      positionPagination: 'bottom',
+      // Custom top toolbar: id-search field left, pagination right. Background +
+      // divider match the /manage tables' top toolbar (e.g. RecentlyResolvedTable).
+      renderTopToolbar: ({ table }) => (
+        <Box
+          sx={{
+            p: 1.5,
+            bgcolor: t => alpha(t.palette.primary.main, 0.12),
+            borderBottom: 1,
+            borderColor: 'divider',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 1,
+            flexWrap: 'wrap'
+          }}
+        >
+          {onSearchChange ? (
+            <SampleSearchField
+              onChange={onSearchChange}
+              value={searchValue ?? ''}
+            />
+          ) : null}
+          {/* ml:auto pushes pagination to the right edge; when the row wraps on
+              small screens the search field takes its own line above it. */}
+          <Box sx={{ ml: 'auto', alignSelf: 'flex-end' }}>
+            <MRT_TablePagination table={table} />
+          </Box>
+        </Box>
+      ),
       // `expanded: true` opens every detail panel; MRT still mounts each panel
       // lazily (Collapse mountOnEnter), so a fetch fires per visible page row.
-      // Leave `expanded` uncontrolled (undefined) when not expanding all.
+      // Only acquisition-filter mode controls expansion; otherwise leave
+      // `expanded` uncontrolled so rows toggle freely via the expand button.
       state: {
         isLoading: loading,
         ...(expandAllDetails ? { expanded: true } : {})
