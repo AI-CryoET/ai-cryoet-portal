@@ -85,7 +85,12 @@ function RootDocument({ children }: { readonly children: React.ReactNode }) {
             {/*
               Fluid below `lg`, capped at the `lg` width through the `lg`
               range so laptops keep comfortable margins, then expanding to the
-              `xl` width on large monitors to give the tables room.
+              `xl` width on large monitors, then wider still past 1920px so
+              very large / ultra-wide monitors give the tables extra room.
+              Written as explicit `theme.breakpoints.up(...)` keys (rather
+              than the `{lg: ..., xl: ...}` responsive shorthand) so the three
+              rules land in ascending order and the cascade resolves
+              predictably at each width.
             */}
             <Container
               component="main"
@@ -94,9 +99,17 @@ function RootDocument({ children }: { readonly children: React.ReactNode }) {
                 paddingBlock: 4,
                 flex: 1,
                 mx: 'auto',
-                maxWidth: {
-                  lg: theme.breakpoints.values.lg,
-                  xl: theme.breakpoints.values.xl
+                [theme.breakpoints.up('lg')]: {
+                  maxWidth: theme.breakpoints.values.lg
+                },
+                [theme.breakpoints.up('xl')]: {
+                  maxWidth: theme.breakpoints.values.xl
+                },
+                [theme.breakpoints.up(1920)]: {
+                  maxWidth: 1920
+                },
+                [theme.breakpoints.up(2560)]: {
+                  maxWidth: 2560
                 }
               })}
             >
