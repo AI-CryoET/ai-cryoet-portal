@@ -51,6 +51,10 @@ export const SamplesPortalTable = memo(
           columnDefType: 'display',
           size: 80,
           grow: 0, // fixed-size image; growing it just pads the cell
+          // Not resizable: its width is the alignment anchor the acquisition
+          // sub-table's fixed left inset lines up against (see displayColumnDefOptions
+          // below and AcquisitionsSubTable's alignment note).
+          enableResizing: false,
 
           Cell: ({ row }) => {
             const s = row.original;
@@ -131,14 +135,23 @@ export const SamplesPortalTable = memo(
       // to fit each page's values. Every column has grow weight 1 so they share
       // leftover width at wide screens; sample_id overrides to 4 to grow most.
       layoutMode: 'grid',
-      enableColumnResizing: false,
+      enableColumnResizing: true,
+      columnResizeMode: 'onChange',
+      // The line that tracks the cursor while dragging a resize handle
+      // defaults to `primary.main` at a fixed 2px (MRT doesn't expose the
+      // width). A muted grey reads lighter/thinner against the header without
+      // fighting the library's hardcoded border-width.
+      mrtTheme: theme => ({ draggingBorderColor: theme.palette.grey[300] }),
       defaultColumn: { grow: 1 },
       // Pin the leading expand column to its fixed size (defaultColumn grow:1
       // would otherwise let it widen on wide screens). Its width is the anchor
       // the acquisition sub-table's fixed 64px left inset lines up against — if
       // it grows, the sub-table's thumbnail/id columns drift left of the parent's
       // (see AcquisitionsSubTable + SampleAcquisitionsTable alignment notes).
-      displayColumnDefOptions: { 'mrt-row-expand': { grow: false } },
+      // Not resizable for the same reason.
+      displayColumnDefOptions: {
+        'mrt-row-expand': { grow: false, enableResizing: false }
+      },
       // Clip overflowing cell text to an ellipsis so a long value can't force a
       // column wider than its fixed size. sample_id/type wrap their own content
       // (for the tooltip); this covers the plain-text columns (project, lab).
