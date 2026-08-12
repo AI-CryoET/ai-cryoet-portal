@@ -26,6 +26,8 @@ data_old_organizations
 !.claude/plans/
 **/TODO.md
 .worktrees
+.codegraph
+.mcp.json
 
 # frontend
 node_modules
