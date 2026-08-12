@@ -6,7 +6,10 @@ import { matchAcquisition } from '~/utils/acquisitionMatch';
 import type { SamplesSearchParams } from '~/utils/samplesSearch';
 import { SampleAcquisitionsTable } from '~/components/samples/SampleAcquisitionsTable';
 import type { SampleMatch } from '~/types';
-import { matchedAcquisitionIds } from './samplesMatchDisplay';
+import {
+  matchedAcquisitionIds,
+  orderWithMatchesFirst
+} from './samplesMatchDisplay';
 
 export function AcquisitionsSubTable({
   sampleId,
@@ -34,6 +37,13 @@ export function AcquisitionsSubTable({
   const highlight = useMemo(
     () => matchedAcquisitionIds(matches ?? []),
     [matches]
+  );
+
+  // Matched acquisitions bubble to the top (stable order within each group) so
+  // a hit is visible without scrolling the sub-table.
+  const ordered = useMemo(
+    () => orderWithMatchesFirst(filtered, highlight, a => a.acquisition_id),
+    [filtered, highlight]
   );
 
   // The server only returns a sample when ≥1 acquisition matched, so a filtered
@@ -66,7 +76,7 @@ export function AcquisitionsSubTable({
             </Typography>
           ) : null}
           <SampleAcquisitionsTable
-            acquisitions={filtered}
+            acquisitions={ordered}
             compact
             highlightAcquisitionIds={highlight}
             isLoading={isLoading}

@@ -1,4 +1,4 @@
-import { memo, useMemo } from 'react';
+import { memo, useEffect, useMemo, useState } from 'react';
 import { alpha, Box, Tooltip } from '@mui/material';
 import {
   MaterialReactTable,
@@ -16,6 +16,7 @@ import {
 } from '~/components/common/Thumbnail';
 import { AcquisitionsSubTable } from './AcquisitionsSubTable';
 import { SampleSearchField } from './SampleSearchField';
+import { hasDescendantMatch } from './samplesMatchDisplay';
 
 const dash = (v: unknown) => (v == null || v === '' ? '—' : String(v));
 
@@ -58,6 +59,22 @@ export const SamplesPortalTable = memo(
       searchValue,
       onSearchChange
     } = props;
+
+    // Rows whose match is below sample level (acquisition/tomogram/annotation)
+    // auto-expand so the hit is visible; a sample-id-only match does not. Kept
+    // as controlled state (not a literal `expanded: true`) so the user's manual
+    // toggle keeps working afterward — it's only reset when a new `rows` array
+    // arrives (new search/page), never on every render.
+    const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+    useEffect(() => {
+      const defaults: Record<string, boolean> = {};
+      for (const r of rows) {
+        if (hasDescendantMatch(r.matches)) {
+          defaults[r.sample_id] = true;
+        }
+      }
+      setExpanded(defaults);
+    }, [rows]);
 
     const columns = useMemo<MRT_ColumnDef<SampleSummary>[]>(
       () => [
@@ -222,11 +239,21 @@ export const SamplesPortalTable = memo(
       ),
       // `expanded: true` opens every detail panel; MRT still mounts each panel
       // lazily (Collapse mountOnEnter), so a fetch fires per visible page row.
-      // Only acquisition-filter mode controls expansion; otherwise leave
-      // `expanded` uncontrolled so rows toggle freely via the expand button.
+      // Acquisition-filter mode forces every row open (unrelated to search).
+      // Otherwise `expanded` is the per-row state above, seeded from matches but
+      // freely toggled afterward via onExpandedChange.
       state: {
         isLoading: loading,
-        ...(expandAllDetails ? { expanded: true } : {})
+        expanded: expandAllDetails ? true : expanded
+      },
+      onExpandedChange: updater => {
+        setExpanded(prev => {
+          const next = typeof updater === 'function' ? updater(prev) : updater;
+          // `true` (expand-all) is never produced by a row's own toggle click —
+          // the internal expand-all control is disabled — but guard it anyway
+          // since MRT's type allows it.
+          return next === true ? prev : next;
+        });
       },
       initialState: {
         density: 'comfortable',

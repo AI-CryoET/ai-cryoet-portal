@@ -13,3 +13,28 @@ export function matchedAcquisitionIds(matches: SampleMatch[]): Set<string> {
   }
   return ids;
 }
+
+// True when a sample has a match below the sample level (acquisition/tomogram
+// /annotation) — drives auto-expanding the sample's detail panel. A sample-id-only
+// match does not auto-expand (nothing to see in the sub-table).
+export function hasDescendantMatch(matches: SampleMatch[]): boolean {
+  return matchedAcquisitionIds(matches).size > 0;
+}
+
+// Stable-partitions `items` into matched-first, then the rest, each group
+// keeping its original relative order.
+export function orderWithMatchesFirst<T>(
+  items: T[],
+  matchedIds: Set<string>,
+  idOf: (item: T) => string
+): T[] {
+  if (matchedIds.size === 0) {
+    return items;
+  }
+  const matched: T[] = [];
+  const rest: T[] = [];
+  for (const item of items) {
+    (matchedIds.has(idOf(item)) ? matched : rest).push(item);
+  }
+  return [...matched, ...rest];
+}
