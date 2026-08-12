@@ -68,4 +68,4 @@ images:
   - name: ghcr.io/ai-cryoet/ai-cryoet-scanner
     newTag: "2.2.2"
   - name: ghcr.io/janeliascicomp/mrc-ng-server
-    newTag: "0.1.4"
+    newTag: "0.1.5"

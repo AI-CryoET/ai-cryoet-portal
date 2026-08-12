@@ -209,7 +209,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/noarch/yarl-1.24.2-pyh7db6752_0.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/zarr-3.2.1-pyhc364b38_0.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/zipp-4.1.0-pyhcf101f3_0.conda
-      - pypi: git+https://github.com/JaneliaSciComp/mrc-ng-server.git?tag=v0.1.4#4362b02dc1a2cca2010328fc29af25142d6939e5
+      - pypi: git+https://github.com/JaneliaSciComp/mrc-ng-server.git?tag=v0.1.5#0df4e9d21ef1d1ad30f8b9315b73226e7943f5ca
       - pypi: https://files.pythonhosted.org/packages/17/fe/d5c67665f866b8859d02aa1a859f101a1b2fd348cb61746a3e16fd98fb20/pyside6_addons-6.9.3-cp39-abi3-manylinux_2_28_x86_64.whl
       - pypi: https://files.pythonhosted.org/packages/1f/56/1535540e527a699786e78e498b18271a9429bfc2c20f4045e49d405e5a70/traits-7.1.0-cp314-cp314-manylinux1_x86_64.manylinux_2_28_x86_64.manylinux_2_5_x86_64.whl
       - pypi: https://files.pythonhosted.org/packages/2a/09/f8d8f8f31e4483c10a906437b4ce31bdf3d6d417b73fe33f1a8b59e34228/einops-0.8.2-py3-none-any.whl
@@ -356,7 +356,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/noarch/uvicorn-0.47.0-pyhc90fa1f_0.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/zarr-3.2.1-pyhc364b38_0.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/zipp-4.1.0-pyhcf101f3_0.conda
-      - pypi: git+https://github.com/JaneliaSciComp/mrc-ng-server.git?tag=v0.1.4#4362b02dc1a2cca2010328fc29af25142d6939e5
+      - pypi: git+https://github.com/JaneliaSciComp/mrc-ng-server.git?tag=v0.1.5#0df4e9d21ef1d1ad30f8b9315b73226e7943f5ca
       - pypi: https://files.pythonhosted.org/packages/17/fe/d5c67665f866b8859d02aa1a859f101a1b2fd348cb61746a3e16fd98fb20/pyside6_addons-6.9.3-cp39-abi3-manylinux_2_28_x86_64.whl
       - pypi: https://files.pythonhosted.org/packages/1f/56/1535540e527a699786e78e498b18271a9429bfc2c20f4045e49d405e5a70/traits-7.1.0-cp314-cp314-manylinux1_x86_64.manylinux_2_28_x86_64.manylinux_2_5_x86_64.whl
       - pypi: https://files.pythonhosted.org/packages/2a/09/f8d8f8f31e4483c10a906437b4ce31bdf3d6d417b73fe33f1a8b59e34228/einops-0.8.2-py3-none-any.whl
@@ -3106,9 +3106,9 @@ packages:
   - pkg:pypi/zipp?source=hash-mapping
   size: 24190
   timestamp: 1779159948016
-- pypi: git+https://github.com/JaneliaSciComp/mrc-ng-server.git?tag=v0.1.4#4362b02dc1a2cca2010328fc29af25142d6939e5
+- pypi: git+https://github.com/JaneliaSciComp/mrc-ng-server.git?tag=v0.1.5#0df4e9d21ef1d1ad30f8b9315b73226e7943f5ca
   name: mrc-ng-server
-  version: 0.1.4
+  version: 0.1.5
   requires_dist:
   - fastapi
   - uvicorn

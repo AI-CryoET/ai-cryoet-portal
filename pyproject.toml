@@ -95,7 +95,7 @@ eerfile = "*"
 ovito = "*"
 # Provides the `mrc-pyramid` CLI the scanner runs to precompute the Neuroglancer
 # pyramid cache (see catalog/cli.py `_run_precompute`).
-mrc-ng-server = { git = "https://github.com/JaneliaSciComp/mrc-ng-server.git", tag = "v0.1.4" }
+mrc-ng-server = { git = "https://github.com/JaneliaSciComp/mrc-ng-server.git", tag = "v0.1.5" }
 
 [tool.pixi.feature.catalog.tasks]
 migrate = "alembic -c src/catalog/migrations/alembic.ini upgrade head"
