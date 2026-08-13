@@ -66,14 +66,30 @@ deploy/k8s/
 │   ├── mrc-ng-server.yaml   # Tomogram data service Deployment + Service
 │   └── routes.yaml          # OpenShift Routes (portal + mrc-ng-server, edge TLS)
 └── overlays/
-    └── production/          # Production-specific config
+    ├── production/          # Production: namespace ai-cryoet
+    │   ├── kustomization.yaml
+    │   ├── namespace.yaml
+    │   └── config.env.example   # Template for non-sensitive environment variables
+    └── dev/                 # Development: namespace ai-cryoet-dev
         ├── kustomization.yaml
         ├── namespace.yaml
-        └── config.env.example   # Template for non-sensitive environment variables
+        └── config.env.example
 ```
 
 Copy `config.env.example` to `config.env` and fill in real values. `config.env`
 is gitignored and must not be committed.
+
+Both overlays build from the same `base/`, so every command below works for
+either environment — substitute the overlay path and namespace:
+
+| | Production | Development |
+|---|---|---|
+| Namespace | `ai-cryoet` | `ai-cryoet-dev` |
+| Overlay | `deploy/k8s/overlays/production` | `deploy/k8s/overlays/dev` |
+| Route host | `ai-cryoet.int.janelia.org` | `ai-cryoet-dev.int.janelia.org` |
+| Data-tree PV | `nfs-cryoet-data` | `nfs-cryoet-data-dev` |
+| Scanner | Hourly | Nightly (02:00) |
+| Image tags | Pinned | Pinned (bump ahead of prod to test a release) |
 
 ## Wiring up the data root
 
@@ -117,6 +133,10 @@ class supports `ReadWriteMany` (NFS/CephFS do); if not, set an RWX-capable
 
 ## Deployment Steps
 
+These steps use the production overlay. For the development environment see
+[The development environment](#the-development-environment), which is the same
+sequence against `overlays/dev` / `ai-cryoet-dev`.
+
 ### 1. Configure environment
 
 ```bash
@@ -143,14 +163,17 @@ oc apply -f deploy/k8s/overlays/production/namespace.yaml
 
 The container images are hosted on GitHub Container Registry and require
 authentication. Create a [Personal Access Token](https://github.com/settings/tokens)
-(classic) with the `read:packages` scope, then create the pull secret:
+(classic) with the `read:packages` scope, then create the pull secret. The name
+must be `ghcr-pull` — that is what the `imagePullSecrets` in `base/api.yaml`,
+`base/frontend.yaml` and `base/scanner.yaml` reference. Secrets are namespaced,
+so **each environment needs its own copy**:
 
 ```bash
-oc create secret docker-registry ghcr-credentials \
+oc create secret docker-registry ghcr-pull \
   --docker-server=ghcr.io \
   --docker-username=<github-username> \
   --docker-password=<PAT> \
-  -n ai-cryoet
+  -n ai-cryoet          # or -n ai-cryoet-dev
 ```
 
 > **Tip:** To avoid the PAT expiring and breaking pulls, consider a GitHub App
@@ -244,8 +267,7 @@ host + port, no path) must be added there:
 ```yaml
 api_allowed_origins:
   - https://ai-cryoet.int.janelia.org        # prod
-  # plus any dev origin, exact scheme+host+port, e.g.:
-  # - https://<dev-host>.int.janelia.org:<port>
+  - https://ai-cryoet-dev.int.janelia.org    # dev
 ```
 
 This is a change to **Fileglancer's** server configuration, not to anything in
@@ -327,32 +349,72 @@ portal's `1.x`. To update it, bump only its entry in the overlay:
     newTag: "0.1.2"
 ```
 
-## Adding a New Environment
+## The development environment
 
-Create a new overlay directory referencing the same base:
+`deploy/k8s/overlays/dev` deploys the same base into the **`ai-cryoet-dev`**
+namespace at `https://ai-cryoet-dev.int.janelia.org`. It reads the *same*
+read-only NFS data tree as production (every mount of it is flagged `readOnly`,
+so dev cannot corrupt it) but owns its own catalog DB, thumbnail, MD-preview and
+pyramid-cache volumes, so a broken scan or schema change in dev never touches
+production.
 
-```bash
-mkdir -p deploy/k8s/overlays/staging
-```
+### One-time setup
 
-```yaml
-apiVersion: kustomize.config.k8s.io/v1beta1
-kind: Kustomization
+1. **DNS.** `ai-cryoet-dev.int.janelia.org` must resolve to the cluster router
+   (the same address `ai-cryoet.int.janelia.org` points at). The `int` zone is
+   internal-only split-horizon, so this is a request to the network team — the
+   Route will be admitted by the router before DNS exists, but browsers will not
+   reach it until the record is in place.
+2. **Config.** `cp deploy/k8s/overlays/dev/config.env.example
+   deploy/k8s/overlays/dev/config.env` (gitignored; the checked-in example
+   already carries the dev hostnames).
+3. **Namespace.** `oc apply -f deploy/k8s/overlays/dev/namespace.yaml`
+4. **Pull secret.** Create `ghcr-pull` in `ai-cryoet-dev` — see
+   [step 3](#3-create-the-image-pull-secret-for-ghcrio). Secrets do not cross
+   namespaces, so production's copy does not count.
+5. **Fileglancer allowlist.** "Save to file share" will 403 from the dev origin
+   until `https://ai-cryoet-dev.int.janelia.org` is added to Fileglancer's
+   `api_allowed_origins` — see [Fileglancer write
+   access](#prerequisite-allowlist-this-apps-origin-on-fileglancer). Download
+   works regardless.
+6. **Deploy and seed.**
+   ```bash
+   oc apply -k deploy/k8s/overlays/dev
+   oc -n ai-cryoet-dev create job --from=cronjob/scanner scanner-initial
+   oc -n ai-cryoet-dev logs -f job/scanner-initial
+   ```
+   The nightly CronJob keeps it fresh after that; the manual job avoids waiting
+   until 02:00 for a catalog.
 
-namespace: ai-cryoet-staging
+### Using it to stage a release
 
-resources:
-  - ../../base
-  - namespace.yaml
+The dev overlay pins image tags exactly as production does, which is the point:
+bump the tags in `deploy/k8s/overlays/dev/kustomization.yaml` to a new release,
+`oc apply -k deploy/k8s/overlays/dev`, verify, and only then bump production.
+Dev is deliberately *not* tracking `:latest` — the build workflow publishes only
+on `v*.*.*` tags, so `:latest` means "newest release" and would make dev's
+version depend on when a pod last restarted.
 
-configMapGenerator:
-  - name: cryoet-config
-    envs:
-      - config.env
+## Adding another environment
 
-generatorOptions:
-  disableNameSuffixHash: true
-```
+Copy `overlays/dev` and change the namespace, the Route host, and the two
+hostnames in `config.env`. One non-obvious step is mandatory:
+
+> **Give the data-tree PersistentVolume a unique name.** PersistentVolumes are
+> **cluster-scoped** and bind exclusively to one PVC. `base/storage.yaml`
+> declares `nfs-cryoet-data`, which is already Bound to
+> `ai-cryoet/catalog-data-pvc`; a second environment reusing that name gets a
+> `catalog-data-pvc` stuck **Pending** forever, and the api/scanner/mrc-ng-server
+> pods never schedule. The dev overlay patches the PV to `nfs-cryoet-data-dev`
+> and repoints its PVC's `volumeName` to match — copy both patches. (`volumeName`
+> is not a reference Kustomize rewrites automatically, so the second patch is not
+> redundant.) Pointing several PVs at the same NFS export is fine: an `nfs` PV is
+> mount instructions, not an exclusive lease.
+
+Also carry over the `storageClassName: ocs-storagecluster-cephfs` patches. The
+base PVCs omit the class because it is cluster-specific, and this cluster's
+default (`ocs-storagecluster-ceph-rbd`) is RBD block storage that rejects the
+`ReadWriteMany` these shared volumes require.
 
 ## Troubleshooting
 
