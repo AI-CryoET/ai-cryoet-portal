@@ -1,0 +1,181 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: ai-cryoet-dev
+
+resources:
+  - ../../base
+  - namespace.yaml
+
+# Non-sensitive configuration shared by the api, scanner and mrc-ng-server. Copy
+# config.env.example to config.env and edit before deploying. config.env is
+# gitignored and must not be committed. The dev values differ from production
+# only in the hostnames (CORS_ORIGINS, MRCNG_BASE_URL) — every path must stay
+# identical to the volume mountPaths in the base manifests.
+configMapGenerator:
+  - name: cryoet-config
+    envs:
+      - config.env
+
+generatorOptions:
+  disableNameSuffixHash: true
+
+patches:
+  # ── The data-tree PersistentVolume needs a per-environment name ─────────────
+  # PersistentVolumes are CLUSTER-scoped and bind exclusively to a single PVC, so
+  # dev cannot reuse base's `nfs-cryoet-data` — it is already Bound to
+  # ai-cryoet/catalog-data-pvc and dev's catalog-data-pvc would sit Pending
+  # forever. Rename it here and point this namespace's PVC at the new name.
+  #
+  # Both PVs describe the SAME read-only NFS export, which is fine: an `nfs` PV
+  # is just mount instructions, not an exclusive lease on the export. Keeping the
+  # rename as a patch (rather than a second copy of the PV) means the server,
+  # export path and mountOptions stay defined once, in base/storage.yaml.
+  #
+  # `volumeName` is not a reference kustomize rewrites automatically, hence the
+  # second patch below.
+  - target:
+      kind: PersistentVolume
+      name: nfs-cryoet-data
+    patch: |-
+      - op: replace
+        path: /metadata/name
+        value: nfs-cryoet-data-dev
+  - target:
+      kind: PersistentVolumeClaim
+      name: catalog-data-pvc
+    patch: |-
+      - op: replace
+        path: /spec/volumeName
+        value: nfs-cryoet-data-dev
+
+  # ── RWX storage class + dev-sized capacity ─────────────────────────────────
+  # The base PVCs omit storageClassName because the right class is
+  # cluster-specific. On this OpenShift/OCS cluster the default class
+  # (ocs-storagecluster-ceph-rbd) is RBD block storage: ReadWriteOnce only, so it
+  # rejects the ReadWriteMany these shared volumes need. Pin the RWX PVCs to
+  # ocs-storagecluster-cephfs, exactly as the production overlay does.
+  #
+  # Capacity is trimmed relative to production: dev is exercised against a subset
+  # of the catalog, so it does not need production's full cache footprint (and
+  # these claims come out of the same cephfs pool prod draws from). Note PVCs are
+  # immutable downward — growing them later is fine (the class allows expansion),
+  # shrinking is not, so a resized dev volume must be deleted and recreated.
+  # catalog-data binds statically (storageClassName: "") and is not patched.
+  - target:
+      kind: PersistentVolumeClaim
+      name: catalog-db-pvc
+    patch: |-
+      - op: add
+        path: /spec/storageClassName
+        value: ocs-storagecluster-cephfs
+  - target:
+      kind: PersistentVolumeClaim
+      name: thumbnails-pvc
+    patch: |-
+      - op: add
+        path: /spec/storageClassName
+        value: ocs-storagecluster-cephfs
+      - op: replace
+        path: /spec/resources/requests/storage
+        value: 2Gi
+  - target:
+      kind: PersistentVolumeClaim
+      name: md-previews-pvc
+    patch: |-
+      - op: add
+        path: /spec/storageClassName
+        value: ocs-storagecluster-cephfs
+      - op: replace
+        path: /spec/resources/requests/storage
+        value: 2Gi
+  - target:
+      kind: PersistentVolumeClaim
+      name: mrc-cache-pvc
+    patch: |-
+      - op: add
+        path: /spec/storageClassName
+        value: ocs-storagecluster-cephfs
+      - op: replace
+        path: /spec/resources/requests/storage
+        value: 20Gi
+
+  # ── Dev hostname ───────────────────────────────────────────────────────────
+  # Must agree with CORS_ORIGINS and MRCNG_BASE_URL in config.env: the browser
+  # fetches Neuroglancer chunks from this host via nginx's /mrc-ng-server/
+  # location, and the API rejects cross-origin calls from anywhere else.
+  - target:
+      kind: Route
+      name: cryoet
+    patch: |-
+      - op: replace
+        path: /spec/host
+        value: ai-cryoet-dev.int.janelia.org
+
+  # ── Nightly scans instead of hourly; scan ../scratch/data/ ──────────────────
+  # Each scan walks the data tree and precomputes the Neuroglancer pyramid, both
+  # NFS/cephfs-bound. Running dev hourly alongside production would double that
+  # load on the filer for no benefit, so dev refreshes once a night. The history
+  # limits drop with the frequency: base's 48 was "~48 hours of runs" at hourly,
+  # which would be ~7 weeks of pods here.
+  # Scan one subtree instead of the full data root: dev is exercised
+  # against a subset of the catalog (see the PVC capacity note above)
+  # The image has no ENTRYPOINT (Dockerfile.scanner), only CMD,
+  # so `args` replaces the whole exec line — the pixi wrapper must stay.
+  # Adjust the subdir to taste; must be the full in-container path (under
+  # the catalog-data mountPath), not relative.
+  - target:
+      kind: CronJob
+      name: scanner
+    patch: |-
+      - op: replace
+        path: /spec/schedule
+        value: "0 2 * * *"
+      - op: replace
+        path: /spec/successfulJobsHistoryLimit
+        value: 7
+      - op: replace
+        path: /spec/failedJobsHistoryLimit
+        value: 7
+      - op: add
+        path: /spec/jobTemplate/spec/template/spec/containers/0/args
+        value:
+          - pixi
+          - run
+          - -e
+          - catalog
+          - scan
+          - /groups/cryoet/cryoet/data/scratch/data
+          - --init
+          - --prune
+
+  # ── Single mrc-ng-server replica ───────────────────────────────────────────
+  # It is stateless, so replica count is purely a throughput knob (see
+  # base/mrc-ng-server.yaml). Dev has one user at a time; production's 2 buys
+  # nothing here.
+  - target:
+      kind: Deployment
+      name: mrc-ng-server
+    patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 1
+
+# Pinned explicitly, like production, so dev is a deliberate choice of version
+# rather than "whatever :latest resolved to at pull time". This is the knob for
+# testing a release candidate ahead of production: bump these, `oc apply -k`, and
+# leave the production overlay alone.
+#
+# The build workflow only publishes on `v*.*.*` git tags (plus manual
+# workflow_dispatch), so these tags are releases — there is no per-commit `main`
+# image stream to track. metadata-action strips the leading `v`, so git tag
+# `v2.2.3` publishes image tag `2.2.3`.
+images:
+  - name: ghcr.io/ai-cryoet/ai-cryoet-api
+    newTag: "2.2.3"
+  - name: ghcr.io/ai-cryoet/ai-cryoet-frontend
+    newTag: "2.2.3"
+  - name: ghcr.io/ai-cryoet/ai-cryoet-scanner
+    newTag: "2.2.3"
+  - name: ghcr.io/janeliascicomp/mrc-ng-server
+    newTag: "0.1.5"
