@@ -217,11 +217,14 @@ def _render(args: dict) -> None:
     is_cores = "cores" in dump_path
 
     if is_cores:
-        # For cores.dump, load the full dna.dump from the same directory but
-        # delete DNA particles so only histone cores are visible. This keeps the
-        # same structure and camera angle as the full view.
-        dna_path = str(Path(dump_path).parent / "dna.dump")
-        if Path(dna_path).exists():
+        # For a cores dump, load the matching full dna dump from the same
+        # directory but delete DNA particles so only histone cores are visible.
+        # This keeps the same structure and camera angle as the full view.
+        # Numbered segments (dna_1.dump) sort after the plain dna.dump, so this
+        # picks the same file _choose_dump would have preferred.
+        dna_matches = sorted(Path(dump_path).parent.glob("dna*.dump"))
+        if dna_matches:
+            dna_path = str(dna_matches[0])
             pipeline = import_file(dna_path, columns=_build_column_mapping(dna_path))
             loaded_path = dna_path
             if frame < 0:

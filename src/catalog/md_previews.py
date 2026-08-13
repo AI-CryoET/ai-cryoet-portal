@@ -44,10 +44,13 @@ def wrap_for_dataset_type(dataset_type: DatasetType | None) -> bool:
     """Wrap policy for a sample's dataset type (see ``_WRAP_DATASET_TYPES``)."""
     return dataset_type in _WRAP_DATASET_TYPES
 
-# Candidate dump filenames, in preference order. ``dna.dump`` is the full
-# coarse-grained structure; the renderer special-cases ``cores.dump`` (histone
-# cores only) by re-deriving it from ``dna.dump``, so we never select it here.
-_DUMP_PREFERENCE = ("dna.dump",)
+# Some runs write a single ``dna.dump``; others write numbered segments
+# (``dna_1.dump``, ``dna_2.dump``, ...) with no plain ``dna.dump`` present.
+# The glob below matches both; sorting puts the unnumbered file first when it
+# exists (``.`` sorts before ``_``). The renderer special-cases ``cores*.dump``
+# (histone cores only) by re-deriving from the matching ``dna*.dump``, so we
+# never select a cores dump here as long as a dna dump exists alongside it.
+_DNA_DUMP_GLOB = "dna*.dump"
 _DUMP_GLOBS = ("*.dump", "*.lammpstrj")
 
 
@@ -81,16 +84,15 @@ def _choose_dump(md_run_dir: Path) -> str | None:
     """Pick the representative dump file for an MD-run directory.
 
     Looks in ``Trajectories/`` (the canonical portal location) first, then the
-    run directory itself. Prefers ``dna.dump``; otherwise the first matching
-    dump/lammpstrj file in sorted order.
+    run directory itself. Prefers a ``dna*.dump`` file; otherwise the first
+    matching dump/lammpstrj file in sorted order.
     """
     for search_dir in (md_run_dir / "Trajectories", md_run_dir):
         if not search_dir.is_dir():
             continue
-        for name in _DUMP_PREFERENCE:
-            candidate = search_dir / name
-            if candidate.is_file():
-                return str(candidate)
+        dna_matches = sorted(search_dir.glob(_DNA_DUMP_GLOB))
+        if dna_matches:
+            return str(dna_matches[0])
         matches = sorted(
             p for pattern in _DUMP_GLOBS for p in search_dir.glob(pattern)
         )
