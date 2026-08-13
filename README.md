@@ -26,34 +26,38 @@ For the schema itself, see `docs/schema.md` (human reference) and `src/schema/sc
 
 ## Development
 
-**Note:** This setup guide assumes you are working on machine with access to the Janelia file system.
+> [!IMPORTANT]
+> This setup guide assumes you are working on machine with access to the Janelia file system.
+
+### Tier 1 - local development using pixi commands
+
+> [!NOTE]
+> This tier does not allow you to test changes to Neuroglancer functionality, either the Python in-process Neuroglancer or the browser-based Neuroglancer.
 
 1. [Install pixi](https://pixi.prefix.dev/latest/installation/).
 2. From the repo root, run `pixi install` to materialize the Python environments.
 
 The frontend's Node deps are installed automatically the first time you run `pixi run frontend` (and re-run only when `package.json` / `package-lock.json` change). You don't need a separate `npm install` step.
 
-3. Create the database. Pass the path to the data root via the CATALOG_DATA_ROOT env variable. This will scan the samples at that path and create a SQLite database called `catalog.db` in your repo root.
+3. To create the database, run the below command from the repo root. Pass the path to the data root via the CATALOG_DATA_ROOT env variable.
 
-To also pre-generate tomogram thumbnails, set `CATALOG_THUMBNAIL_DIR` to a writable directory (or pass `--thumbnail-dir`). A plain rescan auto-heals a wiped cache; `--force` fully rebuilds it.
+> [!NOTE]
+> A small subset of data is maintained in the cryoet fileshare under a `scratch/data` subdirectory of the full tree — this is the recommended path to point CATALOG_DATA_ROOT at; otherwise, create a small subset for your personal use and point it at that. The full dataset is too large for local testing.
 
 ```
-CATALOG_DATA_ROOT=/path/to/data CATALOG_THUMBNAIL_DIR=/path/to/thumbnails pixi run scan --init
+CATALOG_DATA_ROOT=/path/to/scratch/data pixi run scan --init
 ```
+
+This command scans the samples under the data root path and creates a SQLite database called `catalog.db` in the root of the current working directory. It also pre-generates tomogram thumbnails and, for simulation samples, OVITO MD-preview images, creating the cache folders on demand. By default the image caches land at `./data/.thumbnail-cache` and `./data/.md-preview-cache` in the current working directory. Override either with `CATALOG_THUMBNAIL_DIR` / `CATALOG_MD_PREVIEW_DIR` (or `--thumbnail-dir` / `--md-preview-dir`) to put them somewhere else.
 
 4. The portal has two processes: the FastAPI backend (reads the catalog DB) and the TanStack Start frontend (server-renders + hydrates a React app, proxying `/api` to FastAPI). Run them in two terminals.
 
 **Terminal 1 — API:**
 ```
-CATALOG_DATA_ROOT=/path/to/data CATALOG_THUMBNAIL_DIR=/path/to/thumbnails pixi run api
+CATALOG_DATA_ROOT=/path/to/scratch/data pixi run api
 ```
-Serves `http://localhost:8000`. Swagger UI at `/docs`.
-
-To serve cached OVITO/MD preview images for simulation samples (rendered upstream by [aicryoet-tools](https://github.com/schneidermc/aicryoet-tools) into a `.portal_cache` directory), set `CATALOG_MD_PREVIEW_DIR` to that directory. It is **optional** — if unset it defaults to `/groups/cryoet/cryoet/data/collepardolab/.portal_cache`, and if the directory is missing the `/api/md-previews` route is simply disabled (it does not block API startup, unlike `CATALOG_THUMBNAIL_DIR`).
-```
-CATALOG_DATA_ROOT=/path/to/data CATALOG_THUMBNAIL_DIR=/path/to/thumbnails \
-  CATALOG_MD_PREVIEW_DIR=/path/to/.portal_cache pixi run api
-```
+> [!NOTE]
+> The API reads thumbnails and MD-preview images from the same default cache paths the scanner wrote them to above; pass matching `CATALOG_THUMBNAIL_DIR` / `CATALOG_MD_PREVIEW_DIR` values if you overrode them during scanning. A missing MD-preview dir just disables the `/api/md-previews` route; a missing thumbnail dir blocks API startup (run the scan first).
 
 > **No hot-reload.** The API runs with `--no-reload` (single worker). Neuroglancer's in-process HTTP server is incompatible with uvicorn's `--reload` mode, which tries to bind a second HTTP server on the same port.
 
@@ -63,7 +67,7 @@ pixi run frontend
 ```
 Open the data portal at `http://localhost:3000`.
 
-### Alternate port
+#### Alternate port
 
 If port 8000 is taken, pass uvicorn flags through to use an alternate port. You can also change the IP binding:
 ```
