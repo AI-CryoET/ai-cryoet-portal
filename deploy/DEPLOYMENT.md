@@ -131,7 +131,7 @@ they use `ReadWriteMany`. Confirm with the HPC team that the default storage
 class supports `ReadWriteMany` (NFS/CephFS do); if not, set an RWX-capable
 `storageClassName` on those PVCs.
 
-## Deployment Steps
+## Production deployment Steps
 
 These steps use the production overlay. For the development environment see
 [The development environment](#the-development-environment), which is the same
@@ -175,10 +175,6 @@ oc create secret docker-registry ghcr-pull \
   --docker-password=<PAT> \
   -n ai-cryoet          # or -n ai-cryoet-dev
 ```
-
-> **Tip:** To avoid the PAT expiring and breaking pulls, consider a GitHub App
-> or a machine account with a long-lived token, or sync the credential from a
-> vault with [External Secrets](https://external-secrets.io/).
 
 ### 4. TLS
 
