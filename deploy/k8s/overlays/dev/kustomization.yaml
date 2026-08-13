@@ -112,12 +112,18 @@ patches:
         path: /spec/host
         value: ai-cryoet-dev.int.janelia.org
 
-  # ── Nightly scans instead of hourly ────────────────────────────────────────
+  # ── Nightly scans instead of hourly; scan ../scratch/data/ ──────────────────
   # Each scan walks the data tree and precomputes the Neuroglancer pyramid, both
   # NFS/cephfs-bound. Running dev hourly alongside production would double that
   # load on the filer for no benefit, so dev refreshes once a night. The history
   # limits drop with the frequency: base's 48 was "~48 hours of runs" at hourly,
   # which would be ~7 weeks of pods here.
+  # Scan one subtree instead of the full data root: dev is exercised
+  # against a subset of the catalog (see the PVC capacity note above)
+  # The image has no ENTRYPOINT (Dockerfile.scanner), only CMD,
+  # so `args` replaces the whole exec line — the pixi wrapper must stay.
+  # Adjust the subdir to taste; must be the full in-container path (under
+  # the catalog-data mountPath), not relative.
   - target:
       kind: CronJob
       name: scanner
@@ -131,6 +137,17 @@ patches:
       - op: replace
         path: /spec/failedJobsHistoryLimit
         value: 7
+      - op: add
+        path: /spec/jobTemplate/spec/template/spec/containers/0/args
+        value:
+          - pixi
+          - run
+          - -e
+          - catalog
+          - scan
+          - /groups/cryoet/cryoet/data/scratch/data
+          - --init
+          - --prune
 
   # ── Single mrc-ng-server replica ───────────────────────────────────────────
   # It is stateless, so replica count is purely a throughput knob (see
