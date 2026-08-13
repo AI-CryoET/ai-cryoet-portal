@@ -72,30 +72,6 @@ def test_get_md_preview_non_png_rejected(client):
     assert r.status_code == 404
 
 
-def test_get_md_preview_by_prefix(client):
-    test_client, md_dir = client
-    # Cached name has an unpredictable suffix; caller only knows the prefix.
-    (md_dir / "Slab_12mer_25_0.073_md_runs_r1_Trajectories_dna_wrap_preview.png").write_bytes(
-        _FAKE_PNG
-    )
-    r = test_client.get("/md-previews/by-prefix/Slab_12mer_25_0.073")
-    assert r.status_code == 200
-    assert r.headers["content-type"] == "image/png"
-    assert r.content == _FAKE_PNG
-
-
-def test_get_md_preview_by_prefix_no_match(client):
-    test_client, _ = client
-    r = test_client.get("/md-previews/by-prefix/Slab_does_not_exist")
-    assert r.status_code == 404
-
-
-def test_get_md_preview_by_prefix_traversal(client):
-    test_client, _ = client
-    r = test_client.get("/md-previews/by-prefix/..%2f..%2fetc")
-    assert r.status_code == 404
-
-
 def test_get_md_preview_not_configured(tmp_path):
     """If md_preview_root is None, every request returns 404."""
     app = _seed_app(tmp_path, None)

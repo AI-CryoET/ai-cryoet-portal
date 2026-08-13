@@ -1575,46 +1575,6 @@
         }
       }
     },
-    "/md-previews/by-prefix/{prefix}": {
-      "get": {
-        "tags": [
-          "md-previews"
-        ],
-        "summary": "Get Md Preview By Prefix",
-        "operationId": "get_md_preview_by_prefix_md_previews_by_prefix__prefix__get",
-        "parameters": [
-          {
-            "name": "prefix",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "Prefix"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/md-previews/{relpath}": {
       "get": {
         "tags": [
