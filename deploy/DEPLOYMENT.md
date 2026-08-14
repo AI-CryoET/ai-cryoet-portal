@@ -91,51 +91,119 @@ either environment — substitute the overlay path and namespace:
 | Scanner | Hourly | Nightly (02:00) |
 | Image tags | Pinned | Pinned (bump ahead of prod to test a release) |
 
-## Wiring up the data root
+## The development environment
 
-The scanner reads a large, **pre-existing** data tree (e.g.
-`/groups/cryoet/cryoet/data`) and the API reads the same tree to
-serve previews and launch Neuroglancer. Unlike the SQLite DB and the thumbnail
-cache — which the app creates from scratch — this data already lives on storage
-your cluster administrators manage.
+`deploy/k8s/overlays/dev` deploys the same base into the **`ai-cryoet-dev`**
+namespace at `https://ai-cryoet-dev.int.janelia.org`. It reads the *same*
+read-only NFS data tree as production (every mount of it is flagged `readOnly`,
+so dev cannot corrupt it) but owns its own catalog DB, thumbnail, MD-preview and
+pyramid-cache volumes, so a broken scan or schema change in dev never touches
+production.
 
-In Kubernetes a pod can only read storage that has been explicitly handed to it
-through a **PersistentVolumeClaim (PVC)** — a named request for storage. *Where*
-that storage physically lives (an NFS export, a `/groups` mount, etc.) is
-configured by the cluster/HPC team, not by these manifests.
+### One-time setup
 
-`deploy/k8s/base/storage.yaml` declares a PVC named **`catalog-data-pvc`** as a
-placeholder. Before deploying, take this question to the HPC/OpenShift team:
+>[!IMPORTANT]
+> Steps 2-4 have already been set up. All new devs in the ai-cryoet-dev namespace still
+> must complete step 1 in their own repo checkout. 
 
-> *"How do we make `/groups/cryoet/cryoet/data` readable from pods
-> in the `ai-cryoet` namespace, and what should the PVC be called?"*
+1. **Config.** `cp deploy/k8s/overlays/dev/config.env.example
+   deploy/k8s/overlays/dev/config.env` (gitignored; the checked-in example
+   already carries the dev hostnames).
+2. **Namespace.** `oc apply -f deploy/k8s/overlays/dev/namespace.yaml`
+3. **Pull secret.** Create `ghcr-pull` in `ai-cryoet-dev` — see
+   [step 3](#3-create-the-image-pull-secret-for-ghcrio). 
+4. **Fileglancer allowlist.** "Save to file share" will 403 from the dev origin
+   until `https://ai-cryoet-dev.int.janelia.org` is added to Fileglancer's
+   `api_allowed_origins` — see [Fileglancer write
+   access](#prerequisite-allowlist-this-apps-origin-on-fileglancer). Download
+   works regardless.
+5. **Deploy and seed.**
+   ```bash
+   oc apply -k deploy/k8s/overlays/dev
+   oc -n ai-cryoet-dev create job --from=cronjob/scanner scanner-initial
+   oc -n ai-cryoet-dev logs -f job/scanner-initial
+   ```
+   The nightly CronJob keeps it fresh after the initial seed.
 
-They will typically do one of:
+### Building and rolling out a release (including alphas)
 
-- **Bind `catalog-data-pvc` to a statically-provisioned PersistentVolume** that
-  points at the existing export. In this case keep the PVC name as-is and they
-  fill in the `storageClassName` / `volumeName` to match their PV.
-- **Hand you an existing PVC name.** In that case either rename it to
-  `catalog-data-pvc`, or change `claimName: catalog-data-pvc` to their name in
-  `api.yaml` and `scanner.yaml`.
+The dev overlay pins image tags exactly as production does: bump the tags in
+`deploy/k8s/overlays/dev/kustomization.yaml` to a new build, `oc apply -k deploy/k8s/overlays/dev`, 
+verify, and only then bump production.
 
-Whatever path is mounted **must equal** `CATALOG_DATA_ROOT` in `config.env` and
-the `mountPath` for the `catalog-data` volume in `api.yaml` and `scanner.yaml`
-(all three default to `/groups/cryoet/cryoet/data`). The scanner
-records absolute paths under this root and the API validates reads against it,
-so they must agree exactly.
+The build workflow triggers on any `v*.*.*` git tag, pre-releases included, so
+an alpha build to test on dev before cutting a real release works the same way
+as a normal one:
 
-The other two volumes (`catalog-db-pvc`, `thumbnails-pvc`) are created and
-populated by the app and are shared between the API pod and the scanner pod, so
-they use `ReadWriteMany`. Confirm with the HPC team that the default storage
-class supports `ReadWriteMany` (NFS/CephFS do); if not, set an RWX-capable
-`storageClassName` on those PVCs.
+1. **Tag and push:**
+   ```bash
+   git tag v2.3.0-a.1
+   git push origin v2.3.0-a1
+   ```
+   This builds and pushes `ghcr.io/ai-cryoet/{ai-cryoet-api,ai-cryoet-frontend,ai-cryoet-scanner}:2.3.0-a1`
+   (metadata-action strips the leading `v`). Pre-release tags skip the
+   `{{major}}`/`{{major}}.{{minor}}` floating tags a real release gets — only
+   the exact version tag is published.
 
-## Production deployment Steps
+2. **Wait for the build** (Actions tab, or `gh run watch`).
+
+3. **Point dev at the new tag** in `deploy/k8s/overlays/dev/kustomization.yaml`
+   (leave `mrc-ng-server`'s tag alone — it's versioned separately, see above):
+   ```yaml
+   images:
+     - name: ghcr.io/ai-cryoet/ai-cryoet-api
+       newTag: "2.3.0-a1"
+     - name: ghcr.io/ai-cryoet/ai-cryoet-frontend
+       newTag: "2.3.0-a1"
+     - name: ghcr.io/ai-cryoet/ai-cryoet-scanner
+       newTag: "2.3.0-a1"
+   ```
+
+4. **Roll it out and verify:**
+   ```bash
+   oc apply -k deploy/k8s/overlays/dev
+   oc -n ai-cryoet-dev rollout status deploy/api
+   oc -n ai-cryoet-dev rollout status deploy/frontend
+   ```
+
+  **Note: mrc-ng-server is versioned separately.** Its image is built and tagged in its
+  own repo ([mrc-ng-server](https://github.com/JaneliaSciComp/mrc-ng-server)), not
+  by this repo's workflow, so it carries its own `0.x` tag independent of the
+  portal's `1.x`. If you want to update it on dev, also bump its entry in the overlay:
+
+  ```yaml
+    - name: ghcr.io/janeliascicomp/mrc-ng-server
+      newTag: "0.1.2"
+  ```
+
+5. Iterate (`v2.3.0-a2`, repeat) or, once satisfied, tag and promote the
+   real release the same way, then bump production's overlay.
+
+### Triggering a manual scan
+
+The dev CronJob only runs nightly (02:00). If your change touches the
+scanner, run it on demand instead of waiting:
+
+```bash
+oc -n ai-cryoet-dev create job --from=cronjob/scanner scanner-manual-$(date +%s)
+oc -n ai-cryoet-dev get jobs
+oc -n ai-cryoet-dev logs -f job/scanner-manual-<suffix-from-above>
+```
+
+Job names must be unique, hence the timestamp suffix — reusing a fixed name
+(e.g. `scanner-manual`) fails once that job already exists; delete it first
+(`oc -n ai-cryoet-dev delete job scanner-manual`) instead if you'd rather skip
+the suffix.
+
+## Production deployment
 
 These steps use the production overlay. For the development environment see
 [The development environment](#the-development-environment), which is the same
 sequence against `overlays/dev` / `ai-cryoet-dev`.
+
+>[!IMPORTANT]
+> Steps 2-5 have already been completed. All new devs in the ai-cryoet namespace still
+> must complete step 1 in their own repo checkout. 
 
 ### 1. Configure environment
 
@@ -203,18 +271,7 @@ oc kustomize deploy/k8s/overlays/production
 oc apply -k deploy/k8s/overlays/production
 ```
 
-### 7. Populate the catalog (first run)
-
-On a fresh deploy the SQLite DB does not exist yet, so the API serves an empty
-catalog (and some pages may error until the first scan completes). Trigger the
-scanner immediately rather than waiting for the next hourly run:
-
-```bash
-oc -n ai-cryoet create job --from=cronjob/scanner scanner-initial
-oc -n ai-cryoet logs -f job/scanner-initial
-```
-
-### 8. Verify
+### 7. Verify
 
 ```bash
 # All pods running
@@ -232,6 +289,87 @@ curl -sf https://mrc-ng-server.int.janelia.org/healthz
 ```
 
 Then open `https://ai-cryoet.int.janelia.org`.
+
+### 8. Rolling out a new version in production
+These steps are analogous to those written in the development environment section for [building and rolling out a new release](#building-and-rolling-out-a-release-including-alphas). 
+
+Push a `v*.*.*` git tag from `main` to build and publish new images:
+
+```bash
+git checkout main && git pull
+git tag v1.0.0
+git push origin v1.0.0
+```
+
+Don't forget to draft a new release to go along with the tag: https://github.com/AI-CryoET/ai-cryoet-portal/releases/new. Auto-generate the notes to include all the PRs since the last tag.
+
+Then pin the new tag in the overlay's `kustomization.yaml`. Note: the build
+workflow's `metadata-action` strips the leading `v`, so a `v1.0.0` git tag
+publishes image tag `1.0.0` (without the `v`) — use that here:
+
+```yaml
+images:
+  - name: ghcr.io/ai-cryoet/ai-cryoet-api
+    newTag: "1.0.0"
+  - name: ghcr.io/ai-cryoet/ai-cryoet-frontend
+    newTag: "1.0.0"
+  - name: ghcr.io/ai-cryoet/ai-cryoet-scanner
+    newTag: "1.0.0"
+```
+
+Then `oc apply -k deploy/k8s/overlays/production`. Pushing a `v*.*.*` git tag builds and
+publishes all three images (see the workflow).
+   ```
+
+**Note: mrc-ng-server is versioned separately.** Its image is built and tagged in its
+own repo ([mrc-ng-server](https://github.com/JaneliaSciComp/mrc-ng-server)), not
+by this repo's workflow, so it carries its own `0.x` tag independent of the
+portal's `1.x`. If you want to update it on dev, also bump its entry in the overlay:
+
+```yaml
+  - name: ghcr.io/janeliascicomp/mrc-ng-server
+    newTag: "0.1.2"
+```
+
+## Wiring up the data root
+
+The scanner reads a large, **pre-existing** data tree (e.g.
+`/groups/cryoet/cryoet/data`) and the API reads the same tree to
+serve previews and launch Neuroglancer. Unlike the SQLite DB and the thumbnail
+cache — which the app creates from scratch — this data already lives on storage
+your cluster administrators manage.
+
+In Kubernetes a pod can only read storage that has been explicitly handed to it
+through a **PersistentVolumeClaim (PVC)** — a named request for storage. *Where*
+that storage physically lives (an NFS export, a `/groups` mount, etc.) is
+configured by the cluster/HPC team, not by these manifests.
+
+`deploy/k8s/base/storage.yaml` declares a PVC named **`catalog-data-pvc`** as a
+placeholder. Before deploying, take this question to the HPC/OpenShift team:
+
+> *"How do we make `/groups/cryoet/cryoet/data` readable from pods
+> in the `ai-cryoet` namespace, and what should the PVC be called?"*
+
+They will typically do one of:
+
+- **Bind `catalog-data-pvc` to a statically-provisioned PersistentVolume** that
+  points at the existing export. In this case keep the PVC name as-is and they
+  fill in the `storageClassName` / `volumeName` to match their PV.
+- **Hand you an existing PVC name.** In that case either rename it to
+  `catalog-data-pvc`, or change `claimName: catalog-data-pvc` to their name in
+  `api.yaml` and `scanner.yaml`.
+
+Whatever path is mounted **must equal** `CATALOG_DATA_ROOT` in `config.env` and
+the `mountPath` for the `catalog-data` volume in `api.yaml` and `scanner.yaml`
+(all three default to `/groups/cryoet/cryoet/data`). The scanner
+records absolute paths under this root and the API validates reads against it,
+so they must agree exactly.
+
+The other two volumes (`catalog-db-pvc`, `thumbnails-pvc`) are created and
+populated by the app and are shared between the API pod and the scanner pod, so
+they use `ReadWriteMany`. Confirm with the HPC team that the default storage
+class supports `ReadWriteMany` (NFS/CephFS do); if not, set an RWX-capable
+`storageClassName` on those PVCs.
 
 ## Neuroglancer in production
 
@@ -301,95 +439,6 @@ dev origin that should talk to a different Fileglancer instance:
 docker build --build-arg FILEGLANCER_URL=https://fileglancer-dev.int.janelia.org \
   -f frontend/Dockerfile frontend
 ```
-
-## Updating the Application
-
-Push a `v*.*.*` git tag from `main` to build and publish new images (see the
-[build workflow](../.github/workflows/build-images.yml)):
-
-```bash
-git checkout main && git pull
-git tag v1.0.0
-git push origin v1.0.0
-```
-
-This builds and pushes all three images (`ai-cryoet-api`, `ai-cryoet-frontend`,
-`ai-cryoet-scanner`) to `ghcr.io/ai-cryoet/`.
-
-Don't forget to draft a new release to go along with the tag: https://github.com/AI-CryoET/ai-cryoet-portal/releases/new. Auto-generate the notes to include all the PRs since the last tag.
-
-Then pin the new tag in the overlay's `kustomization.yaml`. Note: the build
-workflow's `metadata-action` strips the leading `v`, so a `v1.0.0` git tag
-publishes image tag `1.0.0` (without the `v`) — use that here:
-
-```yaml
-images:
-  - name: ghcr.io/ai-cryoet/ai-cryoet-api
-    newTag: "1.0.0"
-  - name: ghcr.io/ai-cryoet/ai-cryoet-frontend
-    newTag: "1.0.0"
-  - name: ghcr.io/ai-cryoet/ai-cryoet-scanner
-    newTag: "1.0.0"
-```
-
-Then `oc apply -k deploy/k8s/overlays/production`. Pushing a `v*.*.*` git tag builds and
-publishes all three images (see the workflow).
-
-**mrc-ng-server is versioned separately.** Its image is built and tagged in its
-own repo ([mrc-ng-server](https://github.com/JaneliaSciComp/mrc-ng-server)), not
-by this repo's workflow, so it carries its own `0.x` tag independent of the
-portal's `1.x`. To update it, bump only its entry in the overlay:
-
-```yaml
-  - name: ghcr.io/janeliascicomp/mrc-ng-server
-    newTag: "0.1.2"
-```
-
-## The development environment
-
-`deploy/k8s/overlays/dev` deploys the same base into the **`ai-cryoet-dev`**
-namespace at `https://ai-cryoet-dev.int.janelia.org`. It reads the *same*
-read-only NFS data tree as production (every mount of it is flagged `readOnly`,
-so dev cannot corrupt it) but owns its own catalog DB, thumbnail, MD-preview and
-pyramid-cache volumes, so a broken scan or schema change in dev never touches
-production.
-
-### One-time setup
-
-1. **DNS.** `ai-cryoet-dev.int.janelia.org` must resolve to the cluster router
-   (the same address `ai-cryoet.int.janelia.org` points at). The `int` zone is
-   internal-only split-horizon, so this is a request to the network team — the
-   Route will be admitted by the router before DNS exists, but browsers will not
-   reach it until the record is in place.
-2. **Config.** `cp deploy/k8s/overlays/dev/config.env.example
-   deploy/k8s/overlays/dev/config.env` (gitignored; the checked-in example
-   already carries the dev hostnames).
-3. **Namespace.** `oc apply -f deploy/k8s/overlays/dev/namespace.yaml`
-4. **Pull secret.** Create `ghcr-pull` in `ai-cryoet-dev` — see
-   [step 3](#3-create-the-image-pull-secret-for-ghcrio). Secrets do not cross
-   namespaces, so production's copy does not count.
-5. **Fileglancer allowlist.** "Save to file share" will 403 from the dev origin
-   until `https://ai-cryoet-dev.int.janelia.org` is added to Fileglancer's
-   `api_allowed_origins` — see [Fileglancer write
-   access](#prerequisite-allowlist-this-apps-origin-on-fileglancer). Download
-   works regardless.
-6. **Deploy and seed.**
-   ```bash
-   oc apply -k deploy/k8s/overlays/dev
-   oc -n ai-cryoet-dev create job --from=cronjob/scanner scanner-initial
-   oc -n ai-cryoet-dev logs -f job/scanner-initial
-   ```
-   The nightly CronJob keeps it fresh after that; the manual job avoids waiting
-   until 02:00 for a catalog.
-
-### Using it to stage a release
-
-The dev overlay pins image tags exactly as production does, which is the point:
-bump the tags in `deploy/k8s/overlays/dev/kustomization.yaml` to a new release,
-`oc apply -k deploy/k8s/overlays/dev`, verify, and only then bump production.
-Dev is deliberately *not* tracking `:latest` — the build workflow publishes only
-on `v*.*.*` tags, so `:latest` means "newest release" and would make dev's
-version depend on when a pod last restarted.
 
 ## Adding another environment
 
