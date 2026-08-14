@@ -7,10 +7,13 @@ Configuration via environment:
   CATALOG_DATA_ROOT          — filesystem root that bounds all preview/Neuroglancer reads.
                                Required at startup; the API refuses to start without it.
   CATALOG_THUMBNAIL_DIR      — directory containing pre-generated thumbnail PNGs.
-                               Required at startup; the API refuses to start without it.
-  CATALOG_MD_PREVIEW_DIR     — directory of cached OVITO/MD preview PNGs
-                               (aicryoet-tools .portal_cache). Optional; a missing
-                               dir just disables the /md-previews route.
+                               Defaults to ./data/.thumbnail-cache in the cwd (kept
+                               out of the shared CATALOG_DATA_ROOT so concurrent devs
+                               don't race on the same cache files); the API refuses
+                               to start if the resolved dir is missing.
+  CATALOG_MD_PREVIEW_DIR     — directory of cached OVITO/MD preview PNGs. Defaults to
+                               ./data/.md-preview-cache in the cwd; a missing dir
+                               just disables the /md-previews route.
   NEUROGLANCER_MAX_VIEWERS   — bounded LRU size for active viewers (default 10).
   NEUROGLANCER_VIEWER_TTL_SECONDS      — idle viewers reclaimed after this many
                                seconds without interaction, but only under
@@ -173,39 +176,37 @@ async def _lifespan(app: FastAPI):
     pre_seeded_thumb = hasattr(app.state, "thumbnail_root")
     if not pre_seeded_thumb:
         raw_thumb = os.environ.get("CATALOG_THUMBNAIL_DIR")
-        if not raw_thumb:
-            raise RuntimeError(
-                "CATALOG_THUMBNAIL_DIR is required (directory containing pre-generated "
-                "thumbnail PNGs). Generate thumbnails with: "
-                "CATALOG_DATA_ROOT=... CATALOG_THUMBNAIL_DIR=... pixi run scan --init"
-            )
+        thumb_path = (
+            Path(raw_thumb) if raw_thumb else Path.cwd() / "data" / ".thumbnail-cache"
+        )
         try:
-            resolved_thumb = Path(raw_thumb).resolve(strict=True)
+            resolved_thumb = thumb_path.resolve(strict=True)
         except (FileNotFoundError, OSError) as exc:
             raise RuntimeError(
-                f"CATALOG_THUMBNAIL_DIR={raw_thumb!r} does not exist or is unreadable"
+                f"CATALOG_THUMBNAIL_DIR={str(thumb_path)!r} does not exist or is "
+                "unreadable. Generate thumbnails with: "
+                "CATALOG_DATA_ROOT=... pixi run scan --init"
             ) from exc
         if not resolved_thumb.is_dir():
-            raise RuntimeError(f"CATALOG_THUMBNAIL_DIR={raw_thumb!r} is not a directory")
+            raise RuntimeError(f"CATALOG_THUMBNAIL_DIR={str(thumb_path)!r} is not a directory")
         app.state.thumbnail_root = resolved_thumb
 
     # CATALOG_MD_PREVIEW_DIR — directory of cached OVITO/MD preview PNGs
-    # (aicryoet-tools .portal_cache). Optional: unlike thumbnails this is a
-    # demo feature, so a missing/bad dir just disables the route (404) rather
+    # Optional: a missing/bad dir just disables the route (404) rather
     # than failing startup. Tests may pre-seed app.state.md_preview_root.
     if not hasattr(app.state, "md_preview_root"):
-        raw_md = os.environ.get(
-            "CATALOG_MD_PREVIEW_DIR",
-            "/groups/cryoet/cryoet/data/collepardolab/.portal_cache",
+        raw_md = os.environ.get("CATALOG_MD_PREVIEW_DIR")
+        md_path = (
+            Path(raw_md) if raw_md else Path.cwd() / "data" / ".md-preview-cache"
         )
         try:
-            resolved_md = Path(raw_md).resolve(strict=True)
+            resolved_md = md_path.resolve(strict=True)
             app.state.md_preview_root = resolved_md if resolved_md.is_dir() else None
         except (FileNotFoundError, OSError):
             app.state.md_preview_root = None
         if app.state.md_preview_root is None:
             logger.warning(
-                "CATALOG_MD_PREVIEW_DIR={!r} not found; /md-previews disabled", raw_md
+                "CATALOG_MD_PREVIEW_DIR={!r} not found; /md-previews disabled", str(md_path)
             )
 
     workers = _detect_multi_worker()

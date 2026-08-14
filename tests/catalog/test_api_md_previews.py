@@ -36,7 +36,7 @@ def _seed_app(tmp_path, md_root):
 
 @pytest.fixture
 def client(tmp_path):
-    md_dir = tmp_path / "portal_cache"
+    md_dir = tmp_path / ".md-preview-cache"
     md_dir.mkdir()
     app = _seed_app(tmp_path, md_dir)
     return TestClient(app), md_dir

@@ -26,34 +26,38 @@ For the schema itself, see `docs/schema.md` (human reference) and `src/schema/sc
 
 ## Development
 
-**Note:** This setup guide assumes you are working on machine with access to the Janelia file system.
+> [!IMPORTANT]
+> This setup guide assumes you are working on machine with access to the Janelia file system.
+
+### Tier 1 - local development using pixi commands
+
+> [!NOTE]
+> This tier does not allow you to test changes to the browser-based Neuroglancer viewer — see [Tier 2](#tier-2---local-pixi--mrc-ng-server-browser-based-neuroglancer) below.
 
 1. [Install pixi](https://pixi.prefix.dev/latest/installation/).
 2. From the repo root, run `pixi install` to materialize the Python environments.
 
 The frontend's Node deps are installed automatically the first time you run `pixi run frontend` (and re-run only when `package.json` / `package-lock.json` change). You don't need a separate `npm install` step.
 
-3. Create the database. Pass the path to the data root via the CATALOG_DATA_ROOT env variable. This will scan the samples at that path and create a SQLite database called `catalog.db` in your repo root.
+3. To create the database, run the below command from the repo root. Pass the path to the data root via the CATALOG_DATA_ROOT env variable.
 
-To also pre-generate tomogram thumbnails, set `CATALOG_THUMBNAIL_DIR` to a writable directory (or pass `--thumbnail-dir`). A plain rescan auto-heals a wiped cache; `--force` fully rebuilds it.
+> [!NOTE]
+> A small subset of data is maintained in the cryoet fileshare under a `scratch/data` subdirectory of the full tree — this is the recommended path to point CATALOG_DATA_ROOT at; otherwise, create a small subset for your personal use and point it at that. The full dataset is too large for local testing.
 
 ```
-CATALOG_DATA_ROOT=/path/to/data CATALOG_THUMBNAIL_DIR=/path/to/thumbnails pixi run scan --init
+CATALOG_DATA_ROOT=/path/to/scratch/data pixi run scan --init
 ```
+
+This command scans the samples under the data root path and creates a SQLite database called `catalog.db` in the root of the current working directory. It also pre-generates tomogram thumbnails and, for simulation samples, OVITO MD-preview images, creating the cache folders on demand. By default the image caches land at `./data/.thumbnail-cache` and `./data/.md-preview-cache` in the current working directory. Override either with `CATALOG_THUMBNAIL_DIR` / `CATALOG_MD_PREVIEW_DIR` (or `--thumbnail-dir` / `--md-preview-dir`) to put them somewhere else.
 
 4. The portal has two processes: the FastAPI backend (reads the catalog DB) and the TanStack Start frontend (server-renders + hydrates a React app, proxying `/api` to FastAPI). Run them in two terminals.
 
 **Terminal 1 — API:**
 ```
-CATALOG_DATA_ROOT=/path/to/data CATALOG_THUMBNAIL_DIR=/path/to/thumbnails pixi run api
+CATALOG_DATA_ROOT=/path/to/scratch/data pixi run api
 ```
-Serves `http://localhost:8000`. Swagger UI at `/docs`.
-
-To serve cached OVITO/MD preview images for simulation samples (rendered upstream by [aicryoet-tools](https://github.com/schneidermc/aicryoet-tools) into a `.portal_cache` directory), set `CATALOG_MD_PREVIEW_DIR` to that directory. It is **optional** — if unset it defaults to `/groups/cryoet/cryoet/data/collepardolab/.portal_cache`, and if the directory is missing the `/api/md-previews` route is simply disabled (it does not block API startup, unlike `CATALOG_THUMBNAIL_DIR`).
-```
-CATALOG_DATA_ROOT=/path/to/data CATALOG_THUMBNAIL_DIR=/path/to/thumbnails \
-  CATALOG_MD_PREVIEW_DIR=/path/to/.portal_cache pixi run api
-```
+> [!NOTE]
+> The API reads thumbnails and MD-preview images from the same default cache paths the scanner wrote them to above; pass matching `CATALOG_THUMBNAIL_DIR` / `CATALOG_MD_PREVIEW_DIR` values if you overrode them during scanning. A missing MD-preview dir just disables the `/api/md-previews` route; a missing thumbnail dir blocks API startup (run the scan first).
 
 > **No hot-reload.** The API runs with `--no-reload` (single worker). Neuroglancer's in-process HTTP server is incompatible with uvicorn's `--reload` mode, which tries to bind a second HTTP server on the same port.
 
@@ -63,7 +67,7 @@ pixi run frontend
 ```
 Open the data portal at `http://localhost:3000`.
 
-### Alternate port
+#### Alternate port
 
 If port 8000 is taken, pass uvicorn flags through to use an alternate port. You can also change the IP binding:
 ```
@@ -80,21 +84,44 @@ API_PROXY_TARGET=http://localhost:8034
 FRONTEND_PORT=3030
 ```
 
-### Neuroglancer configuration
+### Tier 2 - local pixi + mrc-ng-server (serves MRC files to browser-based Neuroglancer)
 
-The "View in Neuroglancer" feature starts an in-process HTTP server inside the API process. It listens on its own port, separate from the API port, and is **not** behind nginx — the browser connects to it directly.
+> [!NOTE]
+> This tier extends Tier 1 to also allow development testing of the browser-based Neuroglancer viewer, which loads tomograms from [mrc-ng-server](https://github.com/JaneliaSciComp/mrc-ng-server) over the `precomputed` protocol. Requires a sibling checkout of that repo.
 
-| Environment variable | Default | Description |
-|---|---|---|
-| `NEUROGLANCER_BIND_ADDRESS` | `0.0.0.0` | IP address the Neuroglancer server binds to. |
-| `NEUROGLANCER_PORT` | `8050` | Port the Neuroglancer server listens on. Must be published separately from the API port; the browser connects to this port directly (not through nginx). |
-| `NEUROGLANCER_MAX_VIEWERS` | `10` | Maximum concurrent viewers in the LRU registry. Each live viewer pins its volume in RAM (~1.3–1.5 GB), so worst-case memory ≈ this × volume size — keep it matched to the pod memory limit (10 fits 24 Gi; ~12 is the practical ceiling). Raising it also requires bumping the volume-cache `maxsize` in `_mrc.py`. |
-| `NEUROGLANCER_VIEWER_TTL_SECONDS` | `3600` | Idle viewers are torn down (volume RAM freed) after this many seconds without interaction — the stand-in for a browser tab-close signal, which isn't reachable. Only fires under memory pressure (see below). |
-| `NEUROGLANCER_SWEEP_INTERVAL_SECONDS` | `60` | How often the idle sweep runs. |
-| `NEUROGLANCER_MEMORY_PRESSURE_RATIO` | `0.8` | The idle sweep only reclaims viewers once anon memory reaches this fraction of the pod's cgroup limit. Below it, idle viewers stay resident (fast re-open, RAM to spare); the LRU cap remains the hard bound. |
-| `DASHBOARD_HOSTNAME` | _(unset)_ | Overrides the hostname in Neuroglancer viewer URLs. Use in deployments where the server-side host differs from what the browser sees. |
+1. Clone `mrc-ng-server` alongside this repo and run `pixi install` inside it.
 
-The API must run as a **single worker with `--no-reload`** because the Neuroglancer server is process-global. Running multiple workers or hot-reloading would attempt to bind a second HTTP server on the same port.
+2. Point it at the same data root as this repo's `CATALOG_DATA_ROOT`, and pick a cache directory, e.g., `/tmp`:
+
+```
+export MRCNG_SOURCE_ROOT=/path/to/scratch/data   # same value as CATALOG_DATA_ROOT above
+export MRCNG_CACHE_ROOT=/tmp/mrc-cache
+```
+
+3. Build a pyramid cache. Precomputing the full tree is slow and storage-intensive for local dev — scope the build to a subdirectory with `--under`(see `mrc-ng-server`'s README):
+
+```
+pixi run build-cache --source-root $MRCNG_SOURCE_ROOT --cache-root $MRCNG_CACHE_ROOT \
+    --under path/to/one/sample_dir
+```
+
+Tomograms outside that scope still work — they fall back to a single-resolution (scale 0) view read straight from the MRC file, no pyramid required.
+
+4. Start `mrc-ng-server`. Its `pixi run serve` task hardcodes production TLS cert paths and port 8000 (which collides with the API below) — for local dev, run uvicorn directly instead, on a separate port, over plain HTTP. That's fine locally; the browser only blocks a plain-HTTP data source when the viewer page itself is served over HTTPS:
+
+```
+pixi run python -m uvicorn mrcng.server.app:get_app --factory --host 0.0.0.0 --port 8001
+```
+
+5. Back in the ai-cryoet repo, start the API with `MRCNG_BASE_URL` pointed at that local `mrc-ng-server`:
+
+```
+CATALOG_DATA_ROOT=/path/to/scratch/data \
+MRCNG_BASE_URL=http://localhost:8001/data \
+pixi run api
+```
+
+6. Start the frontend as in Tier 1 (`pixi run frontend`). "Open in Neuroglancer" links now resolve: tomograms under the cache scope render the full pyramid (as indicated by requests in the network tab showing request URLs with scale 2_2_2 or higher), everything else opens at scale 0 (indicated by 1_1_1 in the request URL).
 
 ---
 ## Production deployment

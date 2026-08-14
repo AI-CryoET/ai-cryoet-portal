@@ -85,15 +85,21 @@ def _build_parser() -> argparse.ArgumentParser:
     scan.add_argument(
         "--thumbnail-dir",
         default=os.environ.get("CATALOG_THUMBNAIL_DIR"),
-        help="directory for pre-generated thumbnail cache (defaults to $CATALOG_THUMBNAIL_DIR)",
+        help=(
+            "directory for pre-generated thumbnail cache (defaults to "
+            "$CATALOG_THUMBNAIL_DIR, else ./data/.thumbnail-cache in the cwd — "
+            "kept out of the shared data root so concurrent devs don't race "
+            "on the same cache files)"
+        ),
     )
     scan.add_argument(
         "--md-preview-dir",
         default=os.environ.get("CATALOG_MD_PREVIEW_DIR"),
         help=(
             "directory for the OVITO MD-preview cache, served by the API's "
-            "/md-previews route (defaults to $CATALOG_MD_PREVIEW_DIR). Requires "
-            "the OVITO dependency (pixi 'catalog' feature)."
+            "/md-previews route (defaults to $CATALOG_MD_PREVIEW_DIR, else "
+            "./data/.md-preview-cache in the cwd). Requires the OVITO "
+            "dependency (pixi 'catalog' feature)."
         ),
     )
     scan.add_argument(
@@ -169,15 +175,19 @@ def _cmd_scan(args) -> int:
     if args.init:
         db.init_schema(engine)
 
-    thumbnail_dir = None
-    if args.thumbnail_dir:
-        thumbnail_dir = Path(args.thumbnail_dir)
-        thumbnail_dir.mkdir(parents=True, exist_ok=True)
+    thumbnail_dir = (
+        Path(args.thumbnail_dir)
+        if args.thumbnail_dir
+        else Path.cwd() / "data" / ".thumbnail-cache"
+    )
+    thumbnail_dir.mkdir(parents=True, exist_ok=True)
 
-    md_preview_dir = None
-    if args.md_preview_dir:
-        md_preview_dir = Path(args.md_preview_dir)
-        md_preview_dir.mkdir(parents=True, exist_ok=True)
+    md_preview_dir = (
+        Path(args.md_preview_dir)
+        if args.md_preview_dir
+        else Path.cwd() / "data" / ".md-preview-cache"
+    )
+    md_preview_dir.mkdir(parents=True, exist_ok=True)
 
     try:
         report = scanner.scan_root(

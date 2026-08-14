@@ -117,6 +117,34 @@ def test_precompute_skipped_when_cli_not_on_path(tmp_path):
     run.assert_not_called()
 
 
+def test_thumbnail_and_md_preview_dirs_default_under_cwd(tmp_path, monkeypatch):
+    """Unset --thumbnail-dir/--md-preview-dir (and their env vars) fall back to
+    ./data/.thumbnail-cache and ./data/.md-preview-cache under the cwd, created
+    on demand — not under the (possibly shared) data root, so concurrent devs
+    scanning the same root don't race on the same cache files."""
+    monkeypatch.delenv("CATALOG_THUMBNAIL_DIR", raising=False)
+    monkeypatch.delenv("CATALOG_MD_PREVIEW_DIR", raising=False)
+    monkeypatch.chdir(tmp_path)
+    data_root = tmp_path / "data_root"
+    data_root.mkdir()
+    report = scanner.ScanReport(upserted=1)
+    captured = {}
+
+    def fake_scan_root(engine, root, **kwargs):
+        captured["thumbnail_dir"] = kwargs["thumbnail_dir"]
+        captured["md_preview_dir"] = kwargs["md_preview_dir"]
+        return report
+
+    with patch.object(scanner, "scan_root", side_effect=fake_scan_root):
+        rc = _run_scan(data_root)
+
+    assert rc == 0
+    assert captured["thumbnail_dir"] == tmp_path / "data" / ".thumbnail-cache"
+    assert captured["md_preview_dir"] == tmp_path / "data" / ".md-preview-cache"
+    assert captured["thumbnail_dir"].is_dir()
+    assert captured["md_preview_dir"].is_dir()
+
+
 def test_precompute_skipped_when_unset(tmp_path, monkeypatch):
     """No cache root (arg or $MRCNG_CACHE_ROOT) ⇒ mrc-pyramid is never invoked."""
     monkeypatch.delenv("MRCNG_CACHE_ROOT", raising=False)
