@@ -105,16 +105,6 @@ describe('NeuroglancerButton — kind:launch', () => {
     entityId: 't1'
   };
 
-  // Tilt series still launch the API's in-process Neuroglancer, whose URL gets
-  // re-rooted onto the current origin (dev proxy). No group id.
-  const tiltSeriesSource = {
-    kind: 'launch' as const,
-    entity: 'tilt-series' as const,
-    sampleId: 'sample_a',
-    acquisitionId: 'acq1',
-    entityId: 't1'
-  };
-
   it('opens a tomogram over its group-scoped launch URL and uses the viewer URL as-is', async () => {
     // Stateless tomogram launch: the backend returns an external Fileglancer
     // viewer URL, which must open unchanged (re-rooting it would break it).
@@ -140,55 +130,6 @@ describe('NeuroglancerButton — kind:launch', () => {
 
     await waitFor(() => {
       expect(mockWindow.location.href).toBe('https://viewer.example/ng#!state');
-    });
-  });
-
-  it('re-roots a tilt-series viewer URL onto the current origin', async () => {
-    // Backend returns an absolute URL on the API host's Neuroglancer port.
-    mockApiFetch.mockResolvedValueOnce({
-      url: 'http://server-host:8050/v/tok123/'
-    });
-
-    renderWithClient(<NeuroglancerButton source={tiltSeriesSource} />);
-    const btn = screen.getByRole('button', { name: /view in neuroglancer/i });
-
-    await userEvent.click(btn);
-
-    expect(window.open).toHaveBeenCalledWith('about:blank', '_blank');
-
-    await waitFor(() => {
-      expect(mockApiFetch).toHaveBeenCalledWith(
-        '/tilt-series/sample_a/acq1/t1/neuroglancer',
-        { method: 'POST' }
-      );
-    });
-
-    // DEV-ONLY behaviour: the backend host:port is dropped and only the path is
-    // re-rooted onto the current origin, so the browser hits the Vite dev
-    // server's Neuroglancer reverse proxy instead of a second port.
-    await waitFor(() => {
-      expect(mockWindow.location.href).toBe(
-        `${window.location.origin}/v/tok123/`
-      );
-    });
-  });
-
-  it('drops the backend host and port entirely (uses only the path)', async () => {
-    // A wildly different backend host/port must not survive the rewrite — the
-    // dev proxy serves Neuroglancer on the frontend's own origin.
-    mockApiFetch.mockResolvedValueOnce({
-      url: 'http://10.20.30.40:9999/v/tok456/'
-    });
-
-    renderWithClient(<NeuroglancerButton source={tiltSeriesSource} />);
-    await userEvent.click(
-      screen.getByRole('button', { name: /view in neuroglancer/i })
-    );
-
-    await waitFor(() => {
-      expect(mockWindow.location.href).toBe(
-        `${window.location.origin}/v/tok456/`
-      );
     });
   });
 

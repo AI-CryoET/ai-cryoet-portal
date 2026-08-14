@@ -1,4 +1,4 @@
-"""Tilt-series preview/neuroglancer + acquisition polar endpoints (plan §7.5).
+"""Tilt-series preview + acquisition polar endpoints (plan §7.5).
 
 Coverage:
     - GET preview.png — zarr path (synthetic ome.zarr) returns PNG

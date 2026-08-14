@@ -12,21 +12,14 @@ import { apiFetch } from '../../utils/api';
 
 export type NeuroglancerSource =
   // `groupId` is the Reconstructions/{reconstruction_alignment_id}/ segment —
-  // required for tomograms and annotations (their ids are only file stems,
-  // unique within the group), absent for tilt series.
+  // required since tomogram/annotation ids are only file stems, unique within
+  // the group.
   | {
       kind: 'launch';
       entity: 'tomogram' | 'annotation';
       sampleId: string;
       acquisitionId: string;
       groupId: string;
-      entityId: string;
-    }
-  | {
-      kind: 'launch';
-      entity: 'tilt-series';
-      sampleId: string;
-      acquisitionId: string;
       entityId: string;
     }
   | { kind: 'zarr-link'; url: string }
@@ -37,7 +30,6 @@ const LAUNCH_SEGMENT: Record<
   string
 > = {
   tomogram: 'tomograms',
-  'tilt-series': 'tilt-series',
   annotation: 'annotations'
 };
 
@@ -55,9 +47,8 @@ function launchNeuroglancer(
   source: Extract<NeuroglancerSource, { kind: 'launch' }>
 ): Promise<ViewerLaunchOut> {
   const segment = LAUNCH_SEGMENT[source.entity];
-  const group = 'groupId' in source ? `/${source.groupId}` : '';
   return apiFetch<ViewerLaunchOut>(
-    `/${segment}/${source.sampleId}/${source.acquisitionId}${group}/${source.entityId}/neuroglancer`,
+    `/${segment}/${source.sampleId}/${source.acquisitionId}/${source.groupId}/${source.entityId}/neuroglancer`,
     { method: 'POST' }
   );
 }
@@ -131,38 +122,10 @@ export function NeuroglancerButton({
     >;
     mutation.mutate(launchSource, {
       onSuccess(data) {
-        // Tomograms and annotations return a fully-formed external viewer URL
+        // The backend returns a fully-formed external viewer URL
         // (Fileglancer-hosted Neuroglancer + a precomputed:// source served by
-        // mrc-server, with any bbox baked into the URL) — open it as-is. The
-        // re-rooting below only applies to tilt-series, still served by the
-        // API's own in-process Neuroglancer port.
-        // ponytail: drop this branch once tilt-series goes stateless too.
-        if (
-          launchSource.entity === 'tomogram' ||
-          launchSource.entity === 'annotation'
-        ) {
-          w!.location.href = data.url;
-          return;
-        }
-        // DEV-ONLY same-origin re-rooting (pairs with the Neuroglancer reverse
-        // proxy in vite.config.ts).
-        //
-        // The backend returns an absolute Neuroglancer URL pointing at the API
-        // host's own Neuroglancer port, e.g. http://<api-host>:8050/v/<token>/.
-        // In dev we don't want the browser to hit that second port directly (it
-        // may not be forwarded over an ssh / VS Code tunnel, or gets remapped to
-        // a different local port — see vite.config.ts). The dev server proxies
-        // Neuroglancer's root paths on THIS origin, so we keep only the path and
-        // re-root it onto window.location.origin. This is safe because the
-        // Neuroglancer client fetches its `python://` volume data relative to
-        // the page origin, so everything rides the one already-forwarded port.
-        //
-        // NOTE: this assumes the dev proxy is present. In production Neuroglancer
-        // is served on its own port and the backend URL would be used as-is, so
-        // this rewrite would need revisiting for a non-dev deployment.
-        const u = new URL(data.url);
-        w!.location.href =
-          window.location.origin + u.pathname + u.search + u.hash;
+        // mrc-server, with any bbox baked into the URL) — open it as-is.
+        w!.location.href = data.url;
       },
       onError() {
         w?.close();

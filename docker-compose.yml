@@ -18,9 +18,6 @@ services:
       - CATALOG_DB_URL=sqlite:////db/catalog.db
       - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost}
       - CATALOG_THUMBNAIL_DIR=/thumbnails
-      - NEUROGLANCER_PORT=8050
-    ports:
-      - "8050:8050"
     volumes:
       - ${CATALOG_DATA_ROOT}:${CATALOG_DATA_ROOT}:ro
       - catalog-db:/db

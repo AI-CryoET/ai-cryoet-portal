@@ -21,9 +21,8 @@ Route (ai-cryoet.int.janelia.org) — edge TLS, HTTP→HTTPS redirect
     |
     v
   nginx (8080)
-    |  /api/*                      -> api      (8000)   FastAPI read API
-    |  /v /neuroglancer /events ...  -> api      (8050)   in-process Neuroglancer
-    |  everything else             -> frontend (3000)   TanStack Start SSR
+    |  /api/*            -> api      (8000)   FastAPI read API
+    |  everything else   -> frontend (3000)   TanStack Start SSR
     |
     v
   api  ──reads──>  catalog-data (read-only data tree)
@@ -47,7 +46,7 @@ mrc-ng-server data service:
 | Component | Image | Port(s) | Role |
 |---|---|---|---|
 | `nginx` | `nginxinc/nginx-unprivileged` | 8080 | Edge proxy. The only service behind the portal Route. |
-| `api` | `ai-cryoet-api` | 8000, 8050 | FastAPI read API + in-process Neuroglancer server. |
+| `api` | `ai-cryoet-api` | 8000 | FastAPI read API. |
 | `frontend` | `ai-cryoet-frontend` | 3000 | Server-rendered React app. |
 | `scanner` | `ai-cryoet-scanner` | — | CronJob: walks the data tree, rebuilds the DB + thumbnails, and precomputes the `mrc-cache` pyramid. |
 | `mrc-ng-server` | `mrc-ng-server` | 8000 | Stateless service that serves tomograms to Neuroglancer over `precomputed`. Own image/repo/tag; own Route. Scalable (unlike `api`). |
@@ -59,7 +58,7 @@ deploy/k8s/
 ├── base/                    # Shared resource definitions
 │   ├── kustomization.yaml
 │   ├── storage.yaml         # PVCs: catalog-data, catalog-db, thumbnails, mrc-cache
-│   ├── api.yaml             # FastAPI + Neuroglancer Deployment + Service
+│   ├── api.yaml             # FastAPI Deployment + Service
 │   ├── frontend.yaml        # SSR frontend Deployment + Service
 │   ├── nginx.yaml           # Edge proxy ConfigMap + Deployment + Service
 │   ├── scanner.yaml         # Catalog scanner CronJob
@@ -370,20 +369,6 @@ populated by the app and are shared between the API pod and the scanner pod, so
 they use `ReadWriteMany`. Confirm with the HPC team that the default storage
 class supports `ReadWriteMany` (NFS/CephFS do); if not, set an RWX-capable
 `storageClassName` on those PVCs.
-
-## Neuroglancer in production
-
-"View in Neuroglancer" starts an HTTP server *inside* the API process on port
-8050. The frontend re-roots the viewer URL onto the page origin (it drops the
-host and port the API reports), so the Neuroglancer paths must be reachable
-through nginx on the same origin as the portal. The nginx ConfigMap in
-`deploy/k8s/base/nginx.yaml` proxies Neuroglancer's fixed root paths (`/v`,
-`/neuroglancer`, `/events`, `/state`, `/action`, `/volume_response`,
-`/credentials`) to `api:8050` for exactly this reason.
-
-Because the Neuroglancer server is process-global, the API **must** run as a
-single replica with a single uvicorn worker (the image is built this way). Do
-not scale the `api` Deployment above 1.
 
 ## Fileglancer write access
 

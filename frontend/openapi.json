@@ -1146,67 +1146,6 @@
         }
       }
     },
-    "/tilt-series/{sample_id}/{acquisition_id}/{tilt_series_id}/neuroglancer": {
-      "post": {
-        "tags": [
-          "tilt-series"
-        ],
-        "summary": "Tilt Series Neuroglancer",
-        "description": "Launch a Neuroglancer viewer over the tilt-series stack.\n\nPrefer the authored ``Stack/`` (zarr, then ``.st``/``.mrc``); fall back to\nthe acquisition's raw ``Frames/`` images. 422 if none are reachable.",
-        "operationId": "tilt_series_neuroglancer_tilt_series__sample_id___acquisition_id___tilt_series_id__neuroglancer_post",
-        "parameters": [
-          {
-            "name": "sample_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "Sample Id"
-            }
-          },
-          {
-            "name": "acquisition_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "Acquisition Id"
-            }
-          },
-          {
-            "name": "tilt_series_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "Tilt Series Id"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ViewerLaunchOut"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/thumbnails/{relpath}": {
       "get": {
         "tags": [
