@@ -5,11 +5,11 @@ import {
   Button,
   Chip,
   Drawer,
-  Grid,
   IconButton,
   Stack,
   Typography
 } from '@mui/material';
+import Grid from '@mui/material/Grid2';
 import FilterListIcon from '@mui/icons-material/FilterList';
 import CloseIcon from '@mui/icons-material/Close';
 import { useFiltersOptionsQuery, useSamplesQuery } from '~/utils/queryOptions';
@@ -123,16 +123,13 @@ export function AllDataBrowser({
   return (
     <Grid container spacing={4}>
       <Grid
-        item
-        lg={2}
-        md={3}
+        size={{ xs: 12, lg: 2, md: 3 }}
         sx={{ display: { xs: 'none', md: 'block' } }}
-        xs={12}
       >
         {filterPanel}
       </Grid>
 
-      <Grid item lg={10} md={9} xs={12}>
+      <Grid size={{ lg: 10, md: 9, xs: 12 }}>
         <Stack spacing={2}>
           <Stack
             alignItems="center"
