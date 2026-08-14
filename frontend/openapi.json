@@ -3624,6 +3624,42 @@
         ],
         "title": "SampleDetail"
       },
+      "SampleMatch": {
+        "properties": {
+          "acquisition_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Acquisition Id"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "sample",
+              "acquisition",
+              "tomogram",
+              "annotation"
+            ],
+            "title": "Kind"
+          },
+          "matched_id": {
+            "type": "string",
+            "title": "Matched Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "kind",
+          "matched_id"
+        ],
+        "title": "SampleMatch",
+        "description": "Where a browse-page `q` search matched inside a sample. Sample-level\nmatches carry ``acquisition_id=None``; descendant matches carry the\nacquisition so the frontend can auto-expand and mark it."
+      },
       "SampleSummary": {
         "properties": {
           "sample_id": {
@@ -3734,6 +3770,14 @@
               }
             ],
             "title": "Md Preview Path"
+          },
+          "matches": {
+            "items": {
+              "$ref": "#/components/schemas/SampleMatch"
+            },
+            "type": "array",
+            "title": "Matches",
+            "default": []
           }
         },
         "type": "object",

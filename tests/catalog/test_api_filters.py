@@ -283,16 +283,25 @@ def test_q_matches_sample_id_case_insensitive(client):
     assert _ids(client.get("/samples", params={"q": "ALPHA"})) == {"sample_alpha"}
 
 
-def test_q_matches_description_case_insensitive(client):
-    # 'whole cell' is in sample_beta's description; uppercase to confirm case insensitivity
-    assert _ids(client.get("/samples", params={"q": "WHOLE CELL"})) == {"sample_beta"}
+def test_q_does_not_match_description_phrase(client):
+    """`q` is IDs-only by design (sample/acquisition/tomogram/annotation IDs);
+    description text is deliberately not searched.
+
+    'whole cell' appears only in sample_beta's description (not in any
+    sample_id/acquisition_id/tomogram_id), so a description-search hit would
+    return sample_beta. Since q no longer searches descriptions, it must
+    return nothing.
+    """
+    assert _ids(client.get("/samples", params={"q": "WHOLE CELL"})) == set()
 
 
-def test_q_matches_description_mixed_case(client):
-    """'GAMMA' lives only in sample_gamma's description (in caps)."""
-    # 'gamma' (lowercase) appears in BOTH the sample_id and the description,
-    # so we use a more specific phrase here.
-    assert _ids(client.get("/samples", params={"q": "simulated"})) == {"sample_gamma"}
+def test_q_does_not_match_description_word(client):
+    """Same regression check with a different description-only token.
+
+    'simulated' appears only in sample_gamma's description, not in any ID in
+    the fixture, so it must not match now that q is IDs-only.
+    """
+    assert _ids(client.get("/samples", params={"q": "simulated"})) == set()
 
 
 # ── Sort + order ──────────────────────────────────────────────────────────

@@ -5,13 +5,20 @@ import { sampleDetailQueryOptions } from '~/utils/queryOptions';
 import { matchAcquisition } from '~/utils/acquisitionMatch';
 import type { SamplesSearchParams } from '~/utils/samplesSearch';
 import { SampleAcquisitionsTable } from '~/components/samples/SampleAcquisitionsTable';
+import type { SampleMatch } from '~/types';
+import {
+  matchedAcquisitionIds,
+  orderWithMatchesFirst
+} from './samplesMatchDisplay';
 
 export function AcquisitionsSubTable({
   sampleId,
-  filters
+  filters,
+  matches
 }: {
   readonly sampleId: string;
   readonly filters?: SamplesSearchParams;
+  readonly matches?: SampleMatch[];
 }) {
   const { data, isLoading, isError } = useQuery(
     sampleDetailQueryOptions(sampleId)
@@ -23,6 +30,20 @@ export function AcquisitionsSubTable({
   const filtered = useMemo(
     () => (filters ? all.filter(a => matchAcquisition(a, filters)) : all),
     [all, filters]
+  );
+
+  // Acquisitions containing a search hit (id/tomogram/annotation) — highlighted
+  // in the table below so the user can spot where their query matched.
+  const highlight = useMemo(
+    () => matchedAcquisitionIds(matches ?? []),
+    [matches]
+  );
+
+  // Matched acquisitions bubble to the top (stable order within each group) so
+  // a hit is visible without scrolling the sub-table.
+  const ordered = useMemo(
+    () => orderWithMatchesFirst(filtered, highlight, a => a.acquisition_id),
+    [filtered, highlight]
   );
 
   // The server only returns a sample when ≥1 acquisition matched, so a filtered
@@ -55,8 +76,9 @@ export function AcquisitionsSubTable({
             </Typography>
           ) : null}
           <SampleAcquisitionsTable
-            acquisitions={filtered}
+            acquisitions={ordered}
             compact
+            highlightAcquisitionIds={highlight}
             isLoading={isLoading}
             sampleId={sampleId}
           />

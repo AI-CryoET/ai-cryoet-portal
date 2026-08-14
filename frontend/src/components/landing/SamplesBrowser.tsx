@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import {
   Alert,
   Box,
@@ -69,7 +69,13 @@ export function SamplesBrowser({
   // drives the query (and subtable filtering / expand-all). `data_source` is
   // forced to this arm regardless of the URL.
   const debouncedSearch = useDebounce(search, 300);
-  const armScoped = { ...debouncedSearch, data_source: [dataSource] };
+  // Memoized so its identity is stable between the 300ms debounce windows —
+  // otherwise a fresh object every keystroke would bust SamplesPortalTable's
+  // memo (the filtering-lag fix) on filter typing.
+  const armScoped = useMemo(
+    () => ({ ...debouncedSearch, data_source: [dataSource] }),
+    [debouncedSearch, dataSource]
+  );
   const { data: samples, isFetching } = useSamplesQuery(armScoped);
   const rows = samples ?? [];
 
@@ -92,6 +98,21 @@ export function SamplesBrowser({
       replace: true
     });
   const reset = () => navigate({ search: () => ({}), replace: true });
+
+  // Stable so it doesn't bust SamplesPortalTable's memo every render. `q` isn't
+  // a gated field, so applyGating passes it through untouched.
+  const onSearchChange = useCallback(
+    (v: string) =>
+      navigate({
+        search: prev =>
+          mergePatch(
+            prev,
+            applyGating(prev, { q: v || undefined }, dataSource)
+          ),
+        replace: true
+      }),
+    [navigate, dataSource]
+  );
 
   const disabledGroups = computeDisabledGroups(search, dataSource);
   const notices = filterNotices(search, dataSource);
@@ -205,7 +226,9 @@ export function SamplesBrowser({
             expandAllDetails={expandAll}
             filters={armScoped}
             loading={isFetching}
+            onSearchChange={onSearchChange}
             rows={rows}
+            searchValue={search.q ?? ''}
           />
         </Box>
       </Grid>

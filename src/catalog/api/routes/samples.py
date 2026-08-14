@@ -4,7 +4,7 @@ from __future__ import annotations
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from sqlalchemy import and_, exists, func, or_, select
+from sqlalchemy import and_, exists, func, literal, null, or_, select, union_all
 from sqlalchemy.orm import Session
 
 from catalog import orm
@@ -26,6 +26,7 @@ from catalog.api.schemas import (
     RawTomogramOut,
     ReconstructionAlignmentOut,
     SampleDetail,
+    SampleMatch,
     SampleSummary,
     SimulationOut,
     TiltSeriesOut,
@@ -37,6 +38,55 @@ router = APIRouter()
 def _enum_val(v):
     """Coerce a possibly-enum value to its string value."""
     return v.value if hasattr(v, "value") else v
+
+
+def _match_locator(q: str):
+    """UNION ALL of (sample_id, acquisition_id, kind, matched_id) rows where an
+    ID at any level of the hierarchy matches `q` (case-insensitive substring).
+    IDs-only — description and other free-text fields are intentionally not
+    searched."""
+    # Escape LIKE metacharacters in the literal search term: real ids commonly
+    # contain '_' (a LIKE single-char wildcard), and an unescaped '%' would
+    # match everything. Backslash must be escaped first so it doesn't clobber
+    # the escapes added for % and _.
+    escaped = q.lower().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    like = f"%{escaped}%"
+    arms = [
+        select(
+            m.sample_id.label("sample_id"),
+            (a if a is not None else null()).label("acquisition_id"),
+            literal(k).label("kind"),
+            i.label("matched_id"),
+        ).where(func.lower(i).like(like, escape="\\"))
+        for (m, i, k, a) in (
+            (orm.SampleORM, orm.SampleORM.sample_id, "sample", None),
+            (
+                orm.AcquisitionORM,
+                orm.AcquisitionORM.acquisition_id,
+                "acquisition",
+                orm.AcquisitionORM.acquisition_id,
+            ),
+            (
+                orm.RawTomogramORM,
+                orm.RawTomogramORM.tomogram_id,
+                "tomogram",
+                orm.RawTomogramORM.acquisition_id,
+            ),
+            (
+                orm.PostProcessedTomogramORM,
+                orm.PostProcessedTomogramORM.tomogram_id,
+                "tomogram",
+                orm.PostProcessedTomogramORM.acquisition_id,
+            ),
+            (
+                orm.AnnotationORM,
+                orm.AnnotationORM.annotation_id,
+                "annotation",
+                orm.AnnotationORM.acquisition_id,
+            ),
+        )
+    ]
+    return union_all(*arms)
 
 
 # Pydantic sub-entity schemas paired with their ORM sources. Each sub-entity
@@ -342,14 +392,16 @@ def list_samples(
             )
         )
 
-    # Free-text search over sample_id + description (unchanged).
+    # IDs-only free-text search across the hierarchy: keep only samples that
+    # have a matching id at some level. See _match_locator.
+    # (call site 1 of 2 — this pass filters the WHOLE result set; the second
+    # call below re-derives match locations only for the page actually
+    # returned, so it's not one query because the two run over different
+    # scopes: all-matching-samples vs. matches-within-this-page.)
     if q:
-        like = f"%{q.lower()}%"
+        locator = _match_locator(q).subquery()
         stmt = stmt.where(
-            or_(
-                func.lower(orm.SampleORM.sample_id).like(like),
-                func.lower(orm.SampleORM.description).like(like),
-            )
+            orm.SampleORM.sample_id.in_(select(locator.c.sample_id).distinct())
         )
 
     # ── Sort + pagination ─────────────────────────────────────────────────
@@ -366,6 +418,26 @@ def list_samples(
     stmt = stmt.limit(limit).offset(offset)
 
     rows = session.execute(stmt).all()
+
+    # Per-page match locations for auto-expand (only when searching).
+    # (call site 2 of 2 — re-invokes _match_locator rather than reusing the
+    # filter pass above because that pass only proves membership; it doesn't
+    # return per-row kind/acquisition_id, and we only need those details for
+    # the samples on this page, so it's cheaper to re-scope than to carry the
+    # full unfiltered locator result through pagination.)
+    matches_by_sample: dict[str, list[SampleMatch]] = {}
+    if q and rows:
+        page_ids = [r[0].sample_id for r in rows]
+        loc = _match_locator(q).subquery()
+        for sid, aid, kind, mid in session.execute(
+            select(
+                loc.c.sample_id, loc.c.acquisition_id, loc.c.kind, loc.c.matched_id
+            ).where(loc.c.sample_id.in_(page_ids))
+        ).all():
+            matches_by_sample.setdefault(sid, []).append(
+                SampleMatch(acquisition_id=aid, kind=kind, matched_id=mid)
+            )
+
     return [
         SampleSummary(
             sample_id=r[0].sample_id,
@@ -382,6 +454,7 @@ def list_samples(
             n_tilt_series=r[4],
             thumbnail_path=r[0].thumbnail_path,
             md_preview_path=r[5],
+            matches=matches_by_sample.get(r[0].sample_id, []),
         )
         for r in rows
     ]

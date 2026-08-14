@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import {
   Alert,
   Box,
@@ -90,6 +90,18 @@ export function AllDataBrowser({
       replace: true
     });
   const reset = () => navigate({ search: () => ({}), replace: true });
+
+  // Stable so it doesn't bust SamplesPortalTable's memo every render. `q` isn't
+  // a gated field, so applyGating passes it through untouched.
+  const onSearchChange = useCallback(
+    (v: string) =>
+      navigate({
+        search: prev =>
+          mergePatch(prev, applyGating(prev, { q: v || undefined })),
+        replace: true
+      }),
+    [navigate]
+  );
 
   const disabledGroups = computeDisabledGroups(search);
   const notices = filterNotices(search);
@@ -202,7 +214,9 @@ export function AllDataBrowser({
             expandAllDetails={expandAll}
             filters={debouncedSearch}
             loading={isFetching}
+            onSearchChange={onSearchChange}
             rows={rows}
+            searchValue={search.q ?? ''}
           />
         </Box>
       </Grid>
