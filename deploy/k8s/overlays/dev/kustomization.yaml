@@ -98,7 +98,7 @@ patches:
         value: ocs-storagecluster-cephfs
       - op: replace
         path: /spec/resources/requests/storage
-        value: 20Gi
+        value: 30Gi
 
   # ── Dev hostname ───────────────────────────────────────────────────────────
   # Must agree with CORS_ORIGINS and MRCNG_BASE_URL in config.env: the browser
