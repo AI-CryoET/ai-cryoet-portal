@@ -32,7 +32,7 @@ For the schema itself, see `docs/schema.md` (human reference) and `src/schema/sc
 ### Tier 1 - local development using pixi commands
 
 > [!NOTE]
-> This tier does not allow you to test changes to Neuroglancer functionality, either the Python in-process Neuroglancer or the browser-based Neuroglancer.
+> This tier does not allow you to test changes to the browser-based Neuroglancer viewer — see [Tier 2](#tier-2---local-pixi--mrc-ng-server-browser-based-neuroglancer) below.
 
 1. [Install pixi](https://pixi.prefix.dev/latest/installation/).
 2. From the repo root, run `pixi install` to materialize the Python environments.
@@ -83,6 +83,45 @@ API_PROXY_TARGET=http://localhost:8034
 # Port the Vite dev server listens on (default: 3000)
 FRONTEND_PORT=3030
 ```
+
+### Tier 2 - local pixi + mrc-ng-server (serves MRC files to browser-based Neuroglancer)
+
+> [!NOTE]
+> This tier extends Tier 1 to also allow development testing of the browser-based Neuroglancer viewer, which loads tomograms from [mrc-ng-server](https://github.com/JaneliaSciComp/mrc-ng-server) over the `precomputed` protocol. Requires a sibling checkout of that repo.
+
+1. Clone `mrc-ng-server` alongside this repo and run `pixi install` inside it.
+
+2. Point it at the same data root as this repo's `CATALOG_DATA_ROOT`, and pick a cache directory, e.g., `/tmp`:
+
+```
+export MRCNG_SOURCE_ROOT=/path/to/scratch/data   # same value as CATALOG_DATA_ROOT above
+export MRCNG_CACHE_ROOT=/tmp/mrc-cache
+```
+
+3. Build a pyramid cache. Precomputing the full tree is slow and storage-intensive for local dev — scope the build to a subdirectory with `--under`(see `mrc-ng-server`'s README):
+
+```
+pixi run build-cache --source-root $MRCNG_SOURCE_ROOT --cache-root $MRCNG_CACHE_ROOT \
+    --under path/to/one/sample_dir
+```
+
+Tomograms outside that scope still work — they fall back to a single-resolution (scale 0) view read straight from the MRC file, no pyramid required.
+
+4. Start `mrc-ng-server`. Its `pixi run serve` task hardcodes production TLS cert paths and port 8000 (which collides with the API below) — for local dev, run uvicorn directly instead, on a separate port, over plain HTTP. That's fine locally; the browser only blocks a plain-HTTP data source when the viewer page itself is served over HTTPS:
+
+```
+pixi run python -m uvicorn mrcng.server.app:get_app --factory --host 0.0.0.0 --port 8001
+```
+
+5. Back in the ai-cryoet repo, start the API with `MRCNG_BASE_URL` pointed at that local `mrc-ng-server`:
+
+```
+CATALOG_DATA_ROOT=/path/to/scratch/data \
+MRCNG_BASE_URL=http://localhost:8001/data \
+pixi run api
+```
+
+6. Start the frontend as in Tier 1 (`pixi run frontend`). "Open in Neuroglancer" links now resolve: tomograms under the cache scope render the full pyramid (as indicated by requests in the network tab showing request URLs with scale 2_2_2 or higher), everything else opens at scale 0 (indicated by 1_1_1 in the request URL).
 
 ---
 ## Production deployment
