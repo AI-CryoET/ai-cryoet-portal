@@ -59,8 +59,6 @@ CATALOG_DATA_ROOT=/path/to/scratch/data pixi run api
 > [!NOTE]
 > The API reads thumbnails and MD-preview images from the same default cache paths the scanner wrote them to above; pass matching `CATALOG_THUMBNAIL_DIR` / `CATALOG_MD_PREVIEW_DIR` values if you overrode them during scanning. A missing MD-preview dir just disables the `/api/md-previews` route; a missing thumbnail dir blocks API startup (run the scan first).
 
-> **No hot-reload.** The API runs with `--no-reload` (single worker). Neuroglancer's in-process HTTP server is incompatible with uvicorn's `--reload` mode, which tries to bind a second HTTP server on the same port.
-
 **Terminal 2 — Frontend:**
 ```
 pixi run frontend

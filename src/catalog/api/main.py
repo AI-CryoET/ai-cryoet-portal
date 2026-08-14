@@ -4,7 +4,7 @@ The API runs separately from the scanner (the scanner writes; the API reads).
 Configuration via environment:
   CATALOG_DB_URL             — SQLAlchemy URL (default: sqlite:///catalog.db)
   CORS_ORIGINS               — comma-separated allowed origins (default: http://localhost:5173)
-  CATALOG_DATA_ROOT          — filesystem root that bounds all preview/Neuroglancer reads.
+  CATALOG_DATA_ROOT          — filesystem root that bounds all preview/viewer-launch reads.
                                Required at startup; the API refuses to start without it.
   CATALOG_THUMBNAIL_DIR      — directory containing pre-generated thumbnail PNGs.
                                Defaults to ./data/.thumbnail-cache in the cwd (kept
@@ -14,21 +14,11 @@ Configuration via environment:
   CATALOG_MD_PREVIEW_DIR     — directory of cached OVITO/MD preview PNGs. Defaults to
                                ./data/.md-preview-cache in the cwd; a missing dir
                                just disables the /md-previews route.
-  NEUROGLANCER_MAX_VIEWERS   — bounded LRU size for active viewers (default 10).
-  NEUROGLANCER_VIEWER_TTL_SECONDS      — idle viewers reclaimed after this many
-                               seconds without interaction, but only under
-                               memory pressure (default 3600 = 1 hr).
-  NEUROGLANCER_SWEEP_INTERVAL_SECONDS  — idle-sweep cadence (default 60).
-  NEUROGLANCER_MEMORY_PRESSURE_RATIO   — reclaim idle viewers only once anon
-                               memory reaches this fraction of the cgroup limit
-                               (default 0.8). Below it, idle viewers persist.
 """
 from __future__ import annotations
-import asyncio
 import inspect
 import logging
 import os
-from collections import OrderedDict
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -108,33 +98,6 @@ def _parse_origins(raw: str) -> list[str]:
     return [o.strip() for o in raw.split(",") if o.strip()]
 
 
-def _positive_float(var: str, default: float) -> float:
-    """Read a positive float from env, falling back to ``default`` if unset/bad."""
-    raw = os.environ.get(var)
-    if raw is None:
-        return default
-    try:
-        value = float(raw)
-    except ValueError:
-        return default
-    return value if value > 0 else default
-
-
-def _detect_multi_worker() -> int | None:
-    """Best-effort multi-worker detection from environment signals.
-
-    Returns the worker count if it can be determined and is >1; otherwise None.
-    Uvicorn and gunicorn don't expose the worker count to the app process, but
-    operators commonly export ``UVICORN_WORKERS`` / ``WEB_CONCURRENCY`` /
-    ``GUNICORN_CMD_ARGS=--workers=N``. We sniff those.
-    """
-    for var in ("UVICORN_WORKERS", "WEB_CONCURRENCY"):
-        raw = os.environ.get(var)
-        if raw and raw.isdigit() and int(raw) > 1:
-            return int(raw)
-    return None
-
-
 @asynccontextmanager
 async def _lifespan(app: FastAPI):
     # Reroute stdlib logging through loguru's flushing sink — fixes the
@@ -150,7 +113,7 @@ async def _lifespan(app: FastAPI):
         db.init_schema(engine)  # idempotent; safe on existing DB
         app.state.engine = engine
 
-    # CATALOG_DATA_ROOT is required for preview/Neuroglancer routes. Tests may
+    # CATALOG_DATA_ROOT is required for preview/viewer-launch routes. Tests may
     # pre-seed app.state.data_root_resolved to avoid needing a real directory.
     pre_seeded_root = getattr(app.state, "data_root_resolved", None) is not None
     if not pre_seeded_root:
@@ -158,7 +121,7 @@ async def _lifespan(app: FastAPI):
         if not raw_root:
             raise RuntimeError(
                 "CATALOG_DATA_ROOT is required (filesystem root bounding all "
-                "preview/Neuroglancer reads). Set it to the dir under which "
+                "preview/viewer-launch reads). Set it to the dir under which "
                 "all DB-recorded paths live."
             )
         try:
@@ -209,48 +172,8 @@ async def _lifespan(app: FastAPI):
                 "CATALOG_MD_PREVIEW_DIR={!r} not found; /md-previews disabled", str(md_path)
             )
 
-    workers = _detect_multi_worker()
-    if workers is not None:
-        logger.warning(
-            "Detected {} API workers via env. Neuroglancer binds an HTTP server "
-            "once per process; multi-worker breaks viewer launches. Run with "
-            "`--workers 1 --no-reload` for the dashboard MVP.",
-            workers,
-        )
-
-    # Bounded Neuroglancer-viewer registry (plan §7.4 / §11.9). Initialized
-    # only if not already set so tests can pre-seed for inspection.
-    if getattr(app.state, "active_viewers", None) is None:
-        app.state.active_viewers = OrderedDict()
-    if getattr(app.state, "active_viewers_lock", None) is None:
-        app.state.active_viewers_lock = asyncio.Lock()
-    if getattr(app.state, "neuroglancer_max_viewers", None) is None:
-        raw_max = os.environ.get("NEUROGLANCER_MAX_VIEWERS", "10")
-        try:
-            app.state.neuroglancer_max_viewers = max(1, int(raw_max))
-        except ValueError:
-            app.state.neuroglancer_max_viewers = 10
-
-    # Idle-sweep background task: reclaims viewers (and their volume RAM) that
-    # have gone untouched past the TTL — the only mechanism that frees memory
-    # when a user closes a tab (there is no tab-close signal). See
-    # catalog.api.routes.tomograms.sweep_idle_viewers.
-    ttl = _positive_float("NEUROGLANCER_VIEWER_TTL_SECONDS", 3600.0)
-    interval = _positive_float("NEUROGLANCER_SWEEP_INTERVAL_SECONDS", 60.0)
-    pressure = _positive_float("NEUROGLANCER_MEMORY_PRESSURE_RATIO", 0.8)
-    from catalog.api.routes.tomograms import sweep_idle_viewers
-
-    sweep_task = asyncio.create_task(
-        sweep_idle_viewers(app, interval, ttl, pressure)
-    )
-
     yield
 
-    sweep_task.cancel()
-    try:
-        await sweep_task
-    except asyncio.CancelledError:
-        pass
     if not pre_seeded_engine:
         app.state.engine.dispose()
 

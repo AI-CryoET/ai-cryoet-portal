@@ -1,10 +1,11 @@
 """GET /md-previews/{relpath:path} — stream a cached OVITO/MD preview PNG.
 
-These previews are rendered upstream by aicryoet-tools (OVITO TachyonRenderer)
-into a flat ``.portal_cache`` directory; filenames look like
-``{data_type}_{sampleId}..._preview.png``. For now this route only *serves*
-the cache — generation/scanning of these PNGs lands later. Mirrors the
-thumbnails route (sync handler + path-traversal guard + cache headers).
+The scanner renders these itself (OVITO TachyonRenderer, subprocess-isolated
+— see :func:`catalog.md_previews.generate_md_previews`) into
+``$CATALOG_MD_PREVIEW_DIR``, one PNG per MD run at ``{sample_id}/{md_run_id}.png``
+(``md_runs.preview_path`` in the DB). This route only *serves* that cache.
+Mirrors the thumbnails route (sync handler + path-traversal guard + cache
+headers).
 """
 from __future__ import annotations
 
@@ -23,27 +24,6 @@ def _serve(resolved, root):
         media_type="image/png",
         headers={"Cache-Control": "public, max-age=3600"},
     )
-
-
-# Resolve a preview from just the predictable prefix ({data_type}_{sampleId},
-# e.g. "Slab_12mer_25_0.073"). The cached filename has an unpredictable middle
-# (run/trajectory/wrap tokens), so the caller can't name it exactly — we glob
-# "{prefix}*_preview.png" and serve the first match. Registered before the
-# catch-all below so "/by-prefix/..." isn't swallowed by {relpath:path}.
-@router.get("/by-prefix/{prefix}")
-def get_md_preview_by_prefix(prefix: str, request: Request):
-    root = getattr(request.app.state, "md_preview_root", None)
-    if root is None:
-        raise HTTPException(404, "md previews not configured")
-    # prefix is a single flat token — reject anything that could escape root.
-    if "/" in prefix or "\\" in prefix or ".." in prefix:
-        raise HTTPException(404, "md preview not found")
-    for match in sorted(root.glob(f"{prefix}*_preview.png")):
-        try:
-            return _serve(match.resolve(strict=True), root)
-        except (FileNotFoundError, OSError):
-            continue
-    raise HTTPException(404, "md preview not found")
 
 
 # Sync (`def`) on purpose — see thumbnails.py: blocking reads against a

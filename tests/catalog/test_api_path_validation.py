@@ -155,11 +155,3 @@ def test_tilt_series_preview_st_outside_data_root_404(client):
     assert r.status_code == 404
 
 
-def test_tilt_series_neuroglancer_zarr_outside_data_root_404(client):
-    r = client.post("/tilt-series/sample_a/acq1/ts_zarr_outside/neuroglancer")
-    assert r.status_code == 404
-
-
-def test_tilt_series_neuroglancer_st_outside_data_root_404(client):
-    r = client.post("/tilt-series/sample_a/acq1/ts_st_outside/neuroglancer")
-    assert r.status_code == 404

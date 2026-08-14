@@ -3,10 +3,9 @@
 # nginx.conf). The unprivileged image listens on 8080 and runs as a non-root
 # user, which is what OpenShift's restricted SCC requires.
 #
-# This config differs from the repo-root nginx.conf in one important way: it
-# also proxies Neuroglancer's fixed root paths to the API's :8050 port. The
-# frontend re-roots viewer URLs onto the page origin (dropping the :8050 port),
-# so in a single-route deployment those paths must arrive through nginx.
+# This config differs from the repo-root nginx.conf in one way: it also
+# proxies the /mrc-ng-server/ prefix to the mrc-ng-server Service, so the
+# viewer's chunk requests arrive through the same host as the portal.
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -15,10 +14,6 @@ data:
   default.conf: |
     upstream api {
         server api:8000;
-    }
-
-    upstream neuroglancer {
-        server api:8050;
     }
 
     upstream frontend {
@@ -62,30 +57,11 @@ data:
             proxy_set_header X-Forwarded-Proto $scheme;
         }
 
-        # In-process Neuroglancer server (API :8050). These are Neuroglancer's
-        # fixed root paths: viewer app + bundles (/v), volume info & data chunks
-        # (/neuroglancer), the long-lived state event stream (/events, SSE), and
-        # the state/action/response/credentials channels. Buffering is disabled
-        # so the SSE stream is not held back, and Upgrade headers are forwarded
-        # for websocket transport.
-        location ~ ^/(v|neuroglancer|events|state|action|volume_response|credentials)/ {
-            proxy_pass http://neuroglancer;
-            proxy_http_version 1.1;
-            proxy_buffering off;
-            proxy_set_header Host $http_host;
-            proxy_set_header X-Real-IP $remote_addr;
-            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-            proxy_set_header X-Forwarded-Proto $scheme;
-            proxy_set_header Upgrade $http_upgrade;
-            proxy_set_header Connection "upgrade";
-        }
-
         # mrc-ng-server data service: strip the /mrc-ng-server prefix and forward
         # to its :8000 (it serves Neuroglancer `precomputed` chunks at /data/...).
         # Fronting it here means it needs no Route/host of its own — the browser
         # fetches chunks from this host. MRCNG_BASE_URL = this host +
-        # /mrc-ng-server/data. (The viewer's own /neuroglancer/ paths above target
-        # the API's in-process server, a different service; no overlap.)
+        # /mrc-ng-server/data.
         location /mrc-ng-server/ {
             rewrite ^/mrc-ng-server/(.*)$ /$1 break;
             proxy_pass http://mrc-ng-server;

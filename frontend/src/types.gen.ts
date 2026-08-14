@@ -451,29 +451,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/tilt-series/{sample_id}/{acquisition_id}/{tilt_series_id}/neuroglancer": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Tilt Series Neuroglancer
-         * @description Launch a Neuroglancer viewer over the tilt-series stack.
-         *
-         *     Prefer the authored ``Stack/`` (zarr, then ``.st``/``.mrc``); fall back to
-         *     the acquisition's raw ``Frames/`` images. 422 if none are reachable.
-         */
-        post: operations["tilt_series_neuroglancer_tilt_series__sample_id___acquisition_id___tilt_series_id__neuroglancer_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/thumbnails/{relpath}": {
         parameters: {
             query?: never;
@@ -627,23 +604,6 @@ export interface paths {
          *     ``path`` is always the directory to write back to.
          */
         get: operations["load_toml_toml__kind__load__record_id__get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/md-previews/by-prefix/{prefix}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Get Md Preview By Prefix */
-        get: operations["get_md_preview_by_prefix_md_previews_by_prefix__prefix__get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -2052,39 +2012,6 @@ export interface operations {
             };
         };
     };
-    tilt_series_neuroglancer_tilt_series__sample_id___acquisition_id___tilt_series_id__neuroglancer_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                sample_id: string;
-                acquisition_id: string;
-                tilt_series_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ViewerLaunchOut"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
     get_thumbnail_thumbnails__relpath__get: {
         parameters: {
             query?: never;
@@ -2295,37 +2222,6 @@ export interface operations {
             path: {
                 kind: string;
                 record_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    get_md_preview_by_prefix_md_previews_by_prefix__prefix__get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                prefix: string;
             };
             cookie?: never;
         };
