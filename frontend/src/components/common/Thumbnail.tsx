@@ -201,6 +201,8 @@ export function PreviewThumbnail({
     <Box
       alt={alt}
       component="img"
+      decoding="async"
+      loading="lazy"
       onClick={clickable ? () => setLightboxOpen(true) : undefined}
       onError={() => setFailed(true)}
       onLoad={() => setLoaded(true)}
