@@ -15,6 +15,7 @@ from sqlalchemy.orm import sessionmaker
 from catalog import db, orm
 from catalog.api.deps import get_session
 from catalog.api.main import create_app
+from catalog.api.routes.manage import _group_issues
 
 # Fixed reference clock so window assertions are deterministic.
 _NOW = time.time()
@@ -254,6 +255,44 @@ def test_outstanding_filter_by_severity(client):
     # Only groups containing an error remain; here just sample-1 sample_toml.
     assert all(g["severity"] == "error" for g in body)
     assert len(body) == 1
+
+
+def _bare_issue(**kw):
+    """A standalone (unsaved) IssueORM row for exercising ``_group_issues``
+    directly — its severity-rollup logic doesn't touch the DB."""
+    defaults = dict(
+        scope="sample",
+        sample_id="s",
+        acquisition_id=None,
+        md_run_id=None,
+        file_kind="sample_toml",
+        file_path=None,
+        category="cat",
+        message="m",
+        first_seen_at=_NOW,
+        last_seen_at=_NOW,
+        last_seen_run_id="run-completed",
+        resolved_at=None,
+        resolved_run_id=None,
+    )
+    defaults.update(kw)
+    return orm.IssueORM(**defaults)
+
+
+def test_group_severity_rollup_is_error_over_warning_over_info():
+    """A group's severity is the max across its rows, ranked
+    error > warning > info — not just an error/warning binary."""
+    warning_and_info = _group_issues(
+        [_bare_issue(severity="warning"), _bare_issue(severity="info")],
+        latest_run_id=None, latest_scan_at=None, resolved=False,
+    )
+    assert warning_and_info[0].severity == "warning"
+
+    info_only = _group_issues(
+        [_bare_issue(severity="info")],
+        latest_run_id=None, latest_scan_at=None, resolved=False,
+    )
+    assert info_only[0].severity == "info"
 
 
 def test_outstanding_filter_by_file_kind(client):

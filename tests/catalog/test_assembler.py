@@ -555,6 +555,45 @@ def test_undeclared_reconstruction_alignment_folder_warns(tmp_path):
     ]
     assert len(warned) == 1
     assert "grp_ghost" in warned[0].message
+    assert warned[0].severity == "warning"
+
+
+def test_undeclared_reconstruction_alignment_folder_infos_template_placeholder(
+    tmp_path,
+):
+    """A ``Reconstructions/reconstruction_alignment_id/`` folder — the literal
+    placeholder name shipped in templates/sample_id_experimental — is a
+    leftover, un-renamed template copy, not a real data problem, so it warns
+    at "info" instead of "warning"."""
+    sample_dir = tmp_path / "sample_test"
+    _write_minimal_sample_toml(sample_dir)
+    _write(
+        sample_dir / "acq1" / "acquisition.toml",
+        """
+        [acquisition]
+        microscope = "Krios"
+
+        [[raw_tomogram]]
+        id = "tomo1"
+        """,
+    )
+    tomos = (
+        sample_dir
+        / "acq1"
+        / "Reconstructions"
+        / "reconstruction_alignment_id"
+        / "Tomograms"
+    )
+    _make_mrc(tomos / "tomo1.mrc")
+
+    result = assemble_sample(_sample_loc(sample_dir))
+    warned = [
+        w
+        for w in result.warnings
+        if w.category == "undeclared_reconstruction_alignment_folder"
+    ]
+    assert len(warned) == 1
+    assert warned[0].severity == "info"
 
 
 def test_zero_voxel_header_flags_tomogram_and_warns(tmp_path):
