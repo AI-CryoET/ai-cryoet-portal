@@ -1038,6 +1038,11 @@ export interface components {
              * @default 0
              */
             warnings: number;
+            /**
+             * Infos
+             * @default 0
+             */
+            infos: number;
         };
         /** PostProcessedTomogramOut */
         PostProcessedTomogramOut: {
@@ -1327,6 +1332,8 @@ export interface components {
             n_warning_active?: number | null;
             /** N Error Active */
             n_error_active?: number | null;
+            /** N Info Active */
+            n_info_active?: number | null;
         };
         /** ScanSampleOutcomeOut */
         ScanSampleOutcomeOut: {
@@ -1547,7 +1554,7 @@ export interface operations {
     get_outstanding_issues_manage_issues_get: {
         parameters: {
             query?: {
-                severity?: ("error" | "warning") | null;
+                severity?: ("error" | "warning" | "info") | null;
                 file_kind?: string | null;
                 q?: string | null;
             };
