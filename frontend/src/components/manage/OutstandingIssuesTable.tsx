@@ -14,7 +14,7 @@ import {
   type MRT_ColumnDef,
   type MRT_PaginationState
 } from 'material-react-table';
-import type { IssueGroup } from '~/types';
+import type { IssueGroup, IssueSeverity } from '~/types';
 import { useDebounce } from '~/hooks/useDebounce';
 import { SectionHeader } from './SectionHeader';
 import {
@@ -22,37 +22,54 @@ import {
   useOutstandingIssuesQuery
 } from '~/utils/queryOptions';
 import {
-  EntityCell,
-  FileCell,
-  IssuesCell,
+  AcquisitionListCell,
+  CategoryChip,
+  MessageCell,
+  RowFileCell,
+  SampleCell,
   SeverityPill,
   StillPresentCell,
-  formatDate,
-  issueRowId
+  formatDate
 } from './issueCells';
+import {
+  groupSampleWarnings,
+  type SampleWarningRow
+} from './groupSampleWarnings';
 
 // Priority order (most to least severe) — plain alphabetical sort would put
 // "info" between "error" and "warning".
-const SEVERITY_RANK: Record<IssueGroup['severity'], number> = {
+const SEVERITY_RANK: Record<IssueSeverity, number> = {
   error: 0,
   warning: 1,
   info: 2
 };
 
-function useColumns(): MRT_ColumnDef<IssueGroup>[] {
+function useColumns(): MRT_ColumnDef<SampleWarningRow>[] {
   return useMemo(
     () => [
       {
-        id: 'entity',
-        header: 'Sample / Acquisition',
-        size: 220,
-        Cell: ({ row }) => <EntityCell group={row.original} />
+        id: 'sample',
+        header: 'Sample',
+        size: 160,
+        Cell: ({ row }) => <SampleCell sampleId={row.original.sample_id} />
       },
       {
         id: 'file',
         header: 'File',
-        size: 260,
-        Cell: ({ row }) => <FileCell group={row.original} />
+        size: 160,
+        Cell: ({ row }) => (
+          <RowFileCell
+            fileKind={row.original.file_kind}
+            mdRunId={row.original.md_run_id}
+            sampleId={row.original.sample_id}
+          />
+        )
+      },
+      {
+        id: 'category',
+        header: 'Warning type',
+        size: 170,
+        Cell: ({ row }) => <CategoryChip category={row.original.category} />
       },
       {
         accessorKey: 'severity',
@@ -64,9 +81,16 @@ function useColumns(): MRT_ColumnDef<IssueGroup>[] {
         Cell: ({ row }) => <SeverityPill severity={row.original.severity} />
       },
       {
-        id: 'issues',
-        header: 'Issues',
-        Cell: ({ row }) => <IssuesCell group={row.original} />
+        id: 'message',
+        header: 'Message',
+        size: 260,
+        Cell: ({ row }) => <MessageCell message={row.original.message} />
+      },
+      {
+        id: 'acquisitions',
+        header: 'Affected acquisitions',
+        size: 220,
+        Cell: ({ row }) => <AcquisitionListCell row={row.original} />
       },
       {
         accessorKey: 'first_seen_at',
@@ -78,7 +102,12 @@ function useColumns(): MRT_ColumnDef<IssueGroup>[] {
         id: 'still_present',
         header: 'Still present as of',
         size: 170,
-        Cell: ({ row }) => <StillPresentCell group={row.original} />
+        Cell: ({ row }) => (
+          <StillPresentCell
+            reEvaluated={row.original.reEvaluated}
+            timestamp={row.original.stillPresentAt}
+          />
+        )
       }
     ],
     []
@@ -117,13 +146,25 @@ export function OutstandingIssuesTable({
     ...local,
     ...(debouncedQ ? { q: debouncedQ } : {})
   };
-  const { data = [], isFetching, isError } = useOutstandingIssuesQuery(filters);
+  const {
+    data: rawData = [],
+    isFetching,
+    isError
+  } = useOutstandingIssuesQuery(filters);
   // Unfiltered denominator (same query key as the component's filtered fetch
-  // when no filters are set, so they dedupe). Rows are *grouped* issues, so we
-  // sum each group's issues to count actual warnings/errors, not table rows.
+  // when no filters are set, so they dedupe). Sum each group's issues to
+  // count actual warnings/errors, not table rows (rows are now regrouped by
+  // sample + warning category, so they undercount individual issues).
   const { data: allIssues = [] } = useOutstandingIssuesQuery({});
-  const totalIssues = allIssues.reduce((n, g) => n + g.issues.length, 0);
-  const matchCount = data.reduce((n, g) => n + g.issues.length, 0);
+  const totalIssues = allIssues.reduce(
+    (n: number, g: IssueGroup) => n + g.issues.length,
+    0
+  );
+  const matchCount = rawData.reduce(
+    (n: number, g: IssueGroup) => n + g.issues.length,
+    0
+  );
+  const data = useMemo(() => groupSampleWarnings(rawData), [rawData]);
   const columns = useColumns();
 
   const setFilter = <K extends keyof LocalFilters>(
@@ -140,10 +181,10 @@ export function OutstandingIssuesTable({
       return next;
     });
 
-  const table = useMaterialReactTable<IssueGroup>({
+  const table = useMaterialReactTable<SampleWarningRow>({
     columns,
     data,
-    getRowId: issueRowId,
+    getRowId: row => row.key,
     onPaginationChange: updater => {
       // Row heights vary, so a page swap changes the table's total height and
       // shoves everything below it. Remember where the bottom edge sits now;

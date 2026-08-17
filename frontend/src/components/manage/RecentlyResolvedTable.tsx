@@ -5,32 +5,48 @@ import {
   useMaterialReactTable,
   type MRT_ColumnDef
 } from 'material-react-table';
-import type { IssueGroup } from '~/types';
 import { useRecentlyResolvedQuery } from '~/utils/queryOptions';
 import {
-  EntityCell,
-  FileCell,
-  IssuesCell,
+  AcquisitionListCell,
+  CategoryChip,
+  MessageCell,
+  RowFileCell,
+  SampleCell,
   SeverityPill,
   formatDate,
-  formatTs,
-  issueRowId
+  formatTs
 } from './issueCells';
+import {
+  groupSampleWarnings,
+  type SampleWarningRow
+} from './groupSampleWarnings';
 
-function useColumns(): MRT_ColumnDef<IssueGroup>[] {
+function useColumns(): MRT_ColumnDef<SampleWarningRow>[] {
   return useMemo(
     () => [
       {
-        id: 'entity',
-        header: 'Sample / Acquisition',
-        size: 220,
-        Cell: ({ row }) => <EntityCell group={row.original} />
+        id: 'sample',
+        header: 'Sample',
+        size: 160,
+        Cell: ({ row }) => <SampleCell sampleId={row.original.sample_id} />
       },
       {
         id: 'file',
         header: 'File',
-        size: 260,
-        Cell: ({ row }) => <FileCell group={row.original} />
+        size: 160,
+        Cell: ({ row }) => (
+          <RowFileCell
+            fileKind={row.original.file_kind}
+            mdRunId={row.original.md_run_id}
+            sampleId={row.original.sample_id}
+          />
+        )
+      },
+      {
+        id: 'category',
+        header: 'Warning type',
+        size: 170,
+        Cell: ({ row }) => <CategoryChip category={row.original.category} />
       },
       {
         accessorKey: 'severity',
@@ -39,9 +55,16 @@ function useColumns(): MRT_ColumnDef<IssueGroup>[] {
         Cell: ({ row }) => <SeverityPill severity={row.original.severity} />
       },
       {
-        id: 'issues',
-        header: 'Issues',
-        Cell: ({ row }) => <IssuesCell group={row.original} />
+        id: 'message',
+        header: 'Message',
+        size: 260,
+        Cell: ({ row }) => <MessageCell message={row.original.message} />
+      },
+      {
+        id: 'acquisitions',
+        header: 'Affected acquisitions',
+        size: 220,
+        Cell: ({ row }) => <AcquisitionListCell row={row.original} />
       },
       {
         accessorKey: 'first_seen_at',
@@ -65,13 +88,14 @@ export function RecentlyResolvedTable({
 }: {
   readonly withinHours?: number;
 }) {
-  const { data } = useRecentlyResolvedQuery(withinHours);
+  const { data: rawData } = useRecentlyResolvedQuery(withinHours);
+  const data = useMemo(() => groupSampleWarnings(rawData), [rawData]);
   const columns = useColumns();
 
-  const table = useMaterialReactTable<IssueGroup>({
+  const table = useMaterialReactTable<SampleWarningRow>({
     columns,
     data,
-    getRowId: issueRowId,
+    getRowId: row => row.key,
     enableColumnActions: false,
     enableColumnFilters: false,
     enableGlobalFilter: false,

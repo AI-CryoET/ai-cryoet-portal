@@ -460,10 +460,8 @@ def assemble_sample(sample_loc: SampleLocation) -> AssemblyResult:
                             f".tilt_series[{ts_loc.tilt_series_id}]"
                         ),
                         message=(
-                            f"folder '{ts_loc.tilt_series_id}' exists on disk but "
-                            "is not declared in acquisition.toml — add a "
-                            "[[tilt_series]] block with "
-                            f"id = \"{ts_loc.tilt_series_id}\""
+                            f"tilt series '{ts_loc.tilt_series_id}' undeclared — "
+                            "add a [[tilt_series]] block for it"
                         ),
                         severity=(
                             "info"
@@ -502,8 +500,8 @@ def assemble_sample(sample_loc: SampleLocation) -> AssemblyResult:
                             f".tilt_series[{ts_loc.tilt_series_id}]"
                         ),
                         message=(
-                            f"tilt series '{ts_loc.tilt_series_id}' is_aligned=true "
-                            "but no alignment artifacts found under Alignment/"
+                            f"tilt series '{ts_loc.tilt_series_id}': is_aligned=true "
+                            "but no alignment artifacts found"
                         ),
                     )
                 )
@@ -517,8 +515,8 @@ def assemble_sample(sample_loc: SampleLocation) -> AssemblyResult:
                             f".tilt_series[{ts_loc.tilt_series_id}]"
                         ),
                         message=(
-                            f"tilt series '{ts_loc.tilt_series_id}' has alignment "
-                            "artifacts under Alignment/ but is_aligned is not true"
+                            f"tilt series '{ts_loc.tilt_series_id}': alignment "
+                            "artifacts found but is_aligned is not true"
                         ),
                     )
                 )
@@ -563,13 +561,10 @@ def assemble_sample(sample_loc: SampleLocation) -> AssemblyResult:
                             f"[{ra_loc.reconstruction_alignment_id}]"
                         ),
                         message=(
-                            f"folder '{ra_loc.reconstruction_alignment_id}' exists "
-                            "on disk but is not declared — add a "
-                            "Reconstructions/"
-                            f"{ra_loc.reconstruction_alignment_id}/reconstruction.toml "
-                            "(or a [[reconstruction_alignment]] block with "
-                            f"id = \"{ra_loc.reconstruction_alignment_id}\" in "
-                            "acquisition.toml)"
+                            f"reconstruction group "
+                            f"'{ra_loc.reconstruction_alignment_id}' undeclared — "
+                            "add its reconstruction.toml, or a "
+                            "[[reconstruction_alignment]] block in acquisition.toml"
                         ),
                         severity=(
                             "info"
@@ -607,10 +602,8 @@ def assemble_sample(sample_loc: SampleLocation) -> AssemblyResult:
                     category="acquisition_without_tilt_series",
                     location=f"acquisitions.{acq_loc.acquisition_id}",
                     message=(
-                        f"acquisition '{acq_loc.acquisition_id}' has a Frames/ "
-                        "directory but no declared tilt series — add a "
-                        "[[tilt_series]] block to acquisition.toml so its "
-                        "tilt-series preview image is available"
+                        f"acquisition '{acq_loc.acquisition_id}' has Frames/ but no "
+                        "declared tilt series — add a [[tilt_series]] block"
                     ),
                 )
             )
@@ -663,22 +656,14 @@ def assemble_sample(sample_loc: SampleLocation) -> AssemblyResult:
                 # loses to the per-group file and is dropped).
                 if rf is not None:
                     message = (
-                        f"tomogram '{tomo_loc.tomogram_id}' exists on disk under "
-                        f"Reconstructions/{group}/, whose reconstruction.toml does "
-                        "not declare it — that file is authoritative for this "
-                        "group, so add a [[raw_tomogram]] or "
-                        "[[post_processed_tomogram]] block with "
-                        f"id = \"{tomo_loc.tomogram_id}\" to "
-                        f"Reconstructions/{group}/reconstruction.toml (a flat "
-                        "acquisition.toml block for this id is ignored for this "
-                        "group — remove it if it is stale)"
+                        f"tomogram '{tomo_loc.tomogram_id}' undeclared — add it to "
+                        f"Reconstructions/{group}/reconstruction.toml, not "
+                        "acquisition.toml"
                     )
                 else:
                     message = (
-                        f"tomogram '{tomo_loc.tomogram_id}' exists on disk but is "
-                        "not declared in acquisition.toml — add a [[raw_tomogram]] "
-                        "or [[post_processed_tomogram]] block with "
-                        f"id = \"{tomo_loc.tomogram_id}\""
+                        f"tomogram '{tomo_loc.tomogram_id}' undeclared — add a "
+                        "[[raw_tomogram]] or [[post_processed_tomogram]] block for it"
                     )
                 result.warnings.append(
                     _make_issue(
@@ -748,12 +733,9 @@ def assemble_sample(sample_loc: SampleLocation) -> AssemblyResult:
                                     f".tomogram[{tomo_loc.tomogram_id}]"
                                 ),
                                 message=(
-                                    f"tomogram '{tomo_loc.tomogram_id}' has no "
-                                    "voxel size in its MRC header (cella=0); the "
-                                    "Neuroglancer viewer would be mis-scaled and "
-                                    "is disabled. Write the voxel size into the "
-                                    "MRC header (e.g. re-run the step that emits "
-                                    "it, or set it with a header tool) and re-scan."
+                                    f"tomogram '{tomo_loc.tomogram_id}': MRC header "
+                                    "has no voxel size (cella=0) — viewer disabled "
+                                    "until it's written and the sample is re-scanned"
                                 ),
                                 file_kind="mrc_header",
                                 file_path=mrc_path_str,
@@ -822,20 +804,14 @@ def assemble_sample(sample_loc: SampleLocation) -> AssemblyResult:
                 # Same per-group vs. flat authoring split as tomograms above.
                 if rf is not None:
                     message = (
-                        f"annotation '{ann_loc.annotation_id}' exists on disk under "
-                        f"Reconstructions/{group}/, whose reconstruction.toml does "
-                        "not declare it — that file is authoritative for this "
-                        "group, so add an [[annotation]] block with "
-                        f"id = \"{ann_loc.annotation_id}\" to "
-                        f"Reconstructions/{group}/reconstruction.toml (a flat "
-                        "acquisition.toml block for this id is ignored for this "
-                        "group — remove it if it is stale)"
+                        f"annotation '{ann_loc.annotation_id}' undeclared — add it "
+                        f"to Reconstructions/{group}/reconstruction.toml, not "
+                        "acquisition.toml"
                     )
                 else:
                     message = (
-                        f"annotation '{ann_loc.annotation_id}' exists on disk but is "
-                        "not declared in acquisition.toml — add an [[annotation]] "
-                        f"block with id = \"{ann_loc.annotation_id}\""
+                        f"annotation '{ann_loc.annotation_id}' undeclared — add an "
+                        "[[annotation]] block for it"
                     )
                 result.warnings.append(
                     _make_issue(

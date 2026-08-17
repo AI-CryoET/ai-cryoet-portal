@@ -2576,6 +2576,28 @@
             ],
             "title": "File Path"
           },
+          "sample_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sample Path"
+          },
+          "acquisition_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Acquisition Path"
+          },
           "severity": {
             "type": "string",
             "title": "Severity"
