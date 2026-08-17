@@ -153,6 +153,24 @@ def test_parse_acquisition_mdocs_one_space_datetime(tmp_path: Path) -> None:
     assert result.fields["date_collected"] == _dt.date(2025, 8, 24)
 
 
+def test_parse_acquisition_mdocs_four_digit_year_datetime(tmp_path: Path) -> None:
+    """4-digit-year DateTime (newer SerialEM installs) should still parse."""
+    frames_dir = tmp_path / "frames"
+    frames_dir.mkdir()
+    (frames_dir / "ts.mdoc").write_text(
+        "PixelSpacing = 2.0\n"
+        "[ZValue = 0]\n"
+        "TiltAngle = 0.0\n"
+        "ExposureDose = 0.1\n"
+        "DateTime = 27-Jan-2026  19:14:10\n"
+    )
+    result = parse_acquisition_mdocs(frames_dir)
+    assert result.status == "ok"
+    import datetime as _dt
+
+    assert result.fields["date_collected"] == _dt.date(2026, 1, 27)
+
+
 def test_parse_acquisition_mdocs_unparseable_datetime_does_not_fail(
     tmp_path: Path,
 ) -> None:

@@ -52,11 +52,18 @@ def _parse_datetime(value: str) -> _dt.date | None:
     """Parse a SerialEM ``DateTime`` string; return its ``.date()`` or None.
 
     SerialEM emits e.g. ``"24-Aug-25  10:00:00"`` with TWO spaces between
-    date and time, but some installations write a single space. Both are
-    accepted; on failure of both we return None (DateTime format varies in
-    the wild, so a parse failure here does NOT mark the mdoc unreadable).
+    date and time, but some installations write a single space, and newer
+    installs (2026+) write a 4-digit year (``"27-Jan-2026  19:14:10"``). All
+    four combinations are accepted; on failure of all we return None
+    (DateTime format varies in the wild, so a parse failure here does NOT
+    mark the mdoc unreadable).
     """
-    for fmt in ("%d-%b-%y  %H:%M:%S", "%d-%b-%y %H:%M:%S"):
+    for fmt in (
+        "%d-%b-%y  %H:%M:%S",
+        "%d-%b-%y %H:%M:%S",
+        "%d-%b-%Y  %H:%M:%S",
+        "%d-%b-%Y %H:%M:%S",
+    ):
         try:
             return _dt.datetime.strptime(value, fmt).date()
         except ValueError:

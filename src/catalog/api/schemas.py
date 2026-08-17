@@ -266,6 +266,7 @@ class SampleDetail(BaseModel):
     cell_type: str | None = None
     description: str | None = None
     path: str | None = None
+    experiment_date: _dt.date | None = None
     chromatin: ChromatinOut | None = None
     fiducial: FiducialOut | None = None
     simulation: SimulationOut | None = None

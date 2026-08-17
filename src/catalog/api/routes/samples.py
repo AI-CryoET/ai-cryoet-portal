@@ -682,6 +682,7 @@ def get_sample(sample_id: str, session: Session = Depends(get_session)):
         cell_type=sample.cell_type,
         description=sample.description,
         path=sample.path,
+        experiment_date=sample.experiment_date,
         chromatin=sub["chromatin"],
         fiducial=sub["fiducial"],
         simulation=sub["simulation"],

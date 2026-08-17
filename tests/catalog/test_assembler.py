@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import datetime as _dt
 from pathlib import Path
 from textwrap import dedent
 from types import SimpleNamespace
@@ -236,6 +237,38 @@ def test_unparseable_mdoc_emits_warning(tmp_path):
     acq = result.record.acquisitions["Pos1"].acquisition
     assert acq.pixel_size is None
     assert acq.voltage is None
+
+
+def test_experiment_date_is_earliest_mdoc_date_across_acquisitions(tmp_path):
+    sample_dir = tmp_path / "sample_test"
+    _write_minimal_sample_toml(sample_dir)
+    for acq_id, mdoc_date in [("Pos1", "24-Aug-25  10:00:00"), ("Pos2", "20-Aug-25  09:00:00")]:
+        _write(
+            sample_dir / acq_id / "acquisition.toml",
+            """
+            [acquisition]
+            microscope = "Krios"
+            """,
+        )
+        _write(
+            sample_dir / acq_id / "Frames" / "001.mdoc",
+            f"""
+            PixelSpacing = 2.93
+            Voltage = 300
+
+            [ZValue = 0]
+            TiltAngle = -60.0
+            DateTime = {mdoc_date}
+            """,
+        )
+
+    loc = _sample_loc(sample_dir)
+    result = assemble_sample(loc)
+
+    assert result.record is not None
+    # Pos2's DateTime (20-Aug-25) predates Pos1's (24-Aug-25) — the sample takes
+    # the earliest across its acquisitions, not authoring order.
+    assert result.record.sample.experiment_date == _dt.date(2025, 8, 20)
 
 
 def test_synthesized_frames_only_acquisition(tmp_path):
