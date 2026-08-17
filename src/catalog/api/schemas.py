@@ -365,6 +365,7 @@ class LatestScanInfo(BaseModel):
 class OutstandingCounts(BaseModel):
     errors: int = 0
     warnings: int = 0
+    infos: int = 0
 
 
 class ManageSummary(BaseModel):
@@ -417,6 +418,7 @@ class ScanRun(BaseModel):
     n_resolved_issues: int | None = None
     n_warning_active: int | None = None
     n_error_active: int | None = None
+    n_info_active: int | None = None
 
 
 class ScanLogLine(BaseModel):

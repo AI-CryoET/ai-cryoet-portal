@@ -118,6 +118,12 @@ _PARSER_FILE_KINDS = {
     "ambiguous_frame_extension": "frames",
 }
 
+# Literal folder names from templates/sample_id_experimental (and
+# .../sample_id_simulation) — a leftover, un-renamed template copy always
+# trips the matching undeclared-folder check below. That's scaffolding noise,
+# not a data problem, so those two checks downgrade to "info" for these ids.
+_TEMPLATE_PLACEHOLDER_IDS = frozenset({"tilt_series_id", "reconstruction_alignment_id"})
+
 
 def _resolve_file(
     location: str, sample_loc: SampleLocation
@@ -459,6 +465,11 @@ def assemble_sample(sample_loc: SampleLocation) -> AssemblyResult:
                             "[[tilt_series]] block with "
                             f"id = \"{ts_loc.tilt_series_id}\""
                         ),
+                        severity=(
+                            "info"
+                            if ts_loc.tilt_series_id in _TEMPLATE_PLACEHOLDER_IDS
+                            else "warning"
+                        ),
                     )
                 )
                 continue
@@ -559,6 +570,12 @@ def assemble_sample(sample_loc: SampleLocation) -> AssemblyResult:
                             "(or a [[reconstruction_alignment]] block with "
                             f"id = \"{ra_loc.reconstruction_alignment_id}\" in "
                             "acquisition.toml)"
+                        ),
+                        severity=(
+                            "info"
+                            if ra_loc.reconstruction_alignment_id
+                            in _TEMPLATE_PLACEHOLDER_IDS
+                            else "warning"
                         ),
                     )
                 )
