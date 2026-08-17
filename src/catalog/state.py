@@ -241,6 +241,7 @@ def finish_scan(
         "n_resolved_issues",
         "n_warning_active",
         "n_error_active",
+        "n_info_active",
     ):
         v = getattr(report, attr, None)
         if v is not None:
