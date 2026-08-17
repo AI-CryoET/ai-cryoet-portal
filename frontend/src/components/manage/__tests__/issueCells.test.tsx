@@ -32,7 +32,7 @@ vi.mock('~/components/CustomLink', () => ({
   )
 }));
 
-import { FileCell, authorLinkFor } from '../issueCells';
+import { RowFileCell, authorLinkFor } from '../issueCells';
 
 function group(overrides: Partial<IssueGroup>): IssueGroup {
   return {
@@ -106,9 +106,11 @@ describe('authorLinkFor', () => {
   });
 });
 
-describe('FileCell edit link', () => {
+describe('RowFileCell edit link', () => {
   it('renders an "Edit file" link beside the chip for a sample.toml row', () => {
-    render(<FileCell group={group({})} />);
+    render(
+      <RowFileCell fileKind="sample_toml" mdRunId={null} sampleId="samp1" />
+    );
     const link = screen.getByText('Edit file').closest('a');
     expect(link).not.toBeNull();
     expect(link).toHaveAttribute('data-to', '/manage/author');
@@ -119,7 +121,18 @@ describe('FileCell edit link', () => {
   });
 
   it('does not link a non-authorable file kind', () => {
-    render(<FileCell group={group({ file_kind: 'mdoc', file_path: null })} />);
+    render(<RowFileCell fileKind="mdoc" mdRunId={null} sampleId="samp1" />);
+    expect(screen.queryByText('Edit file')).toBeNull();
+  });
+
+  it('does not link an acquisition_toml row at the row level (no acquisition id here)', () => {
+    render(
+      <RowFileCell
+        fileKind="acquisition_toml"
+        mdRunId={null}
+        sampleId="samp1"
+      />
+    );
     expect(screen.queryByText('Edit file')).toBeNull();
   });
 });

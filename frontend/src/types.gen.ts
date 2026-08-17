@@ -915,6 +915,10 @@ export interface components {
             file_kind: string;
             /** File Path */
             file_path?: string | null;
+            /** Sample Path */
+            sample_path?: string | null;
+            /** Acquisition Path */
+            acquisition_path?: string | null;
             /** Severity */
             severity: string;
             /**

@@ -79,12 +79,48 @@ def _scan_run_to_out(row: orm.ScanRunORM) -> ScanRun:
     )
 
 
+def _path_lookups(
+    session: Session, rows: list[orm.IssueORM]
+) -> tuple[dict[str, str], dict[tuple[str, str], str]]:
+    """Batch-fetch on-disk directory paths for the samples/acquisitions named
+    in ``rows``, so the warnings page gets them in one response instead of a
+    per-sample follow-up fetch. Acquisition ids aren't unique across samples,
+    so acquisitions are looked up by (sample_id, acquisition_id).
+    """
+    sample_ids = {r.sample_id for r in rows if r.sample_id}
+    if not sample_ids:
+        return {}, {}
+    sample_paths = {
+        s: p
+        for s, p in session.execute(
+            select(orm.SampleORM.sample_id, orm.SampleORM.path).where(
+                orm.SampleORM.sample_id.in_(sample_ids)
+            )
+        ).all()
+        if p is not None
+    }
+    acquisition_paths = {
+        (s, a): p
+        for s, a, p in session.execute(
+            select(
+                orm.AcquisitionORM.sample_id,
+                orm.AcquisitionORM.acquisition_id,
+                orm.AcquisitionORM.path,
+            ).where(orm.AcquisitionORM.sample_id.in_(sample_ids))
+        ).all()
+        if p is not None
+    }
+    return sample_paths, acquisition_paths
+
+
 def _group_issues(
     rows: list[orm.IssueORM],
     *,
     latest_run_id: str | None,
     latest_scan_at: float | None,
     resolved: bool,
+    sample_paths: dict[str, str] = {},
+    acquisition_paths: dict[tuple[str, str], str] = {},
 ) -> list[IssueGroup]:
     """Group issue rows by (scope, sample_id, acquisition_id, md_run_id, file_kind).
 
@@ -148,6 +184,12 @@ def _group_issues(
             md_run_id=g["md_run_id"],
             file_kind=g["file_kind"],
             file_path=g["file_path"],
+            sample_path=sample_paths.get(g["sample_id"]) if g["sample_id"] else None,
+            acquisition_path=(
+                acquisition_paths.get((g["sample_id"], g["acquisition_id"]))
+                if g["sample_id"] and g["acquisition_id"]
+                else None
+            ),
             severity=_SEVERITY_ORDER[g["severity_rank"]],
             issues=g["issues"],
             first_seen_at=g["first_seen_at"],
@@ -263,12 +305,15 @@ def get_outstanding_issues(
     run = _latest_completed_run(session)
     latest_run_id = run.scan_run_id if run else None
     latest_scan_at = (run.ended_at or run.started_at) if run else None
+    sample_paths, acquisition_paths = _path_lookups(session, rows)
 
     return _group_issues(
         rows,
         latest_run_id=latest_run_id,
         latest_scan_at=latest_scan_at,
         resolved=False,
+        sample_paths=sample_paths,
+        acquisition_paths=acquisition_paths,
     )
 
 
@@ -288,12 +333,15 @@ def get_resolved_issues(
     run = _latest_completed_run(session)
     latest_run_id = run.scan_run_id if run else None
     latest_scan_at = (run.ended_at or run.started_at) if run else None
+    sample_paths, acquisition_paths = _path_lookups(session, rows)
 
     return _group_issues(
         rows,
         latest_run_id=latest_run_id,
         latest_scan_at=latest_scan_at,
         resolved=True,
+        sample_paths=sample_paths,
+        acquisition_paths=acquisition_paths,
     )
 
 

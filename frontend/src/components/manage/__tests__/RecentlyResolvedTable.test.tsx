@@ -12,6 +12,9 @@ import type { IssueGroup } from '~/types';
 vi.mock('~/components/CustomLink', () => ({
   CustomLink: ({ children }: { children: React.ReactNode }) => (
     <a href="#">{children}</a>
+  ),
+  IconButtonLink: ({ children }: { children: React.ReactNode }) => (
+    <a href="#">{children}</a>
   )
 }));
 
@@ -41,7 +44,9 @@ describe('RecentlyResolvedTable', () => {
       {
         scope: 'acquisition',
         sample_id: 'rosen_chromatin_012',
+        sample_path: null,
         acquisition_id: 'acq_02',
+        acquisition_path: null,
         md_run_id: null,
         file_kind: 'acquisition_toml',
         file_path: '/data/acq_02/acquisition.toml',
@@ -62,9 +67,8 @@ describe('RecentlyResolvedTable', () => {
       }
     ]);
     render(<RecentlyResolvedTable />);
-    expect(
-      screen.getByText('rosen_chromatin_012 · acq_02')
-    ).toBeInTheDocument();
+    expect(screen.getByText('rosen_chromatin_012')).toBeInTheDocument();
+    expect(screen.getByText('acq_02')).toBeInTheDocument();
     expect(
       screen.getByText('acquisition_quality out of range')
     ).toBeInTheDocument();

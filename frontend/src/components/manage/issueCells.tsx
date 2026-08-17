@@ -1,6 +1,9 @@
-import { Box, Chip, Stack, Tooltip, Typography } from '@mui/material';
-import { CustomLink } from '~/components/CustomLink';
+import { Chip, Stack, Tooltip, Typography } from '@mui/material';
+import EditNoteIcon from '@mui/icons-material/EditNote';
+import { CustomLink, IconButtonLink } from '~/components/CustomLink';
+import { CopyIconButton } from '~/components/common/CopyIconButton';
 import type { IssueGroup } from '~/types';
+import type { AffectedAcquisition } from './groupSampleWarnings';
 
 // Issue timestamps are Unix seconds; render in the viewer's locale.
 export function formatTs(seconds: number | null | undefined): string {
@@ -50,7 +53,10 @@ export function SeverityPill({
 // no link either. Other file kinds (mdoc, mrc, run-scope, …) have no form —
 // returns null.
 export function authorLinkFor(
-  group: IssueGroup
+  group: Pick<
+    IssueGroup,
+    'file_kind' | 'sample_id' | 'acquisition_id' | 'md_run_id'
+  >
 ): { to: string; search: Record<string, string> } | null {
   if (group.file_kind === 'sample_toml' && group.sample_id) {
     return {
@@ -81,101 +87,169 @@ export function authorLinkFor(
   return null;
 }
 
-// `file_kind` chip + a truncated, monospace `file_path` beneath it. For an
-// authorable file an "Edit file" link sits to the right of the chip,
-// jumping into its authoring form (issue 07).
-export function FileCell({ group }: { readonly group: IssueGroup }) {
-  const link = authorLinkFor(group);
+// `file_kind` chip for a regrouped SampleWarningRow. When the row itself is
+// authorable (sample.toml / md_run.toml — no acquisition id required) an
+// "Edit file" link sits beside the chip; acquisition_toml rows instead get
+// their edit action per-acquisition, in `AcquisitionListCell`.
+export function RowFileCell({
+  fileKind,
+  sampleId,
+  mdRunId
+}: {
+  readonly fileKind: string;
+  readonly sampleId: string | null;
+  readonly mdRunId: string | null;
+}) {
+  const link = authorLinkFor({
+    file_kind: fileKind,
+    sample_id: sampleId,
+    acquisition_id: null,
+    md_run_id: mdRunId
+  });
   return (
-    <Stack spacing={0.5} sx={{ minWidth: 0 }}>
-      <Stack alignItems="center" direction="row" spacing={1}>
-        <Chip
-          label={group.file_kind}
-          size="small"
-          sx={{ fontFamily: 'monospace', fontSize: 11 }}
-          variant="outlined"
-        />
-        {link ? (
-          <CustomLink
-            search={link.search}
-            sx={{ whiteSpace: 'nowrap' }}
-            to={link.to}
-            variant="body2"
-          >
-            Edit file
-          </CustomLink>
-        ) : null}
-      </Stack>
-      {group.file_path ? (
-        <Tooltip title={group.file_path}>
-          <Typography
-            sx={{
-              fontFamily: 'monospace',
-              color: 'text.secondary',
-              display: 'block',
-              maxWidth: 240,
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              whiteSpace: 'nowrap'
-            }}
-            variant="caption"
-          >
-            {group.file_path}
-          </Typography>
-        </Tooltip>
+    <Stack alignItems="center" direction="row" spacing={1}>
+      <Chip
+        label={fileKind}
+        size="small"
+        sx={{ fontFamily: 'monospace', fontSize: 11 }}
+        variant="outlined"
+      />
+      {link ? (
+        <CustomLink
+          search={link.search}
+          sx={{ whiteSpace: 'nowrap' }}
+          to={link.to}
+          variant="body2"
+        >
+          Edit file
+        </CustomLink>
       ) : null}
     </Stack>
   );
 }
 
-// Sample / acquisition link. Acquisition groups read like "sample · acq".
-export function EntityCell({ group }: { readonly group: IssueGroup }) {
-  if (group.sample_id == null) {
-    // Run-scope issue — no entity to link to.
+// Representative message, truncated with the full text on hover — messages
+// often embed a file/folder name that varies per acquisition (see
+// `AcquisitionListCell` for the per-acquisition text).
+export function MessageCell({ message }: { readonly message: string }) {
+  return (
+    <Tooltip title={message}>
+      <Typography
+        sx={{
+          display: 'block',
+          maxWidth: 320,
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          whiteSpace: 'nowrap'
+        }}
+        variant="body2"
+      >
+        {message}
+      </Typography>
+    </Tooltip>
+  );
+}
+
+// Sample link for a regrouped SampleWarningRow — acquisitions render
+// separately, in `AcquisitionListCell`.
+export function SampleCell({ sampleId }: { readonly sampleId: string | null }) {
+  if (sampleId == null) {
     return (
       <Typography color="text.secondary" variant="body2">
-        {group.scope === 'run' ? 'Scan (run-level)' : '—'}
+        Scan (run-level)
       </Typography>
     );
   }
-  if (group.acquisition_id) {
-    return (
-      <CustomLink
-        params={{ acquisitionId: group.acquisition_id }}
-        search={{ sampleId: group.sample_id }}
-        to="/acquisitions/$acquisitionId"
-      >
-        {`${group.sample_id} · ${group.acquisition_id}`}
-      </CustomLink>
-    );
-  }
   return (
-    <CustomLink params={{ sampleId: group.sample_id }} to="/samples/$sampleId">
-      {group.sample_id}
+    <CustomLink params={{ sampleId }} to="/samples/$sampleId">
+      {sampleId}
     </CustomLink>
   );
 }
 
-// The bulleted list of issue messages within a group.
-const SEVERITY_TEXT_COLOR = {
-  error: 'error.main',
-  warning: 'warning.main',
-  info: 'info.main'
-} as const;
-
-export function IssuesCell({ group }: { readonly group: IssueGroup }) {
-  const color = SEVERITY_TEXT_COLOR[group.severity];
+// Category chip — the stable, filename-free part of a warning (message text
+// often embeds a specific file/folder name and stays per-acquisition).
+export function CategoryChip({ category }: { readonly category: string }) {
   return (
-    <Box
-      component="ul"
-      sx={{ m: 0, pl: 2, color, '& code': { fontFamily: 'monospace' } }}
-    >
-      {group.issues.map((issue, i) => (
-        <Typography component="li" key={i} variant="body2">
-          {issue.message}
-        </Typography>
-      ))}
-    </Box>
+    <Chip
+      label={category.replaceAll('_', ' ')}
+      size="small"
+      sx={{ fontFamily: 'monospace', fontSize: 11 }}
+      variant="outlined"
+    />
+  );
+}
+
+// Every acquisition affected by a sample+category warning row: name (linking
+// to the acquisition detail page), a copy-path button, and — where an
+// authoring form exists for this row's file_kind — an edit-metadata icon.
+// A dash means the warning is sample- or run-level, with no acquisition to
+// list. A message differing from the row's representative text (filenames
+// vary) shows on hover rather than repeating a whole extra column.
+export function AcquisitionListCell({
+  row
+}: {
+  readonly row: {
+    sample_id: string | null;
+    md_run_id: string | null;
+    file_kind: string;
+    acquisitions: AffectedAcquisition[];
+    message: string;
+  };
+}) {
+  if (row.acquisitions.length === 0) {
+    return (
+      <Typography color="text.secondary" variant="body2">
+        —
+      </Typography>
+    );
+  }
+  return (
+    <Stack spacing={0.75}>
+      {row.acquisitions.map(acq => {
+        const ownMessage = acq.messages.join('; ');
+        const differs = ownMessage !== row.message;
+        const editLink = authorLinkFor({
+          file_kind: row.file_kind,
+          sample_id: row.sample_id,
+          acquisition_id: acq.acquisition_id,
+          md_run_id: row.md_run_id
+        });
+        return (
+          <Stack
+            alignItems="center"
+            direction="row"
+            key={acq.acquisition_id}
+            spacing={0.25}
+          >
+            <Tooltip title={differs ? ownMessage : ''}>
+              <CustomLink
+                params={{ acquisitionId: acq.acquisition_id }}
+                search={{ sampleId: row.sample_id ?? '' }}
+                to="/acquisitions/$acquisitionId"
+              >
+                {acq.acquisition_id}
+              </CustomLink>
+            </Tooltip>
+            {acq.acquisition_path ? (
+              <CopyIconButton text={acq.acquisition_path} tooltip="Copy path" />
+            ) : null}
+            {editLink ? (
+              <Tooltip title="Edit metadata">
+                <IconButtonLink
+                  aria-label="Edit metadata"
+                  search={editLink.search}
+                  size="small"
+                  to={editLink.to}
+                >
+                  <EditNoteIcon fontSize="small" />
+                </IconButtonLink>
+              </Tooltip>
+            ) : null}
+          </Stack>
+        );
+      })}
+    </Stack>
   );
 }
 
@@ -183,14 +257,17 @@ export function IssuesCell({ group }: { readonly group: IssueGroup }) {
 // (`last_seen_run_id === latest_run_id`) show the global latest-scan timestamp;
 // otherwise the owner was skipped — show its stale `last_seen_at` with a
 // tooltip explaining it wasn't re-checked.
-export function StillPresentCell({ group }: { readonly group: IssueGroup }) {
-  const reEvaluated =
-    group.latest_run_id != null &&
-    group.last_seen_run_id === group.latest_run_id;
+export function StillPresentCell({
+  reEvaluated,
+  timestamp
+}: {
+  readonly reEvaluated: boolean;
+  readonly timestamp: number | null | undefined;
+}) {
   if (reEvaluated) {
     return (
       <Typography sx={{ whiteSpace: 'nowrap' }} variant="body2">
-        {formatTs(group.latest_scan_at)}
+        {formatTs(timestamp)}
       </Typography>
     );
   }
@@ -200,19 +277,8 @@ export function StillPresentCell({ group }: { readonly group: IssueGroup }) {
         sx={{ whiteSpace: 'nowrap', color: 'warning.main' }}
         variant="body2"
       >
-        {formatTs(group.last_seen_at)}
+        {formatTs(timestamp)}
       </Typography>
     </Tooltip>
   );
-}
-
-// Stable row identity across re-fetches: entity + file_kind uniquely keys a
-// group (matches the backend's grouping).
-export function issueRowId(group: IssueGroup): string {
-  return [
-    group.scope,
-    group.sample_id ?? '',
-    group.acquisition_id ?? '',
-    group.file_kind
-  ].join('|');
 }
