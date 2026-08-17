@@ -194,7 +194,8 @@
                 {
                   "enum": [
                     "error",
-                    "warning"
+                    "warning",
+                    "info"
                   ],
                   "type": "string"
                 },
@@ -3017,6 +3018,11 @@
             "type": "integer",
             "title": "Warnings",
             "default": 0
+          },
+          "infos": {
+            "type": "integer",
+            "title": "Infos",
+            "default": 0
           }
         },
         "type": "object",
@@ -3937,6 +3943,17 @@
               }
             ],
             "title": "N Error Active"
+          },
+          "n_info_active": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "N Info Active"
           }
         },
         "type": "object",
