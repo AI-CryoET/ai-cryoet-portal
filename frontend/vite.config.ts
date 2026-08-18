@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { tanstackStart } from '@tanstack/react-start/plugin/vite';
 import { defineConfig, loadEnv } from 'vite';
 import viteReact from '@vitejs/plugin-react';
@@ -76,7 +77,15 @@ export default defineConfig(({ mode }) => {
       noExternal: ['@mui/*']
     },
     resolve: {
-      tsconfigPaths: true
+      tsconfigPaths: true,
+      // Vite's native tsconfigPaths resolution only aliases files matched by
+      // tsconfig.json's "include" (it now honors "exclude" too), so test
+      // files — excluded there to keep them out of `tsc --noEmit` — don't get
+      // "~/*" resolved. Set it explicitly so it applies everywhere, tests
+      // included.
+      alias: {
+        '~': fileURLToPath(new URL('./src', import.meta.url))
+      }
     },
     plugins: [tanstackStart(), viteReact()],
     test: {
