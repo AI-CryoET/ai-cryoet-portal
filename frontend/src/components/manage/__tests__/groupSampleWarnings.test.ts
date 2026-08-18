@@ -215,9 +215,7 @@ describe('computeBands', () => {
   });
 
   it('returns one band per acquisition, in order, for multiple acquisitions', () => {
-    expect(
-      computeBands([acquisition('acq1'), acquisition('acq2')])
-    ).toEqual([
+    expect(computeBands([acquisition('acq1'), acquisition('acq2')])).toEqual([
       { acquisitionIndex: 0, lineCount: 1 },
       { acquisitionIndex: 1, lineCount: 1 }
     ]);
@@ -230,8 +228,16 @@ describe('computeBands', () => {
   it('sizes a band to the number of reconstructions when there is more than one', () => {
     const acq = acquisition('acq1');
     acq.reconstructions = [
-      { reconstruction_alignment_id: 'grp_a', acquisition_id: 'acq1', messages: ['m'] },
-      { reconstruction_alignment_id: 'grp_b', acquisition_id: 'acq1', messages: ['m'] }
+      {
+        reconstruction_alignment_id: 'grp_a',
+        acquisition_id: 'acq1',
+        messages: ['m']
+      },
+      {
+        reconstruction_alignment_id: 'grp_b',
+        acquisition_id: 'acq1',
+        messages: ['m']
+      }
     ];
     expect(computeBands([acq])).toEqual([
       { acquisitionIndex: 0, lineCount: 2 }
