@@ -56,6 +56,7 @@ def _issue(
     md_run_id=None,
     file_kind="sample_toml",
     file_path=None,
+    reconstruction_alignment_id=None,
 ) -> ScanIssue:
     return ScanIssue(
         severity=severity,
@@ -68,6 +69,7 @@ def _issue(
         md_run_id=md_run_id,
         file_kind=file_kind,
         file_path=file_path,
+        reconstruction_alignment_id=reconstruction_alignment_id,
     )
 
 
@@ -814,6 +816,39 @@ def test_reconcile_persists_md_run_id(session):
     session.commit()
     row = _outstanding(session)[0]
     assert row.md_run_id == "run_a"
+
+
+def test_reconcile_still_outstanding_backfills_reconstruction_alignment_id(session):
+    """A row that never resolves (same fingerprint every scan) must still pick
+    up a newly-populated reconstruction_alignment_id on the next scan — e.g.
+    after upgrading from a version of the assembler that didn't set it yet."""
+    reconcile_sample_issues(
+        session,
+        "run-1",
+        "s1",
+        [_issue(category="undeclared_annotation_folder", location="loc")],
+        _NOW,
+    )
+    session.commit()
+    row = _outstanding(session)[0]
+    assert row.reconstruction_alignment_id is None
+
+    reconcile_sample_issues(
+        session,
+        "run-2",
+        "s1",
+        [
+            _issue(
+                category="undeclared_annotation_folder",
+                location="loc",
+                reconstruction_alignment_id="grp1",
+            )
+        ],
+        _NOW + 60.0,
+    )
+    session.commit()
+    row = _outstanding(session)[0]
+    assert row.reconstruction_alignment_id == "grp1"
 
 
 def test_reconcile_recurring_preserves_first_seen_bumps_last_seen(session):

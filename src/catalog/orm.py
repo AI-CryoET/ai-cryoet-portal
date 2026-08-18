@@ -694,6 +694,9 @@ class IssueORM(Base):
     location: Mapped[str] = mapped_column(String, nullable=False)
     category: Mapped[str] = mapped_column(String, nullable=False)
     message: Mapped[str] = mapped_column(String, nullable=False)
+    reconstruction_alignment_id: Mapped[str | None] = mapped_column(
+        String, nullable=True
+    )
     first_seen_at: Mapped[float] = mapped_column(Float, nullable=False)
     first_seen_run_id: Mapped[str] = mapped_column(String, nullable=False)
     last_seen_at: Mapped[float] = mapped_column(Float, nullable=False)

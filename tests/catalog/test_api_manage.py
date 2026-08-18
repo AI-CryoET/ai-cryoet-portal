@@ -115,7 +115,7 @@ def client(tmp_path):
         _issue(s, sample_id="sample-1", scope="acquisition",
                acquisition_id="acq1", file_kind="acquisition_toml",
                location="acquisitions.acq1", category="undeclared_tomogram_folder",
-               message="stray tomo")
+               message="stray tomo", reconstruction_alignment_id="grp1")
         #  - two md_run-scoped issues on the same sample, different runs: must
         #    group separately (md_run_id is part of the group key) so a
         #    manage-page link can target the right run's authoring form.
@@ -258,6 +258,26 @@ def test_outstanding_issues_carry_sample_and_acquisition_path(client):
     assert acq_group["acquisition_path"] == "/data/scratch/sample-1/acq1"
     no_row = next(x for x in body if x["sample_id"] == "sample-2")
     assert no_row["sample_path"] is None
+
+
+def test_outstanding_issues_carry_reconstruction_alignment_id(client):
+    """The undeclared_tomogram_folder issue seeded on acq1 carries a
+    reconstruction_alignment_id through to IssueItem; other issues in the
+    fixture (which don't set it) round-trip as null."""
+    body = client.get("/manage/issues").json()
+    acq_group = next(x for x in body if x["acquisition_id"] == "acq1")
+    tomo_issue = next(
+        i for i in acq_group["issues"] if i["category"] == "undeclared_tomogram_folder"
+    )
+    assert tomo_issue["reconstruction_alignment_id"] == "grp1"
+
+    sample_group = next(
+        x for x in body
+        if x["sample_id"] == "sample-1" and x["file_kind"] == "sample_toml"
+    )
+    assert all(
+        i["reconstruction_alignment_id"] is None for i in sample_group["issues"]
+    )
 
 
 def test_outstanding_issues_excludes_resolved(client):
