@@ -6,15 +6,30 @@ const SEVERITY_RANK: Record<IssueSeverity, number> = {
   info: 2
 };
 
+// One reconstruction-alignment group affected by an acquisition's warning.
+// `acquisition_id` rides along because the edit-link search params need it
+// alongside the reconstruction id (composite identity, same reasoning as
+// acquisition_toml's sampleId+id).
+export interface AffectedReconstruction {
+  reconstruction_alignment_id: string;
+  acquisition_id: string;
+  messages: string[];
+}
+
 // One acquisition affected by a sample+category warning row. `messages`
 // holds this acquisition's own issue text(s) for the category (usually one)
 // — shown on hover when it differs from the row's representative message,
 // since filenames/ids embedded in the message can vary per acquisition.
+// `reconstructions` holds the distinct reconstruction-alignment groups (if
+// any) that this acquisition's issues in this category point at — only
+// populated for the categories that carry a structured
+// `reconstruction_alignment_id` (see `IssueItem`), empty otherwise.
 export interface AffectedAcquisition {
   acquisition_id: string;
   acquisition_path: string | null;
   file_kind: string;
   messages: string[];
+  reconstructions: AffectedReconstruction[];
 }
 
 // One row of the regrouped warnings table: a sample + warning category
@@ -41,6 +56,23 @@ export interface SampleWarningRow {
   // Max `resolved_at` across merged groups — only meaningful for the
   // recently-resolved table; null on the outstanding-issues table.
   resolved_at: number | null;
+}
+
+// One acquisition's vertical "band" in the Acquisitions/Reconstructions
+// columns — both cells derive identical bands from the same
+// `row.acquisitions` array (same order, same lineCount), so their striping
+// and row heights line up purely from shared input, no cross-column DOM
+// coordination.
+export interface Band {
+  acquisitionIndex: number;
+  lineCount: number;
+}
+
+export function computeBands(acquisitions: AffectedAcquisition[]): Band[] {
+  return acquisitions.map((acq, acquisitionIndex) => ({
+    acquisitionIndex,
+    lineCount: Math.max(1, acq.reconstructions.length)
+  }));
 }
 
 function rowKey(g: IssueGroup, category: string): string {
@@ -114,11 +146,28 @@ export function groupSampleWarnings(groups: IssueGroup[]): SampleWarningRow[] {
             acquisition_id: g.acquisition_id,
             acquisition_path: g.acquisition_path,
             file_kind: g.file_kind,
-            messages: []
+            messages: [],
+            reconstructions: []
           };
           row.acquisitions.push(acq);
         }
         acq.messages.push(issue.message);
+
+        if (issue.reconstruction_alignment_id != null) {
+          const reconId = issue.reconstruction_alignment_id;
+          let recon = acq.reconstructions.find(
+            r => r.reconstruction_alignment_id === reconId
+          );
+          if (!recon) {
+            recon = {
+              reconstruction_alignment_id: reconId,
+              acquisition_id: g.acquisition_id,
+              messages: []
+            };
+            acq.reconstructions.push(recon);
+          }
+          recon.messages.push(issue.message);
+        }
       }
     }
   }
@@ -128,6 +177,13 @@ export function groupSampleWarnings(groups: IssueGroup[]): SampleWarningRow[] {
     row.acquisitions.sort((a, b) =>
       a.acquisition_id.localeCompare(b.acquisition_id)
     );
+    for (const acq of row.acquisitions) {
+      acq.reconstructions.sort((a, b) =>
+        a.reconstruction_alignment_id.localeCompare(
+          b.reconstruction_alignment_id
+        )
+      );
+    }
     // Representative message: the alphabetically-first affected acquisition,
     // deterministic across re-fetches. Sample/run-scoped rows (no
     // acquisitions) keep whichever message was first seen.

@@ -23,12 +23,11 @@ import {
 } from '~/utils/queryOptions';
 import {
   AcquisitionListCell,
-  CategoryChip,
-  MessageCell,
-  RowFileCell,
+  ReconstructionsListCell,
   SampleCell,
   SeverityPill,
   StillPresentCell,
+  WarningTypeCell,
   formatDate
 } from './issueCells';
 import {
@@ -48,60 +47,68 @@ function useColumns(): MRT_ColumnDef<SampleWarningRow>[] {
   return useMemo(
     () => [
       {
-        id: 'sample',
-        header: 'Sample',
-        size: 160,
-        Cell: ({ row }) => <SampleCell sampleId={row.original.sample_id} />
-      },
-      {
-        id: 'file',
-        header: 'File',
-        size: 160,
-        Cell: ({ row }) => (
-          <RowFileCell
-            fileKind={row.original.file_kind}
-            mdRunId={row.original.md_run_id}
-            sampleId={row.original.sample_id}
-          />
-        )
-      },
-      {
-        id: 'category',
+        accessorKey: 'category',
         header: 'Warning type',
-        size: 170,
-        Cell: ({ row }) => <CategoryChip category={row.original.category} />
+        size: 125,
+        Cell: ({ row }) => <WarningTypeCell category={row.original.category} />
       },
       {
         accessorKey: 'severity',
         header: 'Severity',
-        size: 110,
+        size: 95,
         sortingFn: (a, b) =>
           SEVERITY_RANK[a.original.severity] -
           SEVERITY_RANK[b.original.severity],
         Cell: ({ row }) => <SeverityPill severity={row.original.severity} />
       },
       {
-        id: 'message',
-        header: 'Message',
-        size: 260,
-        Cell: ({ row }) => <MessageCell message={row.original.message} />
+        id: 'sample',
+        header: 'Sample',
+        size: 135,
+        Cell: ({ row }) => (
+          <SampleCell
+            fileKind={row.original.file_kind}
+            mdRunId={row.original.md_run_id}
+            message={row.original.message}
+            sampleId={row.original.sample_id}
+            samplePath={row.original.sample_path}
+            showActions={row.original.acquisitions.length === 0}
+          />
+        )
       },
       {
         id: 'acquisitions',
-        header: 'Affected acquisitions',
-        size: 220,
+        header: 'Acquisition(s)',
+        size: 180,
+        // Zero the cell's own padding — the acquisition "bands" carry their
+        // own inset (see issueCells.tsx) so their alternating background can
+        // bleed edge-to-edge across the full column width instead of
+        // stopping short at the cell's default padding, which read as a
+        // vertical white gutter down both sides of the column.
+        muiTableBodyCellProps: { sx: { p: 0 } },
         Cell: ({ row }) => <AcquisitionListCell row={row.original} />
+      },
+      {
+        id: 'reconstructions',
+        header: 'Reconstruction(s)',
+        size: 165,
+        muiTableBodyCellProps: { sx: { p: 0 } },
+        Cell: ({ row }) => <ReconstructionsListCell row={row.original} />
       },
       {
         accessorKey: 'first_seen_at',
         header: 'First seen',
-        size: 130,
+        size: 85,
         Cell: ({ cell }) => formatDate(cell.getValue<number>())
       },
       {
         id: 'still_present',
         header: 'Still present as of',
-        size: 170,
+        // Wide enough for the full "M/D/YYYY, H:MM:SS AM/PM TZ" string
+        // (`formatTs`) without clipping — verified in a real browser; a
+        // narrower column silently truncated the timestamp (the cell's
+        // overflow:hidden clips with no ellipsis/tooltip fallback).
+        size: 190,
         Cell: ({ row }) => (
           <StillPresentCell
             reEvaluated={row.original.reEvaluated}
@@ -201,6 +208,17 @@ export function OutstandingIssuesTable({
     muiToolbarAlertBannerProps: isError
       ? { color: 'error', children: 'Failed to load outstanding issues.' }
       : undefined,
+    // Fixed column widths that the user can drag-resize, sized to fit without
+    // horizontal scroll (see column `size`s above). The 1440px viewport's
+    // actual table content area is ~1150px wide (the page's centered
+    // MuiContainer + card padding eat the rest) — verified in a real browser,
+    // not just by summing the `size`s against the raw viewport width.
+    layoutMode: 'grid',
+    enableColumnResizing: true,
+    columnResizeMode: 'onChange',
+    mrtTheme: theme => ({ draggingBorderColor: theme.palette.grey[300] }),
+    defaultColumn: { grow: 1 },
+    muiTableBodyRowProps: { hover: false },
     enableColumnActions: false,
     enableColumnFilters: false,
     enableDensityToggle: false,

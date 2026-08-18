@@ -54,8 +54,7 @@ describe('AcquisitionListCell', () => {
           sample_id: 'samp1',
           md_run_id: null,
           file_kind: 'sample_toml',
-          acquisitions: [],
-          message: 'm'
+          acquisitions: []
         }}
       />
     );
@@ -74,10 +73,10 @@ describe('AcquisitionListCell', () => {
               acquisition_id: 'acq1',
               acquisition_path: '/data/samp1/acq1',
               file_kind: 'acquisition_toml',
-              messages: ["id 'acq1'"]
+              messages: ["id 'acq1'"],
+              reconstructions: []
             }
-          ],
-          message: "id 'acq1'"
+          ]
         }}
       />
     );
@@ -86,6 +85,36 @@ describe('AcquisitionListCell', () => {
     expect(screen.getByLabelText('Copy path')).toBeTruthy();
     const editLink = screen.getByLabelText('Edit metadata');
     expect(editLink).toHaveAttribute('data-to', '/manage/author');
+  });
+
+  it('shows a message icon for every acquisition', () => {
+    render(
+      <AcquisitionListCell
+        row={{
+          sample_id: 'samp1',
+          md_run_id: null,
+          file_kind: 'acquisition_toml',
+          acquisitions: [
+            {
+              acquisition_id: 'acq1',
+              acquisition_path: '/data/samp1/acq1',
+              file_kind: 'acquisition_toml',
+              messages: ["id 'acq1'"],
+              reconstructions: []
+            },
+            {
+              acquisition_id: 'acq2',
+              acquisition_path: '/data/samp1/acq2',
+              file_kind: 'acquisition_toml',
+              messages: ["id 'acq2' differs"],
+              reconstructions: []
+            }
+          ]
+        }}
+      />
+    );
+    const messageIcons = screen.getAllByLabelText('View message');
+    expect(messageIcons).toHaveLength(2);
   });
 
   it('omits the edit icon for non-authorable file kinds', () => {
@@ -100,10 +129,10 @@ describe('AcquisitionListCell', () => {
               acquisition_id: 'acq1',
               acquisition_path: null,
               file_kind: 'mdoc',
-              messages: ['bad mdoc']
+              messages: ['bad mdoc'],
+              reconstructions: []
             }
-          ],
-          message: 'bad mdoc'
+          ]
         }}
       />
     );
