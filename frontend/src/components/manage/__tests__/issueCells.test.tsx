@@ -1,7 +1,9 @@
 /**
  * Unit tests for the manage warnings table edit-link wiring (issue 07):
  * a row flagging a sample.toml / acquisition.toml links to the matching
- * authoring form, auto-loading that entity by id.
+ * authoring form, auto-loading that entity by id. Also covers the
+ * columns-redesign cells: SampleCell's icon fold-in, and WarningTypeCell's
+ * wrap-then-clamp treatment (no more chip/tooltip).
  */
 import { render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
@@ -29,10 +31,30 @@ vi.mock('~/components/CustomLink', () => ({
     >
       {children}
     </a>
+  ),
+  IconButtonLink: ({
+    children,
+    to,
+    search,
+    'aria-label': ariaLabel
+  }: {
+    children: React.ReactNode;
+    to?: string;
+    search?: Record<string, unknown>;
+    'aria-label'?: string;
+  }) => (
+    <a
+      aria-label={ariaLabel}
+      data-to={to}
+      data-search={JSON.stringify(search)}
+      href="#"
+    >
+      {children}
+    </a>
   )
 }));
 
-import { FileCell, authorLinkFor } from '../issueCells';
+import { SampleCell, WarningTypeCell, authorLinkFor } from '../issueCells';
 
 function group(overrides: Partial<IssueGroup>): IssueGroup {
   return {
@@ -106,20 +128,80 @@ describe('authorLinkFor', () => {
   });
 });
 
-describe('FileCell edit link', () => {
-  it('renders an "Edit file" link beside the chip for a sample.toml row', () => {
-    render(<FileCell group={group({})} />);
-    const link = screen.getByText('Edit file').closest('a');
-    expect(link).not.toBeNull();
-    expect(link).toHaveAttribute('data-to', '/manage/author');
-    expect(link).toHaveAttribute(
-      'data-search',
-      JSON.stringify({ tab: 'sample', id: 'samp1' })
+describe('SampleCell', () => {
+  it('renders a plain link with no icons for an acquisition-scoped row', () => {
+    render(
+      <SampleCell
+        fileKind="acquisition_toml"
+        sampleId="samp1"
+        samplePath="/data/samp1"
+        showActions={false}
+      />
     );
+    expect(screen.getByText('samp1')).toBeInTheDocument();
+    expect(screen.queryByLabelText('Copy path')).toBeNull();
+    expect(screen.queryByLabelText('Edit metadata')).toBeNull();
   });
 
-  it('does not link a non-authorable file kind', () => {
-    render(<FileCell group={group({ file_kind: 'mdoc', file_path: null })} />);
-    expect(screen.queryByText('Edit file')).toBeNull();
+  it('folds in copy-path + edit-metadata icons for a sample/md_run-scoped row', () => {
+    render(
+      <SampleCell
+        fileKind="sample_toml"
+        sampleId="samp1"
+        samplePath="/data/samp1"
+        showActions
+      />
+    );
+    expect(screen.getByLabelText('Copy path')).toBeInTheDocument();
+    const editLink = screen.getByLabelText('Edit metadata');
+    expect(editLink).toHaveAttribute('data-to', '/manage/author');
+  });
+
+  it('omits the edit icon when the file kind has no authoring form', () => {
+    render(
+      <SampleCell
+        fileKind="mdoc"
+        sampleId="samp1"
+        samplePath="/data/samp1"
+        showActions
+      />
+    );
+    expect(screen.queryByLabelText('Edit metadata')).toBeNull();
+  });
+
+  it('shows a message icon for a sample/md_run-scoped row', () => {
+    render(
+      <SampleCell
+        fileKind="sample_toml"
+        message="something went wrong"
+        sampleId="samp1"
+        samplePath="/data/samp1"
+        showActions
+      />
+    );
+    expect(screen.getByLabelText('View message')).toBeInTheDocument();
+  });
+
+  it('omits the message icon for an acquisition-scoped row', () => {
+    render(
+      <SampleCell
+        fileKind="acquisition_toml"
+        message="something went wrong"
+        sampleId="samp1"
+        samplePath="/data/samp1"
+        showActions={false}
+      />
+    );
+    expect(screen.queryByLabelText('View message')).toBeNull();
+  });
+});
+
+describe('WarningTypeCell', () => {
+  it('renders the category as plain wrapped text, not a chip', () => {
+    render(<WarningTypeCell category="undeclared_annotation_folder" />);
+    expect(
+      screen.getByText('undeclared annotation folder')
+    ).toBeInTheDocument();
+    expect(screen.queryByRole('button')).toBeNull();
   });
 });

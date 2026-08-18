@@ -16,6 +16,17 @@ import type { IssueGroup } from '~/types';
 vi.mock('~/components/CustomLink', () => ({
   CustomLink: ({ children }: { children: React.ReactNode }) => (
     <a href="#">{children}</a>
+  ),
+  IconButtonLink: ({
+    children,
+    'aria-label': ariaLabel
+  }: {
+    children: React.ReactNode;
+    'aria-label'?: string;
+  }) => (
+    <a aria-label={ariaLabel} href="#">
+      {children}
+    </a>
   )
 }));
 
@@ -32,7 +43,9 @@ function group(overrides: Partial<IssueGroup>): IssueGroup {
   return {
     scope: 'sample',
     sample_id: 'villa_synapse_004',
+    sample_path: null,
     acquisition_id: null,
+    acquisition_path: null,
     md_run_id: null,
     file_kind: 'sample_toml',
     file_path: '/data/villa_synapse_004/sample.toml',
@@ -61,14 +74,13 @@ beforeEach(() => {
 });
 
 describe('OutstandingIssuesTable', () => {
-  it('renders an issue row with its message, file kind and severity', () => {
+  it('renders an issue row with a message icon and severity', () => {
     setData([group({})]);
     render(<OutstandingIssuesTable />);
     expect(screen.getByText('villa_synapse_004')).toBeInTheDocument();
-    expect(
-      screen.getByText('missing required field project')
-    ).toBeInTheDocument();
-    expect(screen.getByText('sample_toml')).toBeInTheDocument();
+    // No Message column anymore — the row's message hangs off the Sample
+    // cell's info icon instead (sample-scoped row, no acquisitions).
+    expect(screen.getByLabelText('View message')).toBeInTheDocument();
     expect(screen.getByText('error')).toBeInTheDocument();
   });
 
@@ -110,5 +122,57 @@ describe('OutstandingIssuesTable', () => {
     setData([group({})]);
     render(<OutstandingIssuesTable q="acq_02" />);
     expect(screen.getByDisplayValue('acq_02')).toBeInTheDocument();
+  });
+
+  it('merges the same category across acquisitions into one row, listing both', () => {
+    setData([
+      group({
+        scope: 'acquisition',
+        acquisition_id: 'acq1',
+        acquisition_path: '/data/villa_synapse_004/acq1',
+        file_kind: 'acquisition_toml',
+        issues: [
+          {
+            category: 'undeclared_annotation_folder',
+            message: "annotation 'a1' undeclared"
+          }
+        ]
+      }),
+      group({
+        scope: 'acquisition',
+        acquisition_id: 'acq2',
+        acquisition_path: '/data/villa_synapse_004/acq2',
+        file_kind: 'acquisition_toml',
+        issues: [
+          {
+            category: 'undeclared_annotation_folder',
+            message: "annotation 'a2' undeclared"
+          }
+        ]
+      })
+    ]);
+    render(<OutstandingIssuesTable />);
+    // One sample row, both acquisitions listed under it.
+    expect(screen.getAllByText('villa_synapse_004')).toHaveLength(1);
+    expect(screen.getByText('acq1')).toBeInTheDocument();
+    expect(screen.getByText('acq2')).toBeInTheDocument();
+    expect(
+      screen.getByText('undeclared annotation folder')
+    ).toBeInTheDocument();
+  });
+
+  it('renders a dash in the acquisitions and reconstructions columns for a sample-only issue', () => {
+    setData([group({})]);
+    render(<OutstandingIssuesTable />);
+    // Both the Acquisitions and Reconstructions columns render a plain dash
+    // for a sample-scoped row (no acquisitions to list).
+    expect(screen.getAllByText('—')).toHaveLength(2);
+  });
+
+  it('folds copy-path + edit icons into the Sample cell for a sample-only issue', () => {
+    setData([group({ sample_path: '/data/villa_synapse_004' })]);
+    render(<OutstandingIssuesTable />);
+    expect(screen.getByLabelText('Copy path')).toBeInTheDocument();
+    expect(screen.getByLabelText('Edit metadata')).toBeInTheDocument();
   });
 });

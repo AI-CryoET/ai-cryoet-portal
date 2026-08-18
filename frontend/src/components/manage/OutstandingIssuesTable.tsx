@@ -14,7 +14,7 @@ import {
   type MRT_ColumnDef,
   type MRT_PaginationState
 } from 'material-react-table';
-import type { IssueGroup } from '~/types';
+import type { IssueGroup, IssueSeverity } from '~/types';
 import { useDebounce } from '~/hooks/useDebounce';
 import { SectionHeader } from './SectionHeader';
 import {
@@ -22,63 +22,99 @@ import {
   useOutstandingIssuesQuery
 } from '~/utils/queryOptions';
 import {
-  EntityCell,
-  FileCell,
-  IssuesCell,
+  AcquisitionListCell,
+  ReconstructionsListCell,
+  SampleCell,
   SeverityPill,
   StillPresentCell,
-  formatDate,
-  issueRowId
+  WarningTypeCell,
+  formatDate
 } from './issueCells';
+import {
+  groupSampleWarnings,
+  type SampleWarningRow
+} from './groupSampleWarnings';
 
 // Priority order (most to least severe) — plain alphabetical sort would put
 // "info" between "error" and "warning".
-const SEVERITY_RANK: Record<IssueGroup['severity'], number> = {
+const SEVERITY_RANK: Record<IssueSeverity, number> = {
   error: 0,
   warning: 1,
   info: 2
 };
 
-function useColumns(): MRT_ColumnDef<IssueGroup>[] {
+function useColumns(): MRT_ColumnDef<SampleWarningRow>[] {
   return useMemo(
     () => [
       {
-        id: 'entity',
-        header: 'Sample / Acquisition',
-        size: 220,
-        Cell: ({ row }) => <EntityCell group={row.original} />
-      },
-      {
-        id: 'file',
-        header: 'File',
-        size: 260,
-        Cell: ({ row }) => <FileCell group={row.original} />
+        accessorKey: 'category',
+        header: 'Warning type',
+        size: 125,
+        Cell: ({ row }) => <WarningTypeCell category={row.original.category} />
       },
       {
         accessorKey: 'severity',
         header: 'Severity',
-        size: 110,
+        size: 95,
         sortingFn: (a, b) =>
           SEVERITY_RANK[a.original.severity] -
           SEVERITY_RANK[b.original.severity],
         Cell: ({ row }) => <SeverityPill severity={row.original.severity} />
       },
       {
-        id: 'issues',
-        header: 'Issues',
-        Cell: ({ row }) => <IssuesCell group={row.original} />
+        id: 'sample',
+        header: 'Sample',
+        size: 135,
+        Cell: ({ row }) => (
+          <SampleCell
+            fileKind={row.original.file_kind}
+            mdRunId={row.original.md_run_id}
+            message={row.original.message}
+            sampleId={row.original.sample_id}
+            samplePath={row.original.sample_path}
+            showActions={row.original.acquisitions.length === 0}
+          />
+        )
+      },
+      {
+        id: 'acquisitions',
+        header: 'Acquisition(s)',
+        size: 180,
+        // Zero the cell's own padding — the acquisition "bands" carry their
+        // own inset (see issueCells.tsx) so their alternating background can
+        // bleed edge-to-edge across the full column width instead of
+        // stopping short at the cell's default padding, which read as a
+        // vertical white gutter down both sides of the column.
+        muiTableBodyCellProps: { sx: { p: 0 } },
+        Cell: ({ row }) => <AcquisitionListCell row={row.original} />
+      },
+      {
+        id: 'reconstructions',
+        header: 'Reconstruction(s)',
+        size: 165,
+        muiTableBodyCellProps: { sx: { p: 0 } },
+        Cell: ({ row }) => <ReconstructionsListCell row={row.original} />
       },
       {
         accessorKey: 'first_seen_at',
         header: 'First seen',
-        size: 130,
+        size: 85,
         Cell: ({ cell }) => formatDate(cell.getValue<number>())
       },
       {
         id: 'still_present',
         header: 'Still present as of',
-        size: 170,
-        Cell: ({ row }) => <StillPresentCell group={row.original} />
+        // Wide enough for the full "M/D/YYYY, H:MM:SS AM/PM TZ" string
+        // (`formatTs`) without clipping — verified in a real browser; a
+        // narrower column silently truncated the timestamp (the cell's
+        // overflow:hidden clips with no ellipsis/tooltip fallback).
+        size: 190,
+        Cell: ({ row }) => (
+          <StillPresentCell
+            reEvaluated={row.original.reEvaluated}
+            timestamp={row.original.stillPresentAt}
+          />
+        )
       }
     ],
     []
@@ -117,13 +153,25 @@ export function OutstandingIssuesTable({
     ...local,
     ...(debouncedQ ? { q: debouncedQ } : {})
   };
-  const { data = [], isFetching, isError } = useOutstandingIssuesQuery(filters);
+  const {
+    data: rawData = [],
+    isFetching,
+    isError
+  } = useOutstandingIssuesQuery(filters);
   // Unfiltered denominator (same query key as the component's filtered fetch
-  // when no filters are set, so they dedupe). Rows are *grouped* issues, so we
-  // sum each group's issues to count actual warnings/errors, not table rows.
+  // when no filters are set, so they dedupe). Sum each group's issues to
+  // count actual warnings/errors, not table rows (rows are now regrouped by
+  // sample + warning category, so they undercount individual issues).
   const { data: allIssues = [] } = useOutstandingIssuesQuery({});
-  const totalIssues = allIssues.reduce((n, g) => n + g.issues.length, 0);
-  const matchCount = data.reduce((n, g) => n + g.issues.length, 0);
+  const totalIssues = allIssues.reduce(
+    (n: number, g: IssueGroup) => n + g.issues.length,
+    0
+  );
+  const matchCount = rawData.reduce(
+    (n: number, g: IssueGroup) => n + g.issues.length,
+    0
+  );
+  const data = useMemo(() => groupSampleWarnings(rawData), [rawData]);
   const columns = useColumns();
 
   const setFilter = <K extends keyof LocalFilters>(
@@ -140,10 +188,10 @@ export function OutstandingIssuesTable({
       return next;
     });
 
-  const table = useMaterialReactTable<IssueGroup>({
+  const table = useMaterialReactTable<SampleWarningRow>({
     columns,
     data,
-    getRowId: issueRowId,
+    getRowId: row => row.key,
     onPaginationChange: updater => {
       // Row heights vary, so a page swap changes the table's total height and
       // shoves everything below it. Remember where the bottom edge sits now;
@@ -160,6 +208,17 @@ export function OutstandingIssuesTable({
     muiToolbarAlertBannerProps: isError
       ? { color: 'error', children: 'Failed to load outstanding issues.' }
       : undefined,
+    // Fixed column widths that the user can drag-resize, sized to fit without
+    // horizontal scroll (see column `size`s above). The 1440px viewport's
+    // actual table content area is ~1150px wide (the page's centered
+    // MuiContainer + card padding eat the rest) — verified in a real browser,
+    // not just by summing the `size`s against the raw viewport width.
+    layoutMode: 'grid',
+    enableColumnResizing: true,
+    columnResizeMode: 'onChange',
+    mrtTheme: theme => ({ draggingBorderColor: theme.palette.grey[300] }),
+    defaultColumn: { grow: 1 },
+    muiTableBodyRowProps: { hover: false },
     enableColumnActions: false,
     enableColumnFilters: false,
     enableDensityToggle: false,

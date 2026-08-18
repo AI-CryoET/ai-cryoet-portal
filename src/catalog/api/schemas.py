@@ -376,6 +376,7 @@ class ManageSummary(BaseModel):
 class IssueItem(BaseModel):
     category: str
     message: str
+    reconstruction_alignment_id: str | None = None
 
 
 class IssueGroup(BaseModel):
@@ -388,6 +389,11 @@ class IssueGroup(BaseModel):
     md_run_id: str | None = None
     file_kind: str
     file_path: str | None = None
+    # On-disk directory paths (distinct from `file_path`, the specific warning
+    # file) — copy-path/open-in-Fileglancer actions on the warnings page need
+    # these without a separate per-sample fetch.
+    sample_path: str | None = None
+    acquisition_path: str | None = None
     severity: str
     issues: list[IssueItem] = []
     first_seen_at: float

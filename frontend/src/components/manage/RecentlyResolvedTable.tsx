@@ -1,59 +1,91 @@
 import { useMemo } from 'react';
-import { alpha } from '@mui/material';
+import { Typography, alpha } from '@mui/material';
 import {
   MaterialReactTable,
   useMaterialReactTable,
   type MRT_ColumnDef
 } from 'material-react-table';
-import type { IssueGroup } from '~/types';
 import { useRecentlyResolvedQuery } from '~/utils/queryOptions';
 import {
-  EntityCell,
-  FileCell,
-  IssuesCell,
+  AcquisitionListCell,
+  ReconstructionsListCell,
+  SampleCell,
   SeverityPill,
+  WarningTypeCell,
   formatDate,
-  formatTs,
-  issueRowId
+  formatTs
 } from './issueCells';
+import {
+  groupSampleWarnings,
+  type SampleWarningRow
+} from './groupSampleWarnings';
 
-function useColumns(): MRT_ColumnDef<IssueGroup>[] {
+function useColumns(): MRT_ColumnDef<SampleWarningRow>[] {
   return useMemo(
     () => [
       {
-        id: 'entity',
-        header: 'Sample / Acquisition',
-        size: 220,
-        Cell: ({ row }) => <EntityCell group={row.original} />
-      },
-      {
-        id: 'file',
-        header: 'File',
-        size: 260,
-        Cell: ({ row }) => <FileCell group={row.original} />
+        accessorKey: 'category',
+        header: 'Warning type',
+        size: 125,
+        Cell: ({ row }) => <WarningTypeCell category={row.original.category} />
       },
       {
         accessorKey: 'severity',
         header: 'Severity',
-        size: 110,
+        size: 95,
         Cell: ({ row }) => <SeverityPill severity={row.original.severity} />
       },
       {
-        id: 'issues',
-        header: 'Issues',
-        Cell: ({ row }) => <IssuesCell group={row.original} />
+        id: 'sample',
+        header: 'Sample',
+        size: 135,
+        Cell: ({ row }) => (
+          <SampleCell
+            fileKind={row.original.file_kind}
+            mdRunId={row.original.md_run_id}
+            message={row.original.message}
+            sampleId={row.original.sample_id}
+            samplePath={row.original.sample_path}
+            showActions={row.original.acquisitions.length === 0}
+          />
+        )
+      },
+      {
+        id: 'acquisitions',
+        header: 'Acquisition(s)',
+        size: 180,
+        muiTableBodyCellProps: { sx: { p: 0 } },
+        Cell: ({ row }) => <AcquisitionListCell row={row.original} />
+      },
+      {
+        id: 'reconstructions',
+        header: 'Reconstruction(s)',
+        size: 165,
+        muiTableBodyCellProps: { sx: { p: 0 } },
+        Cell: ({ row }) => <ReconstructionsListCell row={row.original} />
       },
       {
         accessorKey: 'first_seen_at',
         header: 'First seen',
-        size: 130,
+        size: 85,
         Cell: ({ cell }) => formatDate(cell.getValue<number>())
       },
       {
         accessorKey: 'resolved_at',
         header: 'Resolved at',
-        size: 170,
-        Cell: ({ cell }) => formatTs(cell.getValue<number | null | undefined>())
+        // Wide enough for the full "M/D/YYYY, H:MM:SS AM/PM TZ" string
+        // (`formatTs`) without clipping — see the matching comment on
+        // OutstandingIssuesTable's "Still present as of" column.
+        size: 190,
+        // Wrapped with `whiteSpace: nowrap` — bare text here word-wraps at
+        // the comma/spaces in `formatTs`'s output (unlike `StillPresentCell`,
+        // which already sets this), verified in a real browser: at this
+        // column width it silently wrapped to two lines instead of clipping.
+        Cell: ({ cell }) => (
+          <Typography sx={{ whiteSpace: 'nowrap' }} variant="body2">
+            {formatTs(cell.getValue<number | null | undefined>())}
+          </Typography>
+        )
       }
     ],
     []
@@ -65,13 +97,25 @@ export function RecentlyResolvedTable({
 }: {
   readonly withinHours?: number;
 }) {
-  const { data } = useRecentlyResolvedQuery(withinHours);
+  const { data: rawData } = useRecentlyResolvedQuery(withinHours);
+  const data = useMemo(() => groupSampleWarnings(rawData), [rawData]);
   const columns = useColumns();
 
-  const table = useMaterialReactTable<IssueGroup>({
+  const table = useMaterialReactTable<SampleWarningRow>({
     columns,
     data,
-    getRowId: issueRowId,
+    getRowId: row => row.key,
+    // Fixed column widths that the user can drag-resize, sized to fit without
+    // horizontal scroll (see column `size`s above). The 1440px viewport's
+    // actual table content area is ~1150px wide (the page's centered
+    // MuiContainer + card padding eat the rest) — verified in a real browser,
+    // not just by summing the `size`s against the raw viewport width.
+    layoutMode: 'grid',
+    enableColumnResizing: true,
+    columnResizeMode: 'onChange',
+    mrtTheme: theme => ({ draggingBorderColor: theme.palette.grey[300] }),
+    defaultColumn: { grow: 1 },
+    muiTableBodyRowProps: { hover: false },
     enableColumnActions: false,
     enableColumnFilters: false,
     enableGlobalFilter: false,
