@@ -151,6 +151,12 @@ export const SamplesPortalTable = memo(
             );
           }
         },
+        {
+          accessorKey: 'experiment_date',
+          header: 'Experiment date',
+          size: 130,
+          Cell: ({ cell }) => dash(cell.getValue())
+        },
         { accessorKey: 'n_acquisitions', header: 'Acquisitions', size: 110 },
         { accessorKey: 'n_tilt_series', header: 'Tilt', size: 80 },
         { accessorKey: 'n_tomograms', header: 'Tomograms', size: 110 }

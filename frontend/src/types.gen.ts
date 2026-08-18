@@ -1189,6 +1189,8 @@ export interface components {
             description?: string | null;
             /** Path */
             path?: string | null;
+            /** Experiment Date */
+            experiment_date?: string | null;
             chromatin?: components["schemas"]["ChromatinOut"] | null;
             fiducial?: components["schemas"]["FiducialOut"] | null;
             simulation?: components["schemas"]["SimulationOut"] | null;
@@ -1248,6 +1250,8 @@ export interface components {
             description?: string | null;
             /** Path */
             path?: string | null;
+            /** Experiment Date */
+            experiment_date?: string | null;
             /**
              * Warning Count
              * @default 0

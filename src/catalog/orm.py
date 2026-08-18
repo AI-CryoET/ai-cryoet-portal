@@ -54,6 +54,8 @@ class SampleORM(Base):
     # AcquisitionORM.path). Surfaced for the UI's copy-path / open-in-Fileglancer
     # actions so they work even for samples with no acquisitions.
     path: Mapped[str | None] = mapped_column(String, nullable=True)
+    # Earliest MDOC date_collected across the sample's acquisitions.
+    experiment_date: Mapped[_dt.date | None] = mapped_column(Date, nullable=True)
     # DB-only: soft-delete timestamp
     deleted_at: Mapped[float | None] = mapped_column(Float, nullable=True)
     # DB-only: true on-disk directory size cached by the scanner

@@ -3559,6 +3559,18 @@
             ],
             "title": "Path"
           },
+          "experiment_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Experiment Date"
+          },
           "chromatin": {
             "anyOf": [
               {
@@ -3767,6 +3779,18 @@
               }
             ],
             "title": "Path"
+          },
+          "experiment_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Experiment Date"
           },
           "warning_count": {
             "type": "integer",

@@ -49,6 +49,13 @@ export function sampleMetadataSections(
 ): MetadataSectionData[] {
   const sections: MetadataSectionData[] = [];
 
+  // Which sections apply is driven by the sample's project / data source, not
+  // by whether the sub-entity happens to be populated — so an applicable
+  // section still renders (with placeholder values) when its data is missing.
+  const isChromatin = sample.project === 'chromatin';
+  const isExperimental = sample.data_source === 'experimental';
+  const isSimulation = sample.data_source === 'simulation';
+
   sections.push({
     title: 'Sample Overview',
     defaultExpanded: true,
@@ -59,16 +66,13 @@ export function sampleMetadataSections(
       { label: 'Data source', value: sample.data_source },
       { label: 'Type', value: sample.type },
       { label: 'Cell type', value: sample.cell_type },
-      { label: 'Description', value: sample.description }
+      { label: 'Description', value: sample.description },
+      // MDOC-derived; only meaningful for experimental samples.
+      ...(isExperimental
+        ? [{ label: 'Experiment date', value: sample.experiment_date }]
+        : [])
     ]
   });
-
-  // Which sections apply is driven by the sample's project / data source, not
-  // by whether the sub-entity happens to be populated — so an applicable
-  // section still renders (with placeholder values) when its data is missing.
-  const isChromatin = sample.project === 'chromatin';
-  const isExperimental = sample.data_source === 'experimental';
-  const isSimulation = sample.data_source === 'simulation';
 
   if (isChromatin) {
     const c = sample.chromatin;
