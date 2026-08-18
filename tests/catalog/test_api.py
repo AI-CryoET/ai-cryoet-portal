@@ -20,6 +20,7 @@ from catalog import db, orm
 from catalog.persistence import upsert_sample_record
 from catalog.api.main import create_app
 from catalog.api.deps import get_session
+from catalog.api.routes.samples import _file_formats
 
 
 @pytest.fixture
@@ -47,10 +48,16 @@ def client(tmp_path):
     try:
         # sample_a — full with everything
         tomo = PostProcessedTomogram(
-            id="t1", voxel_size=11.72, reconstruction_alignment_id="align1"
+            id="t1",
+            voxel_size=11.72,
+            reconstruction_alignment_id="align1",
+            mrc_path="align1/t1.mrc",
+            zarr_path="align1/t1.zarr",
         )
         ann = Annotation(
-            id="a1", files=["x.mrc"], reconstruction_alignment_id="align1"
+            id="a1",
+            files=["x.mrc", "x.json"],
+            reconstruction_alignment_id="align1",
         )
         acq = AcquisitionFile(
             acquisition=Acquisition(acquisition_id="acq1"),
@@ -154,6 +161,19 @@ def client(tmp_path):
     return TestClient(app)
 
 
+# ── _file_formats ────────────────────────────────────────
+def test_file_formats_dedupes_and_uppercases():
+    assert _file_formats("a/b.mrc", "a/b.zarr", "a/b.mrc") == ["MRC", "ZARR"]
+
+
+def test_file_formats_skips_none_and_empty():
+    assert _file_formats(None, "", "a/b.star") == ["STAR"]
+
+
+def test_file_formats_all_none():
+    assert _file_formats(None, None) == []
+
+
 # ── /samples ──────────────────────────────────────────────
 def test_list_samples_excludes_soft_deleted(client):
     r = client.get("/samples")
@@ -219,6 +239,8 @@ def test_get_sample_detail(client):
     assert acq["raw_tomograms"] == []
     assert len(acq["post_processed_tomograms"]) == 1
     assert acq["post_processed_tomograms"][0]["voxel_size"] == pytest.approx(11.72)
+    assert acq["post_processed_tomograms"][0]["file_formats"] == ["MRC", "ZARR"]
+    assert acq["annotations"][0]["file_formats"] == ["MRC", "JSON"]
 
 
 def test_get_sample_detail_never_exposes_renamed_from(client):

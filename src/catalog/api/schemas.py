@@ -147,6 +147,8 @@ class _TomogramOutBase(BaseModel):
     zarr_path: str | None = None
     zarr_axes: str | None = None
     zarr_scale: list[float] | None = None
+    # file extensions (e.g. "MRC", "ZARR") derived from mrc_path/zarr_path
+    file_formats: list[str] = []
 
 
 class RawTomogramOut(_TomogramOutBase):
@@ -175,6 +177,8 @@ class AnnotationOut(BaseModel):
     # annotation_id (under Annotations/) of the associated bounding box
     bounding_box: str | None = None
     files: list[str] = []
+    # file extensions (e.g. "STAR", "PNG") derived from files, deduped
+    file_formats: list[str] = []
 
 
 class TiltSeriesOut(BaseModel):
