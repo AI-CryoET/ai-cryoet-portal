@@ -83,6 +83,7 @@ class ScanIssue:
     md_run_id: str | None = None
     file_kind: str = "other"
     file_path: str | None = None
+    reconstruction_alignment_id: str | None = None
 
 
 @dataclass
@@ -236,6 +237,7 @@ def _make_issue(
     severity: str = "warning",
     file_kind: str | None = None,
     file_path: str | None = None,
+    reconstruction_alignment_id: str | None = None,
 ) -> ScanIssue:
     """Build a ScanIssue, resolving scope + file attribution from ``location``.
 
@@ -257,6 +259,7 @@ def _make_issue(
         md_run_id=md_run_id,
         file_kind=file_kind if file_kind is not None else res_kind,
         file_path=file_path if file_path is not None else res_path,
+        reconstruction_alignment_id=reconstruction_alignment_id,
     )
 
 
@@ -572,6 +575,7 @@ def assemble_sample(sample_loc: SampleLocation) -> AssemblyResult:
                             in _TEMPLATE_PLACEHOLDER_IDS
                             else "warning"
                         ),
+                        reconstruction_alignment_id=ra_loc.reconstruction_alignment_id,
                     )
                 )
                 continue
@@ -660,11 +664,13 @@ def assemble_sample(sample_loc: SampleLocation) -> AssemblyResult:
                         f"Reconstructions/{group}/reconstruction.toml, not "
                         "acquisition.toml"
                     )
+                    recon_id = group
                 else:
                     message = (
                         f"tomogram '{tomo_loc.tomogram_id}' undeclared — add a "
                         "[[raw_tomogram]] or [[post_processed_tomogram]] block for it"
                     )
+                    recon_id = None
                 result.warnings.append(
                     _make_issue(
                         sample_loc,
@@ -674,6 +680,7 @@ def assemble_sample(sample_loc: SampleLocation) -> AssemblyResult:
                             f".tomogram[{tomo_loc.tomogram_id}]"
                         ),
                         message=message,
+                        reconstruction_alignment_id=recon_id,
                     )
                 )
                 continue
@@ -808,11 +815,13 @@ def assemble_sample(sample_loc: SampleLocation) -> AssemblyResult:
                         f"to Reconstructions/{group}/reconstruction.toml, not "
                         "acquisition.toml"
                     )
+                    recon_id = group
                 else:
                     message = (
                         f"annotation '{ann_loc.annotation_id}' undeclared — add an "
                         "[[annotation]] block for it"
                     )
+                    recon_id = None
                 result.warnings.append(
                     _make_issue(
                         sample_loc,
@@ -822,6 +831,7 @@ def assemble_sample(sample_loc: SampleLocation) -> AssemblyResult:
                             f".annotation[{ann_loc.annotation_id}]"
                         ),
                         message=message,
+                        reconstruction_alignment_id=recon_id,
                     )
                 )
                 continue

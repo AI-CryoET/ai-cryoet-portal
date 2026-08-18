@@ -160,7 +160,13 @@ def _group_issues(
         rank = _SEVERITY_ORDER.index(_enum_val(r.severity))
         if rank < g["severity_rank"]:
             g["severity_rank"] = rank
-        g["issues"].append(IssueItem(category=r.category, message=r.message))
+        g["issues"].append(
+            IssueItem(
+                category=r.category,
+                message=r.message,
+                reconstruction_alignment_id=r.reconstruction_alignment_id,
+            )
+        )
 
         if r.first_seen_at < g["first_seen_at"]:
             g["first_seen_at"] = r.first_seen_at

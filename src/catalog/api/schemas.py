@@ -382,6 +382,7 @@ class ManageSummary(BaseModel):
 class IssueItem(BaseModel):
     category: str
     message: str
+    reconstruction_alignment_id: str | None = None
 
 
 class IssueGroup(BaseModel):

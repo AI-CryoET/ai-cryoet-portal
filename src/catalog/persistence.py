@@ -1380,6 +1380,7 @@ def _apply_fresh_issue(
         existing.last_seen_run_id = run_id
         existing.message = issue.message
         existing.severity = issue.severity
+        existing.reconstruction_alignment_id = issue.reconstruction_alignment_id
         return False
 
     # Not in the outstanding set — it may still exist as a resolved row.
@@ -1396,6 +1397,7 @@ def _apply_fresh_issue(
         prior.resolved_run_id = None
         prior.file_path = issue.file_path
         prior.md_run_id = issue.md_run_id
+        prior.reconstruction_alignment_id = issue.reconstruction_alignment_id
         return True
 
     first_seen_at, first_seen_run_id = now, run_id
@@ -1428,6 +1430,7 @@ def _apply_fresh_issue(
             location=issue.location,
             category=issue.category,
             message=issue.message,
+            reconstruction_alignment_id=issue.reconstruction_alignment_id,
             first_seen_at=first_seen_at,
             first_seen_run_id=first_seen_run_id,
             last_seen_at=now,
