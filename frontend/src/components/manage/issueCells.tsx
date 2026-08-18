@@ -20,6 +20,12 @@ export function formatDate(seconds: number | null | undefined): string {
   return new Date(seconds * 1000).toLocaleDateString();
 }
 
+const SEVERITY_COLOR = {
+  error: 'error',
+  warning: 'warning',
+  info: 'info'
+} as const;
+
 export function SeverityPill({
   severity
 }: {
@@ -27,7 +33,7 @@ export function SeverityPill({
 }) {
   return (
     <Chip
-      color={severity === 'error' ? 'error' : 'warning'}
+      color={SEVERITY_COLOR[severity]}
       label={severity}
       size="small"
       variant="outlined"
@@ -151,8 +157,14 @@ export function EntityCell({ group }: { readonly group: IssueGroup }) {
 }
 
 // The bulleted list of issue messages within a group.
+const SEVERITY_TEXT_COLOR = {
+  error: 'error.main',
+  warning: 'warning.main',
+  info: 'info.main'
+} as const;
+
 export function IssuesCell({ group }: { readonly group: IssueGroup }) {
-  const color = group.severity === 'error' ? 'error.main' : 'warning.main';
+  const color = SEVERITY_TEXT_COLOR[group.severity];
   return (
     <Box
       component="ul"

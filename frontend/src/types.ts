@@ -107,7 +107,7 @@ export type ManageSummary = Defined<
 
 // ── Manage page: issues (outstanding + recently resolved) ───────────────────
 
-export type IssueSeverity = 'error' | 'warning';
+export type IssueSeverity = 'error' | 'warning' | 'info';
 export type IssueScope = 'sample' | 'acquisition' | 'run';
 export type IssueItem = Defined<Schemas['IssueItem']>;
 

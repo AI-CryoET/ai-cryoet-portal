@@ -122,7 +122,7 @@ export function useManageSummaryQuery() {
 // Server-side filters for the outstanding-issues table. All optional; empty
 // values are dropped from the query string so they fall through to "no filter".
 export type IssueFilters = {
-  severity?: 'error' | 'warning';
+  severity?: 'error' | 'warning' | 'info';
   file_kind?: string;
   q?: string;
 };
