@@ -1,6 +1,7 @@
 """GET /samples and /samples/{sample_id}."""
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
@@ -461,9 +462,23 @@ def list_samples(
 
 
 def _row_to_out(row, out_cls: type):
-    """Map a row to an XxxOut by copying only declared fields."""
+    """Map a row to an XxxOut by copying only declared fields present on row."""
     field_names = out_cls.model_fields.keys()
-    return out_cls(**{name: getattr(row, name, None) for name in field_names})
+    return out_cls(
+        **{name: getattr(row, name) for name in field_names if hasattr(row, name)}
+    )
+
+
+def _file_formats(*paths: str | None) -> list[str]:
+    """Extension of each path, uppercased and de-duplicated in order."""
+    seen: list[str] = []
+    for p in paths:
+        if not p:
+            continue
+        ext = Path(p).suffix.lstrip(".").upper()
+        if ext and ext not in seen:
+            seen.append(ext)
+    return seen
 
 
 # AcquisitionOut fields that are nested child entities rather than scalar
@@ -637,9 +652,17 @@ def get_sample(sample_id: str, session: Session = Depends(get_session)):
             AcquisitionOut(
                 **acq_scalars,
                 md_source=_build_sub_entity(md_source_row, MdSourceOut),
-                raw_tomograms=[_row_to_out(r, RawTomogramOut) for r in raw_rows],
+                raw_tomograms=[
+                    _row_to_out(r, RawTomogramOut).model_copy(
+                        update={"file_formats": _file_formats(r.mrc_path, r.zarr_path)}
+                    )
+                    for r in raw_rows
+                ],
                 post_processed_tomograms=[
-                    _row_to_out(t, PostProcessedTomogramOut) for t in post_rows
+                    _row_to_out(t, PostProcessedTomogramOut).model_copy(
+                        update={"file_formats": _file_formats(t.mrc_path, t.zarr_path)}
+                    )
+                    for t in post_rows
                 ],
                 annotations=[
                     AnnotationOut(
@@ -649,6 +672,7 @@ def get_sample(sample_id: str, session: Session = Depends(get_session)):
                         derived_from=ann.derived_from,
                         bounding_box=ann.bounding_box,
                         files=ann.files or [],
+                        file_formats=_file_formats(*(ann.files or [])),
                     )
                     for ann in anns
                 ],

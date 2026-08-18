@@ -63,7 +63,7 @@ const THUMBNAIL_COL = 128;
 // point (the tomogram table's natural min); below it the annotation table
 // scrolls too instead of shrinking its columns and drifting the buttons out of
 // alignment. Tune together with the column sizes above.
-const TABLE_MIN_WIDTH = 980;
+const TABLE_MIN_WIDTH = 1120;
 
 function formatShape(
   x: number | null | undefined,
@@ -228,6 +228,14 @@ function TomogramsTable({
         grow: false
       },
       {
+        id: 'file_formats',
+        header: 'File format(s)',
+        accessorFn: t =>
+          t.file_formats.length > 0 ? t.file_formats.join(', ') : dash,
+        size: 140,
+        grow: false
+      },
+      {
         id: 'neuroglancer',
         header: '',
         columnDefType: 'display',
@@ -363,6 +371,7 @@ function AnnotationsTable({
             <TableCell sx={{ width: { xs: 200, xl: 380 }, pr: 4 }}>
               Type
             </TableCell>
+            <TableCell sx={{ width: 140 }}>File format(s)</TableCell>
             <TableCell sx={{ width: NEUROGLANCER_COL }} />
           </TableRow>
         </TableHead>
@@ -419,6 +428,9 @@ function AnnotationsTable({
                   ) : null}
                 </TableCell>
                 <TableCell sx={{ pr: 4 }}>{a.type ?? dash}</TableCell>
+                <TableCell>
+                  {a.file_formats.length > 0 ? a.file_formats.join(', ') : dash}
+                </TableCell>
                 <TableCell align="right">
                   <NeuroglancerButton
                     disabledReason={annotationDisabledReason(a)}
