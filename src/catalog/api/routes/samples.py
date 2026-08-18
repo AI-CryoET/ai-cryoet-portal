@@ -448,6 +448,7 @@ def list_samples(
             cell_type=r[0].cell_type,
             description=r[0].description,
             path=r[0].path,
+            experiment_date=r[0].experiment_date,
             warning_count=r[1],
             n_acquisitions=r[2],
             n_tomograms=r[3],

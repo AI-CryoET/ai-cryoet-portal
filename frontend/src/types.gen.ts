@@ -1239,6 +1239,8 @@ export interface components {
             description?: string | null;
             /** Path */
             path?: string | null;
+            /** Experiment Date */
+            experiment_date?: string | null;
             /**
              * Warning Count
              * @default 0

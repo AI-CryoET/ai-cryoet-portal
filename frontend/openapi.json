@@ -3741,6 +3741,18 @@
             ],
             "title": "Path"
           },
+          "experiment_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Experiment Date"
+          },
           "warning_count": {
             "type": "integer",
             "title": "Warning Count",

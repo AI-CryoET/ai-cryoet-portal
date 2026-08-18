@@ -34,6 +34,7 @@ class SampleSummary(BaseModel):
     cell_type: str | None = None
     description: str | None = None
     path: str | None = None
+    experiment_date: _dt.date | None = None
     warning_count: int = 0
     # Total child-row counts intrinsic to the sample — filter-independent.
     # ``n_tomograms`` is summed across raw + post-processed tables.
