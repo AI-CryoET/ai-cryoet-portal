@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { alpha } from '@mui/material';
+import { Typography, alpha } from '@mui/material';
 import {
   MaterialReactTable,
   useMaterialReactTable,
@@ -8,11 +8,10 @@ import {
 import { useRecentlyResolvedQuery } from '~/utils/queryOptions';
 import {
   AcquisitionListCell,
-  CategoryChip,
-  MessageCell,
-  RowFileCell,
+  ReconstructionsListCell,
   SampleCell,
   SeverityPill,
+  WarningTypeCell,
   formatDate,
   formatTs
 } from './issueCells';
@@ -25,58 +24,68 @@ function useColumns(): MRT_ColumnDef<SampleWarningRow>[] {
   return useMemo(
     () => [
       {
-        id: 'sample',
-        header: 'Sample',
-        size: 160,
-        Cell: ({ row }) => <SampleCell sampleId={row.original.sample_id} />
-      },
-      {
-        id: 'file',
-        header: 'File',
-        size: 160,
-        Cell: ({ row }) => (
-          <RowFileCell
-            fileKind={row.original.file_kind}
-            mdRunId={row.original.md_run_id}
-            sampleId={row.original.sample_id}
-          />
-        )
-      },
-      {
-        id: 'category',
+        accessorKey: 'category',
         header: 'Warning type',
-        size: 170,
-        Cell: ({ row }) => <CategoryChip category={row.original.category} />
+        size: 125,
+        Cell: ({ row }) => <WarningTypeCell category={row.original.category} />
       },
       {
         accessorKey: 'severity',
         header: 'Severity',
-        size: 110,
+        size: 95,
         Cell: ({ row }) => <SeverityPill severity={row.original.severity} />
       },
       {
-        id: 'message',
-        header: 'Message',
-        size: 260,
-        Cell: ({ row }) => <MessageCell message={row.original.message} />
+        id: 'sample',
+        header: 'Sample',
+        size: 135,
+        Cell: ({ row }) => (
+          <SampleCell
+            fileKind={row.original.file_kind}
+            mdRunId={row.original.md_run_id}
+            message={row.original.message}
+            sampleId={row.original.sample_id}
+            samplePath={row.original.sample_path}
+            showActions={row.original.acquisitions.length === 0}
+          />
+        )
       },
       {
         id: 'acquisitions',
-        header: 'Affected acquisitions',
-        size: 220,
+        header: 'Acquisition(s)',
+        size: 180,
+        muiTableBodyCellProps: { sx: { p: 0 } },
         Cell: ({ row }) => <AcquisitionListCell row={row.original} />
+      },
+      {
+        id: 'reconstructions',
+        header: 'Reconstruction(s)',
+        size: 165,
+        muiTableBodyCellProps: { sx: { p: 0 } },
+        Cell: ({ row }) => <ReconstructionsListCell row={row.original} />
       },
       {
         accessorKey: 'first_seen_at',
         header: 'First seen',
-        size: 130,
+        size: 85,
         Cell: ({ cell }) => formatDate(cell.getValue<number>())
       },
       {
         accessorKey: 'resolved_at',
         header: 'Resolved at',
-        size: 170,
-        Cell: ({ cell }) => formatTs(cell.getValue<number | null | undefined>())
+        // Wide enough for the full "M/D/YYYY, H:MM:SS AM/PM TZ" string
+        // (`formatTs`) without clipping — see the matching comment on
+        // OutstandingIssuesTable's "Still present as of" column.
+        size: 190,
+        // Wrapped with `whiteSpace: nowrap` — bare text here word-wraps at
+        // the comma/spaces in `formatTs`'s output (unlike `StillPresentCell`,
+        // which already sets this), verified in a real browser: at this
+        // column width it silently wrapped to two lines instead of clipping.
+        Cell: ({ cell }) => (
+          <Typography sx={{ whiteSpace: 'nowrap' }} variant="body2">
+            {formatTs(cell.getValue<number | null | undefined>())}
+          </Typography>
+        )
       }
     ],
     []
@@ -96,6 +105,17 @@ export function RecentlyResolvedTable({
     columns,
     data,
     getRowId: row => row.key,
+    // Fixed column widths that the user can drag-resize, sized to fit without
+    // horizontal scroll (see column `size`s above). The 1440px viewport's
+    // actual table content area is ~1150px wide (the page's centered
+    // MuiContainer + card padding eat the rest) — verified in a real browser,
+    // not just by summing the `size`s against the raw viewport width.
+    layoutMode: 'grid',
+    enableColumnResizing: true,
+    columnResizeMode: 'onChange',
+    mrtTheme: theme => ({ draggingBorderColor: theme.palette.grey[300] }),
+    defaultColumn: { grow: 1 },
+    muiTableBodyRowProps: { hover: false },
     enableColumnActions: false,
     enableColumnFilters: false,
     enableGlobalFilter: false,

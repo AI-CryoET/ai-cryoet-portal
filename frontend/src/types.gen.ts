@@ -942,6 +942,8 @@ export interface components {
             category: string;
             /** Message */
             message: string;
+            /** Reconstruction Alignment Id */
+            reconstruction_alignment_id?: string | null;
         };
         /** LabelOut */
         LabelOut: {

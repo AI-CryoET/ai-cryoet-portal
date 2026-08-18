@@ -2688,6 +2688,17 @@
           "message": {
             "type": "string",
             "title": "Message"
+          },
+          "reconstruction_alignment_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reconstruction Alignment Id"
           }
         },
         "type": "object",
