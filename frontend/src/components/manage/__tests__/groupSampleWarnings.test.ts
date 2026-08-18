@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import type { IssueGroup } from '~/types';
-import { groupSampleWarnings } from '../groupSampleWarnings';
+import {
+  computeBands,
+  groupSampleWarnings,
+  type AffectedAcquisition
+} from '../groupSampleWarnings';
 
 function group(overrides: Partial<IssueGroup>): IssueGroup {
   return {
@@ -125,5 +129,112 @@ describe('groupSampleWarnings', () => {
       group({ acquisition_id: 'acq2', first_seen_at: 100 })
     ]);
     expect(rows[0].first_seen_at).toBe(100);
+  });
+
+  it('groups issues carrying a reconstruction_alignment_id under that acquisition', () => {
+    const rows = groupSampleWarnings([
+      group({
+        acquisition_id: 'acq1',
+        acquisition_path: '/data/samp1/acq1',
+        issues: [
+          {
+            category: 'undeclared_reconstruction_alignment_folder',
+            message: 'group grp1 undeclared',
+            reconstruction_alignment_id: 'grp1'
+          }
+        ]
+      })
+    ]);
+    expect(rows[0].acquisitions[0].reconstructions).toEqual([
+      {
+        reconstruction_alignment_id: 'grp1',
+        acquisition_id: 'acq1',
+        messages: ['group grp1 undeclared']
+      }
+    ]);
+  });
+
+  it('collects two distinct reconstruction groups under the same acquisition separately', () => {
+    const rows = groupSampleWarnings([
+      group({
+        acquisition_id: 'acq1',
+        issues: [
+          {
+            category: 'undeclared_reconstruction_alignment_folder',
+            message: 'group grp_b undeclared',
+            reconstruction_alignment_id: 'grp_b'
+          },
+          {
+            category: 'undeclared_reconstruction_alignment_folder',
+            message: 'group grp_a undeclared',
+            reconstruction_alignment_id: 'grp_a'
+          }
+        ]
+      })
+    ]);
+    // Sorted alphabetically, same as acquisitions.
+    expect(
+      rows[0].acquisitions[0].reconstructions.map(
+        r => r.reconstruction_alignment_id
+      )
+    ).toEqual(['grp_a', 'grp_b']);
+  });
+
+  it('skips reconstructions for issues with a null reconstruction_alignment_id', () => {
+    const rows = groupSampleWarnings([
+      group({
+        acquisition_id: 'acq1',
+        issues: [
+          {
+            category: 'undeclared_annotation_folder',
+            message: 'no group here',
+            reconstruction_alignment_id: null
+          }
+        ]
+      })
+    ]);
+    expect(rows[0].acquisitions[0].reconstructions).toEqual([]);
+  });
+});
+
+function acquisition(id: string): AffectedAcquisition {
+  return {
+    acquisition_id: id,
+    acquisition_path: `/data/samp1/${id}`,
+    file_kind: 'acquisition_toml',
+    messages: ['m'],
+    reconstructions: []
+  };
+}
+
+describe('computeBands', () => {
+  it('returns one band, lineCount 1, for a single acquisition', () => {
+    expect(computeBands([acquisition('acq1')])).toEqual([
+      { acquisitionIndex: 0, lineCount: 1 }
+    ]);
+  });
+
+  it('returns one band per acquisition, in order, for multiple acquisitions', () => {
+    expect(
+      computeBands([acquisition('acq1'), acquisition('acq2')])
+    ).toEqual([
+      { acquisitionIndex: 0, lineCount: 1 },
+      { acquisitionIndex: 1, lineCount: 1 }
+    ]);
+  });
+
+  it('returns an empty array for zero acquisitions', () => {
+    expect(computeBands([])).toEqual([]);
+  });
+
+  it('sizes a band to the number of reconstructions when there is more than one', () => {
+    const acq = acquisition('acq1');
+    acq.reconstructions = [
+      { reconstruction_alignment_id: 'grp_a', acquisition_id: 'acq1', messages: ['m'] },
+      { reconstruction_alignment_id: 'grp_b', acquisition_id: 'acq1', messages: ['m'] }
+    ];
+    expect(computeBands([acq])).toEqual([
+      { acquisitionIndex: 0, lineCount: 2 }
+    ]);
   });
 });
