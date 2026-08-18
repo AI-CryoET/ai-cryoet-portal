@@ -7,6 +7,7 @@ import {
   Box,
   Button,
   IconButton,
+  ListItemIcon,
   Menu,
   MenuItem,
   Stack,
@@ -18,6 +19,10 @@ import {
 import MenuIcon from '@mui/icons-material/Menu';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import ArrowDropDownIcon from '@mui/icons-material/ArrowDropDown';
+import AccountTreeIcon from '@mui/icons-material/AccountTree';
+import EditNoteIcon from '@mui/icons-material/EditNote';
+import ReportProblemIcon from '@mui/icons-material/ReportProblem';
+import HistoryIcon from '@mui/icons-material/History';
 import { CustomLink } from './CustomLink';
 import snowflakeLogo from '~/assets/snowflake-logo.svg';
 
@@ -61,10 +66,26 @@ const NavMenuButton = styled(Button)(
 );
 
 const DATA_MANAGEMENT_LINKS = [
-  { to: '/manage/data-organization' as const, label: 'Data organization' },
-  { to: '/manage/author' as const, label: 'Author metadata' },
-  { to: '/manage/warnings' as const, label: 'Review warnings and errors' },
-  { to: '/manage/deletions' as const, label: 'View deletions and renames' }
+  {
+    to: '/manage/data-organization' as const,
+    label: 'Data organization',
+    icon: <AccountTreeIcon fontSize="small" />
+  },
+  {
+    to: '/manage/author' as const,
+    label: 'Author metadata',
+    icon: <EditNoteIcon fontSize="small" />
+  },
+  {
+    to: '/manage/warnings' as const,
+    label: 'Review warnings and errors',
+    icon: <ReportProblemIcon fontSize="small" />
+  },
+  {
+    to: '/manage/deletions' as const,
+    label: 'View deletions and renames',
+    icon: <HistoryIcon fontSize="small" />
+  }
 ];
 
 // The mobile nav lives in its own component so Header's JSX stays under the
@@ -113,6 +134,7 @@ function MobileNavMenu({
           <Stack>
             {DATA_MANAGEMENT_LINKS.map(link => (
               <MenuItem key={link.to} onClick={onClose} sx={{ pl: 4 }}>
+                <ListItemIcon>{link.icon}</ListItemIcon>
                 <MenuLink to={link.to}>{link.label}</MenuLink>
               </MenuItem>
             ))}
@@ -186,6 +208,7 @@ export function Header() {
             >
               {DATA_MANAGEMENT_LINKS.map(link => (
                 <MenuItem key={link.to} onClick={closeDm}>
+                  <ListItemIcon>{link.icon}</ListItemIcon>
                   <MenuLink to={link.to}>{link.label}</MenuLink>
                 </MenuItem>
               ))}
