@@ -98,8 +98,10 @@ def client(tmp_path):
         ))
 
         # Outstanding issues:
-        #  - sample-1: a warning + an error at the SAME (scope,file_kind) group
-        #    so severity=max(error) and 2 issue items appear.
+        #  - sample-1: a warning + an error at the same (scope, file_kind) but
+        #    different categories — category is part of the group key, so
+        #    these stay in separate groups (each keeping its own severity)
+        #    rather than merging into one group with severity=max(error).
         _issue(s, severity="warning", category="extra_field",
                message="extra field", first_seen_at=_NOW - 1000)
         _issue(s, severity="error", category="assembly_failed",
@@ -226,18 +228,23 @@ def test_summary_latest_scan_and_counts(client):
 
 def test_outstanding_issues_grouping_and_severity_max(client):
     body = client.get("/manage/issues").json()
-    # sample-1 sample_toml group merges the warning + error → severity error,
-    # 2 issue items.
-    g = next(
+    # category is part of the group key: the sample-1 sample_toml warning and
+    # error stay in separate groups, each with its own severity — one
+    # doesn't mask the other behind a group-wide max.
+    sample_toml_groups = [
         x for x in body
         if x["sample_id"] == "sample-1" and x["file_kind"] == "sample_toml"
+    ]
+    assert {g["severity"] for g in sample_toml_groups} == {"warning", "error"}
+    warning_group = next(
+        g for g in sample_toml_groups if g["severity"] == "warning"
     )
-    assert g["severity"] == "error"
-    assert {i["category"] for i in g["issues"]} == {
-        "extra_field", "assembly_failed"
-    }
-    # first_seen_at is the min within the group.
-    assert g["first_seen_at"] == pytest.approx(_NOW - 2000)
+    error_group = next(g for g in sample_toml_groups if g["severity"] == "error")
+    assert [i["category"] for i in warning_group["issues"]] == ["extra_field"]
+    assert [i["category"] for i in error_group["issues"]] == ["assembly_failed"]
+    # first_seen_at is that group's own value, not shared across categories.
+    assert error_group["first_seen_at"] == pytest.approx(_NOW - 2000)
+    assert warning_group["first_seen_at"] == pytest.approx(_NOW - 1000)
     # Errors sort first.
     assert body[0]["severity"] == "error"
 
