@@ -122,12 +122,8 @@ def _group_issues(
     sample_paths: dict[str, str] = {},
     acquisition_paths: dict[tuple[str, str], str] = {},
 ) -> list[IssueGroup]:
-    """Group issue rows by (scope, sample_id, acquisition_id, md_run_id, file_kind).
-
-    Mirrors the old ``scans._scan_warnings`` Python-grouping style. ``severity``
-    is the max within the group (error wins over warning wins over info). When
-    ``resolved`` is True, the group also carries ``resolved_at`` (max) + its
-    ``resolved_run_id``.
+    """Group issue rows by (scope, sample_id, acquisition_id, md_run_id, file_kind,
+    category).
     """
     groups: dict[tuple, dict] = {}
     for r in rows:
@@ -137,6 +133,7 @@ def _group_issues(
             r.acquisition_id,
             r.md_run_id,
             _enum_val(r.file_kind),
+            r.category,
         )
         g = groups.get(key)
         if g is None:
