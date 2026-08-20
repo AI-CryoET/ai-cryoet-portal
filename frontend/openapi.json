@@ -2022,6 +2022,14 @@
             "type": "array",
             "title": "Files",
             "default": []
+          },
+          "file_formats": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "File Formats",
+            "default": []
           }
         },
         "type": "object",
@@ -3128,6 +3136,14 @@
             ],
             "title": "Zarr Scale"
           },
+          "file_formats": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "File Formats",
+            "default": []
+          },
           "denoising_software": {
             "anyOf": [
               {
@@ -3355,6 +3371,14 @@
               }
             ],
             "title": "Zarr Scale"
+          },
+          "file_formats": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "File Formats",
+            "default": []
           },
           "pipeline": {
             "anyOf": [

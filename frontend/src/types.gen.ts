@@ -752,6 +752,11 @@ export interface components {
              * @default []
              */
             files: string[];
+            /**
+             * File Formats
+             * @default []
+             */
+            file_formats: string[];
         };
         /** ChromatinOut */
         ChromatinOut: {
@@ -1061,6 +1066,11 @@ export interface components {
             zarr_axes?: string | null;
             /** Zarr Scale */
             zarr_scale?: number[] | null;
+            /**
+             * File Formats
+             * @default []
+             */
+            file_formats: string[];
             /** Denoising Software */
             denoising_software?: string | null;
             /** Ctf Software */
@@ -1137,6 +1147,11 @@ export interface components {
             zarr_axes?: string | null;
             /** Zarr Scale */
             zarr_scale?: number[] | null;
+            /**
+             * File Formats
+             * @default []
+             */
+            file_formats: string[];
             /** Pipeline */
             pipeline?: string | null;
             /** Software */

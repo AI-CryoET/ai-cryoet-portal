@@ -38,8 +38,16 @@ const acquisition: AcquisitionOut = {
   acquisition_id: 'acq1',
   raw_tomograms: [],
   post_processed_tomograms: [
-    { tomogram_id: 'denoised', reconstruction_alignment_id: 'align1' },
-    { tomogram_id: 'denoised', reconstruction_alignment_id: 'align2' }
+    {
+      tomogram_id: 'denoised',
+      reconstruction_alignment_id: 'align1',
+      file_formats: []
+    },
+    {
+      tomogram_id: 'denoised',
+      reconstruction_alignment_id: 'align2',
+      file_formats: []
+    }
   ],
   annotations: [
     {
@@ -47,12 +55,14 @@ const acquisition: AcquisitionOut = {
       reconstruction_alignment_id: 'align1',
       type: 'membrane',
       derived_from: 'denoised',
-      files: []
+      files: [],
+      file_formats: []
     },
     {
       annotation_id: 'ann_two',
       reconstruction_alignment_id: 'align2',
-      files: []
+      files: [],
+      file_formats: []
     }
   ],
   tilt_series: [],
