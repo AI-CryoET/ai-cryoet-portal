@@ -498,6 +498,7 @@ FORM_FIELDS: list[FormField] = [
     FormField("sample", "sample", "description", "Description", "text",
               help="Optional free-text description."),
     FormField("sample", "sample", "path", "Path", "text", derived=True),
+    FormField("sample", "sample", "experiment_date", "Experiment date", "date", derived=True),
 
     # ---- sample / [chromatin] --------------------------------------------
     FormField("sample", "chromatin", "substrate", "Substrate", "text",

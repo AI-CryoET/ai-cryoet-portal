@@ -36,6 +36,7 @@ export const SCHEMA: SchemaEntity[] = [
         { field: 'cell_type', type: 'text', source: 'sample.toml [sample]', kind: 'authored', notes: 'Required when type = cellular.' },
         { field: 'description', type: 'text', source: 'sample.toml [sample]', kind: 'authored', notes: 'Free text.' },
         { field: 'path', type: 'text', source: 'directory', kind: 'derived', notes: 'Absolute sample-directory path; surfaced for the UI\'s copy-path / open-in-file-browser buttons. Works even for samples with no acquisitions.' },
+        { field: 'experiment_date', type: 'date', source: 'MDOC', kind: 'derived', notes: 'Earliest date_collected across the sample\'s acquisitions.' },
         { field: 'renamed_from', type: 'text', source: 'sample.toml [sample]', kind: 'authored', notes: 'Scan-time-only rename directive; not stored in the DB.' },
     ],
     children: [

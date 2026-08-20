@@ -190,6 +190,9 @@ class Sample(_Base):
     # open-in-file-browser buttons — works even for samples with no
     # acquisitions)
     path: str | None = None
+    # MDOC — earliest date_collected across the sample's acquisitions; set
+    # once by the assembler, never authored.
+    experiment_date: _dt.date | None = None
 
 
 class Simulation(_Base):

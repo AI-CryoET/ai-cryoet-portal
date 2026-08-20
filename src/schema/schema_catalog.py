@@ -89,6 +89,8 @@ CATALOG: list[CatalogEntity] = [
                          "Absolute sample-directory path; surfaced for the UI's copy-path / "
                          "open-in-file-browser buttons. Works even for samples with no "
                          "acquisitions."),
+            CatalogField("experiment_date", "date", "MDOC",
+                         "Earliest date_collected across the sample's acquisitions."),
             CatalogField("renamed_from", "text", "sample.toml [sample]",
                          "Scan-time-only rename directive; not stored in the DB.", in_db=False),
         ],

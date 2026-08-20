@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import datetime as _dt
 import json
 import time
 
@@ -121,6 +122,20 @@ def test_upsert_resurrects_soft_deleted(session):
     )
     session.commit()
     assert session.get(orm.SampleORM, "s1").deleted_at is None
+
+
+def test_upsert_persists_experiment_date(session):
+    sample = Sample(
+        sample_id="s1",
+        data_source=DataSource.experimental,
+        project=Project.chromatin,
+        experiment_date=_dt.date(2025, 8, 20),
+    )
+    r = SampleRecord(sample=sample)
+    upsert_sample_record(session, r, extras=[], run_id="run-1", now=_NOW)
+    session.commit()
+    row = session.get(orm.SampleORM, "s1")
+    assert row.experiment_date == _dt.date(2025, 8, 20)
 
 
 def test_upsert_chromatin_then_remove(session):

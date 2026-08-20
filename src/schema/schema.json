@@ -762,6 +762,11 @@
         "path": {
           "title": "Path",
           "type": "string"
+        },
+        "experiment_date": {
+          "title": "Experiment Date",
+          "format": "date",
+          "type": "string"
         }
       },
       "required": [

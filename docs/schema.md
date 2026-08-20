@@ -34,6 +34,7 @@ _one per sample_
 | `cell_type` | text | `sample.toml [sample]` | researcher authored | Required when type = cellular. |
 | `description` | text | `sample.toml [sample]` | researcher authored | Free text. |
 | `path` | text | `directory` | derived | Absolute sample-directory path; surfaced for the UI's copy-path / open-in-file-browser buttons. Works even for samples with no acquisitions. |
+| `experiment_date` | date | `MDOC` | derived | Earliest date_collected across the sample's acquisitions. |
 | `renamed_from` | text | `sample.toml [sample]` | researcher authored | Scan-time-only rename directive; not stored in the DB. |
 
 ### 1a. Chromatin (chromatin only) — _one per sample_

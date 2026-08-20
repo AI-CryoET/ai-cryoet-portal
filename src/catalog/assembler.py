@@ -841,6 +841,17 @@ def assemble_sample(sample_loc: SampleLocation) -> AssemblyResult:
             a for a in acq_file.annotation if a.reconstruction_alignment_id
         ]
 
+    # Sample-level experiment date: earliest MDOC date_collected across the
+    # sample's acquisitions (mirrors the sample.path injection above).
+    if record.sample.experiment_date is None:
+        acq_dates = [
+            af.acquisition.date_collected
+            for af in record.acquisitions.values()
+            if af.acquisition.date_collected is not None
+        ]
+        if acq_dates:
+            record.sample.experiment_date = min(acq_dates)
+
     # ── Step 5: re-validate ──────────────────────────────────────────────────
     try:
         record = SampleRecord.model_validate(record.model_dump(by_alias=True))
