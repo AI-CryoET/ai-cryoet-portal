@@ -168,32 +168,6 @@ describe('SampleCell', () => {
     );
     expect(screen.queryByLabelText('Edit metadata')).toBeNull();
   });
-
-  it('shows a message icon for a sample/md_run-scoped row', () => {
-    render(
-      <SampleCell
-        fileKind="sample_toml"
-        message="something went wrong"
-        sampleId="samp1"
-        samplePath="/data/samp1"
-        showActions
-      />
-    );
-    expect(screen.getByLabelText('View message')).toBeInTheDocument();
-  });
-
-  it('omits the message icon for an acquisition-scoped row', () => {
-    render(
-      <SampleCell
-        fileKind="acquisition_toml"
-        message="something went wrong"
-        sampleId="samp1"
-        samplePath="/data/samp1"
-        showActions={false}
-      />
-    );
-    expect(screen.queryByLabelText('View message')).toBeNull();
-  });
 });
 
 describe('WarningTypeCell', () => {

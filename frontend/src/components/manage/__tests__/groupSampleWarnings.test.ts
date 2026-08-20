@@ -1,10 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { IssueGroup } from '~/types';
-import {
-  computeBands,
-  groupSampleWarnings,
-  type AffectedAcquisition
-} from '../groupSampleWarnings';
+import { groupSampleWarnings } from '../groupSampleWarnings';
 
 function group(overrides: Partial<IssueGroup>): IssueGroup {
   return {
@@ -51,8 +47,7 @@ describe('groupSampleWarnings', () => {
       'acq1',
       'acq2'
     ]);
-    // Representative message comes from the alphabetically-first acquisition.
-    expect(rows[0].message).toBe("id 'a1'");
+    expect(rows[0].acquisitions[0].messages).toEqual(["id 'a1'"]);
     expect(rows[0].acquisitions[1].messages).toEqual(["id 'a2'"]);
   });
 
@@ -180,6 +175,27 @@ describe('groupSampleWarnings', () => {
     ).toEqual(['grp_a', 'grp_b']);
   });
 
+  it('keeps a reconstruction-owned message off the parent acquisition', () => {
+    const rows = groupSampleWarnings([
+      group({
+        acquisition_id: 'acq1',
+        issues: [
+          {
+            category: 'undeclared_reconstruction_alignment_folder',
+            message: 'group grp1 undeclared',
+            reconstruction_alignment_id: 'grp1'
+          }
+        ]
+      })
+    ]);
+    // The acquisition is still listed (grouping parent) but carries no
+    // message of its own — the text lives only on the reconstruction.
+    expect(rows[0].acquisitions[0].messages).toEqual([]);
+    expect(rows[0].acquisitions[0].reconstructions[0].messages).toEqual([
+      'group grp1 undeclared'
+    ]);
+  });
+
   it('skips reconstructions for issues with a null reconstruction_alignment_id', () => {
     const rows = groupSampleWarnings([
       group({
@@ -194,53 +210,5 @@ describe('groupSampleWarnings', () => {
       })
     ]);
     expect(rows[0].acquisitions[0].reconstructions).toEqual([]);
-  });
-});
-
-function acquisition(id: string): AffectedAcquisition {
-  return {
-    acquisition_id: id,
-    acquisition_path: `/data/samp1/${id}`,
-    file_kind: 'acquisition_toml',
-    messages: ['m'],
-    reconstructions: []
-  };
-}
-
-describe('computeBands', () => {
-  it('returns one band, lineCount 1, for a single acquisition', () => {
-    expect(computeBands([acquisition('acq1')])).toEqual([
-      { acquisitionIndex: 0, lineCount: 1 }
-    ]);
-  });
-
-  it('returns one band per acquisition, in order, for multiple acquisitions', () => {
-    expect(computeBands([acquisition('acq1'), acquisition('acq2')])).toEqual([
-      { acquisitionIndex: 0, lineCount: 1 },
-      { acquisitionIndex: 1, lineCount: 1 }
-    ]);
-  });
-
-  it('returns an empty array for zero acquisitions', () => {
-    expect(computeBands([])).toEqual([]);
-  });
-
-  it('sizes a band to the number of reconstructions when there is more than one', () => {
-    const acq = acquisition('acq1');
-    acq.reconstructions = [
-      {
-        reconstruction_alignment_id: 'grp_a',
-        acquisition_id: 'acq1',
-        messages: ['m']
-      },
-      {
-        reconstruction_alignment_id: 'grp_b',
-        acquisition_id: 'acq1',
-        messages: ['m']
-      }
-    ];
-    expect(computeBands([acq])).toEqual([
-      { acquisitionIndex: 0, lineCount: 2 }
-    ]);
   });
 });

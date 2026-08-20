@@ -1,14 +1,14 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { Typography, alpha } from '@mui/material';
 import {
   MaterialReactTable,
   useMaterialReactTable,
-  type MRT_ColumnDef
+  type MRT_ColumnDef,
+  type MRT_ColumnSizingState
 } from 'material-react-table';
 import { useRecentlyResolvedQuery } from '~/utils/queryOptions';
 import {
-  AcquisitionListCell,
-  ReconstructionsListCell,
+  AffectedTable,
   SampleCell,
   SeverityPill,
   WarningTypeCell,
@@ -43,26 +43,11 @@ function useColumns(): MRT_ColumnDef<SampleWarningRow>[] {
           <SampleCell
             fileKind={row.original.file_kind}
             mdRunId={row.original.md_run_id}
-            message={row.original.message}
             sampleId={row.original.sample_id}
             samplePath={row.original.sample_path}
             showActions={row.original.acquisitions.length === 0}
           />
         )
-      },
-      {
-        id: 'acquisitions',
-        header: 'Acquisition(s)',
-        size: 180,
-        muiTableBodyCellProps: { sx: { p: 0 } },
-        Cell: ({ row }) => <AcquisitionListCell row={row.original} />
-      },
-      {
-        id: 'reconstructions',
-        header: 'Reconstruction(s)',
-        size: 165,
-        muiTableBodyCellProps: { sx: { p: 0 } },
-        Cell: ({ row }) => <ReconstructionsListCell row={row.original} />
       },
       {
         accessorKey: 'first_seen_at',
@@ -100,6 +85,10 @@ export function RecentlyResolvedTable({
   const { data: rawData } = useRecentlyResolvedQuery(withinHours);
   const data = useMemo(() => groupSampleWarnings(rawData), [rawData]);
   const columns = useColumns();
+  // Shared affected sub-table column widths across every detail panel.
+  const [affectedSizing, setAffectedSizing] = useState<MRT_ColumnSizingState>(
+    {}
+  );
 
   const table = useMaterialReactTable<SampleWarningRow>({
     columns,
@@ -115,6 +104,20 @@ export function RecentlyResolvedTable({
     columnResizeMode: 'onChange',
     mrtTheme: theme => ({ draggingBorderColor: theme.palette.grey[300] }),
     defaultColumn: { grow: 1 },
+    // Acquisitions / reconstructions / messages in an expandable detail panel,
+    // open by default (see OutstandingIssuesTable / AffectedTable).
+    renderDetailPanel: ({ row }) => (
+      <AffectedTable
+        columnSizing={affectedSizing}
+        onColumnSizingChange={setAffectedSizing}
+        row={row.original}
+      />
+    ),
+    displayColumnDefOptions: {
+      'mrt-row-expand': { size: 60, grow: false }
+    },
+    // Stretch the panel to the full cell width (see OutstandingIssuesTable).
+    muiDetailPanelProps: { sx: { p: 0, flexDirection: 'column' } },
     muiTableBodyRowProps: { hover: false },
     enableColumnActions: false,
     enableColumnFilters: false,
@@ -133,7 +136,8 @@ export function RecentlyResolvedTable({
     initialState: {
       density: 'comfortable',
       sorting: [{ id: 'resolved_at', desc: true }],
-      pagination: { pageSize: 10, pageIndex: 0 }
+      pagination: { pageSize: 10, pageIndex: 0 },
+      expanded: true
     },
     // Match the portal tables (/data, /experimental, /md-simulation).
     muiTablePaperProps: {
