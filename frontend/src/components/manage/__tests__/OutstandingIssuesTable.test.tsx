@@ -74,13 +74,15 @@ beforeEach(() => {
 });
 
 describe('OutstandingIssuesTable', () => {
-  it('renders an issue row with a message icon and severity', () => {
+  it('renders an issue row with its message and severity', () => {
     setData([group({})]);
     render(<OutstandingIssuesTable />);
     expect(screen.getByText('villa_synapse_004')).toBeInTheDocument();
-    // No Message column anymore — the row's message hangs off the Sample
-    // cell's info icon instead (sample-scoped row, no acquisitions).
-    expect(screen.getByLabelText('View message')).toBeInTheDocument();
+    // The row's message shows in the Message(s) column (sample-scoped row,
+    // no acquisitions).
+    expect(
+      screen.getByText('missing required field project')
+    ).toBeInTheDocument();
     expect(screen.getByText('error')).toBeInTheDocument();
   });
 

@@ -1,17 +1,19 @@
+import { useMemo, type Dispatch, type SetStateAction } from 'react';
+import { Box, Chip, Stack, Tooltip, Typography } from '@mui/material';
 import {
-  Box,
-  Chip,
-  IconButton,
-  Stack,
-  Tooltip,
-  Typography
-} from '@mui/material';
+  MaterialReactTable,
+  useMaterialReactTable,
+  type MRT_ColumnDef,
+  type MRT_ColumnSizingState
+} from 'material-react-table';
 import EditNoteIcon from '@mui/icons-material/EditNote';
-import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import { CustomLink, IconButtonLink } from '~/components/CustomLink';
 import { CopyIconButton } from '~/components/common/CopyIconButton';
 import type { IssueGroup } from '~/types';
-import { computeBands, type AffectedAcquisition } from './groupSampleWarnings';
+import type {
+  AffectedAcquisition,
+  AffectedReconstruction
+} from './groupSampleWarnings';
 
 // Path convention baked into the (shortened) assembler.py message strings:
 // a reconstruction-alignment group always lives directly under its
@@ -145,23 +147,20 @@ export function WarningTypeCell({ category }: { readonly category: string }) {
 // Sample link for a regrouped SampleWarningRow. Truncates to one line
 // (ellipsis) rather than wrapping. When the row is sample/md_run-scoped
 // (`showActions`, i.e. `row.acquisitions.length === 0`) the row-level
-// "Edit file" action folds in here (copy-path + edit-metadata icons), plus
-// an info icon with the row's message on hover — there's no acquisitions
-// column to hang it on for these rows.
+// "Edit file" action folds in here (copy-path + edit-metadata icons) — the
+// message itself lives in the Message(s) column (see MessagesListCell).
 export function SampleCell({
   sampleId,
   samplePath = null,
   fileKind,
   mdRunId = null,
-  showActions = false,
-  message
+  showActions = false
 }: {
   readonly sampleId: string | null;
   readonly samplePath?: string | null;
   readonly fileKind?: string;
   readonly mdRunId?: string | null;
   readonly showActions?: boolean;
-  readonly message?: string;
 }) {
   if (sampleId == null) {
     return (
@@ -206,232 +205,322 @@ export function SampleCell({
           </IconButtonLink>
         </Tooltip>
       ) : null}
-      {showActions && message ? (
-        <Tooltip title={message}>
-          <IconButton aria-label="View message" size="small">
-            <InfoOutlinedIcon fontSize="small" />
-          </IconButton>
+    </Stack>
+  );
+}
+
+function EntityDash() {
+  return (
+    <Typography color="text.secondary" variant="body2">
+      —
+    </Typography>
+  );
+}
+
+// Acquisition name + actions. When the issue is reconstruction-owned the
+// acquisition is only grouping context — its copy-path/edit icons would point
+// at acquisition.toml, but the fix lives in the reconstruction, so drop them.
+function AcqLabel({
+  acq,
+  reconOwned,
+  row
+}: {
+  readonly acq: AffectedAcquisition;
+  readonly reconOwned: boolean;
+  readonly row: {
+    sample_id: string | null;
+    file_kind: string;
+    md_run_id: string | null;
+  };
+}) {
+  const editLink = reconOwned
+    ? null
+    : authorLinkFor({
+        file_kind: row.file_kind,
+        sample_id: row.sample_id,
+        acquisition_id: acq.acquisition_id,
+        md_run_id: row.md_run_id
+      });
+  return (
+    <Stack
+      alignItems="center"
+      direction="row"
+      spacing={0.25}
+      sx={{ minWidth: 0 }}
+    >
+      <Box sx={ellipsisSx}>
+        <CustomLink
+          params={{ acquisitionId: acq.acquisition_id }}
+          search={{ sampleId: row.sample_id ?? '' }}
+          to="/acquisitions/$acquisitionId"
+        >
+          {acq.acquisition_id}
+        </CustomLink>
+      </Box>
+      {acq.acquisition_path && !reconOwned ? (
+        <CopyIconButton text={acq.acquisition_path} tooltip="Copy path" />
+      ) : null}
+      {editLink ? (
+        <Tooltip title="Edit metadata">
+          <IconButtonLink
+            aria-label="Edit metadata"
+            search={editLink.search}
+            size="small"
+            to={editLink.to}
+          >
+            <EditNoteIcon fontSize="small" />
+          </IconButtonLink>
         </Tooltip>
       ) : null}
     </Stack>
   );
 }
 
-// Row height of one acquisition "band" — shared with the (later) Reconstructions
-// column so both cells' bands line up: same order, same height, same
-// alternating color, all derived from the same `row.acquisitions` array.
-const BAND_LINE_HEIGHT_PX = 32;
-
-// Every acquisition affected by a sample+category warning row: name (linking
-// to the acquisition detail page), a copy-path button, an edit-metadata icon
-// where an authoring form exists for this row's file_kind, and an info icon
-// with this acquisition's own message on hover. A dash means the warning is
-// sample- or run-level, with no acquisition to list. Rendered in
-// alternating-shaded "bands" (one per acquisition), each `flex`-grown by its
-// `lineCount` share so the bands fill the table row's full height edge to
-// edge (rather than a fixed minHeight that leaves blank space below the last
-// band when another column forces a taller row). The outer Stack needs
-// `alignSelf: 'stretch'` too — MRT's grid layout mode puts `alignItems:
-// 'center'` on the `<td>` itself, which otherwise vertically centers (and
-// shrinks) the whole Stack instead of letting it fill the cell height. It
-// also needs `flexGrow: 1` for the *width* — the `<td>`'s own flex-direction
-// is row, so without a grow factor the Stack shrinks to its content's width
-// instead of filling a wide (or user-resized) column, leaving the bands'
-// background short of the column's actual right edge. The table
-// also zeroes this column's own cell padding (`muiTableBodyCellProps`) so
-// each band's background can bleed all the way to the column's true edges —
-// each Box supplies its own `px` inset instead — otherwise the cell's
-// default padding left an unshaded margin down both sides that broke the
-// contiguous-row illusion. This column stays visually aligned with the
-// Reconstructions column, which derives identical bands from the same input
-// and grows by the same shares.
-export function AcquisitionListCell({
-  row
+// Reconstruction name (plain text, no detail page) + copy-path (derived,
+// skipped when acquisition_path is null) + edit-metadata (author form's
+// "reconstruction" tab).
+function ReconLabel({
+  acq,
+  recon,
+  sampleId
 }: {
-  readonly row: {
-    sample_id: string | null;
-    md_run_id: string | null;
-    file_kind: string;
-    acquisitions: AffectedAcquisition[];
-  };
+  readonly acq: AffectedAcquisition;
+  readonly recon: AffectedReconstruction;
+  readonly sampleId: string | null;
 }) {
-  if (row.acquisitions.length === 0) {
-    return (
-      <Typography color="text.secondary" px={1.5} variant="body2">
-        —
-      </Typography>
-    );
-  }
-  const bands = computeBands(row.acquisitions);
+  const path = reconstructionPath(
+    acq.acquisition_path,
+    recon.reconstruction_alignment_id
+  );
   return (
     <Stack
-      spacing={0}
-      sx={{ alignSelf: 'stretch', flexGrow: 1, height: '100%', minWidth: 0 }}
+      alignItems="center"
+      direction="row"
+      spacing={0.25}
+      sx={{ minWidth: 0 }}
     >
-      {row.acquisitions.map((acq, i) => {
-        const ownMessage = acq.messages.join('; ');
-        const editLink = authorLinkFor({
-          file_kind: row.file_kind,
-          sample_id: row.sample_id,
-          acquisition_id: acq.acquisition_id,
-          md_run_id: row.md_run_id
-        });
-        const band = bands[i];
-        return (
-          <Box
-            key={acq.acquisition_id}
-            sx={{
-              display: 'flex',
-              alignItems: 'center',
-              flex: `${band.lineCount} 0 ${band.lineCount * BAND_LINE_HEIGHT_PX}px`,
-              bgcolor: i % 2 === 1 ? 'grey.100' : 'transparent',
-              px: 1.5,
-              minWidth: 0
-            }}
-          >
-            <Stack
-              alignItems="center"
-              direction="row"
-              spacing={0.25}
-              sx={{ minWidth: 0 }}
-            >
-              <Box sx={ellipsisSx}>
-                <CustomLink
-                  params={{ acquisitionId: acq.acquisition_id }}
-                  search={{ sampleId: row.sample_id ?? '' }}
-                  to="/acquisitions/$acquisitionId"
-                >
-                  {acq.acquisition_id}
-                </CustomLink>
-              </Box>
-              {acq.acquisition_path ? (
-                <CopyIconButton
-                  text={acq.acquisition_path}
-                  tooltip="Copy path"
-                />
-              ) : null}
-              {editLink ? (
-                <Tooltip title="Edit metadata">
-                  <IconButtonLink
-                    aria-label="Edit metadata"
-                    search={editLink.search}
-                    size="small"
-                    to={editLink.to}
-                  >
-                    <EditNoteIcon fontSize="small" />
-                  </IconButtonLink>
-                </Tooltip>
-              ) : null}
-              <Tooltip title={ownMessage}>
-                <IconButton aria-label="View message" size="small">
-                  <InfoOutlinedIcon fontSize="small" />
-                </IconButton>
-              </Tooltip>
-            </Stack>
-          </Box>
-        );
-      })}
+      <Typography sx={ellipsisSx} variant="body2">
+        {recon.reconstruction_alignment_id}
+      </Typography>
+      {path ? <CopyIconButton text={path} tooltip="Copy path" /> : null}
+      <Tooltip title="Edit metadata">
+        <IconButtonLink
+          aria-label="Edit metadata"
+          search={{
+            tab: 'reconstruction',
+            id: recon.reconstruction_alignment_id,
+            sampleId: sampleId ?? '',
+            acquisitionId: recon.acquisition_id
+          }}
+          size="small"
+          to="/manage/author"
+        >
+          <EditNoteIcon fontSize="small" />
+        </IconButtonLink>
+      </Tooltip>
     </Stack>
   );
 }
 
-// Reconstruction-alignment groups affected by this row, one column over from
-// Acquisitions. Bands come from the exact same `computeBands` call over the
-// same `row.acquisitions` array as `AcquisitionListCell`, so the two columns'
-// stripes/heights (and now flex-grow shares) line up row-for-row without any
-// cross-column coordination. Reconstruction name is plain text (no detail
-// page to link to); each still gets a copy-path icon (derived path, skipped
-// when acquisition_path is null), an edit-metadata icon (the author form's
-// "reconstruction" tab), and an info icon with its own message on hover.
-export function ReconstructionsListCell({
-  row
-}: {
-  readonly row: {
-    sample_id: string | null;
-    acquisitions: AffectedAcquisition[];
-  };
-}) {
-  if (row.acquisitions.length === 0) {
-    return (
-      <Typography color="text.secondary" px={1.5} variant="body2">
-        —
-      </Typography>
-    );
+// One or more warning messages as bullet lines — wrapping, no truncation (the
+// table row grows taller instead), so several warnings on one entity read as
+// distinct items. A dash when the entity has no message of its own.
+function MessageLines({ messages }: { readonly messages: string[] }) {
+  if (messages.length === 0) {
+    return <EntityDash />;
   }
-  const bands = computeBands(row.acquisitions);
+  // Column stack so multiple messages on one entity sit one above the other
+  // (the cell's own layout would otherwise lay these siblings out in a row).
   return (
-    <Stack
-      spacing={0}
-      sx={{ alignSelf: 'stretch', flexGrow: 1, height: '100%', minWidth: 0 }}
-    >
-      {row.acquisitions.map((acq, i) => {
-        const band = bands[i];
-        return (
-          <Box
-            key={acq.acquisition_id}
+    <Stack spacing={0.5} sx={{ minWidth: 0 }}>
+      {messages.map((m, i) => (
+        <Stack
+          direction="row"
+          key={`${i}-${m}`}
+          spacing={0.75}
+          sx={{ minWidth: 0 }}
+        >
+          <Typography color="text.secondary" variant="body2">
+            •
+          </Typography>
+          <Typography
             sx={{
-              display: 'flex',
-              flexDirection: 'column',
-              justifyContent: 'center',
-              flex: `${band.lineCount} 0 ${band.lineCount * BAND_LINE_HEIGHT_PX}px`,
-              bgcolor: i % 2 === 1 ? 'grey.100' : 'transparent',
-              px: 1.5,
-              minWidth: 0
+              minWidth: 0,
+              whiteSpace: 'normal',
+              // Messages embed long, space-less file/folder paths; break them
+              // mid-token so they wrap instead of overflowing the column.
+              overflowWrap: 'anywhere'
             }}
+            variant="body2"
           >
-            {acq.reconstructions.length === 0 ? (
-              <Typography color="text.secondary" variant="body2">
-                —
-              </Typography>
-            ) : (
-              acq.reconstructions.map(recon => {
-                const ownMessage = recon.messages.join('; ');
-                const path = reconstructionPath(
-                  acq.acquisition_path,
-                  recon.reconstruction_alignment_id
-                );
-                return (
-                  <Stack
-                    alignItems="center"
-                    direction="row"
-                    key={recon.reconstruction_alignment_id}
-                    spacing={0.25}
-                    sx={{ minWidth: 0 }}
-                  >
-                    <Typography sx={ellipsisSx} variant="body2">
-                      {recon.reconstruction_alignment_id}
-                    </Typography>
-                    {path ? (
-                      <CopyIconButton text={path} tooltip="Copy path" />
-                    ) : null}
-                    <Tooltip title="Edit metadata">
-                      <IconButtonLink
-                        aria-label="Edit metadata"
-                        search={{
-                          tab: 'reconstruction',
-                          id: recon.reconstruction_alignment_id,
-                          sampleId: row.sample_id ?? '',
-                          acquisitionId: recon.acquisition_id
-                        }}
-                        size="small"
-                        to="/manage/author"
-                      >
-                        <EditNoteIcon fontSize="small" />
-                      </IconButtonLink>
-                    </Tooltip>
-                    <Tooltip title={ownMessage}>
-                      <IconButton aria-label="View message" size="small">
-                        <InfoOutlinedIcon fontSize="small" />
-                      </IconButton>
-                    </Tooltip>
-                  </Stack>
-                );
-              })
-            )}
-          </Box>
-        );
-      })}
+            {m}
+          </Typography>
+        </Stack>
+      ))}
     </Stack>
+  );
+}
+
+// The scalar fields of a SampleWarningRow that the affected sub-table needs
+// (edit links are keyed off sample/acquisition/run identity).
+export interface AffectedRow {
+  sample_id: string | null;
+  md_run_id: string | null;
+  file_kind: string;
+  message: string;
+  acquisitions: AffectedAcquisition[];
+}
+
+// One flattened line of the affected sub-table: a real row per reconstruction
+// (or per acquisition-owned warning, or one line for a sample/run-scoped row).
+// `firstOfAcq` renders the acquisition label only on its first line so it reads
+// as a group header without a rowSpan.
+interface AffectedInnerRow {
+  id: string;
+  acq: AffectedAcquisition | null;
+  recon: AffectedReconstruction | null;
+  messages: string[];
+  firstOfAcq: boolean;
+}
+
+function flattenAffected(row: AffectedRow): AffectedInnerRow[] {
+  if (row.acquisitions.length === 0) {
+    return [
+      {
+        id: 'scalar',
+        acq: null,
+        recon: null,
+        messages: row.message ? [row.message] : [],
+        firstOfAcq: true
+      }
+    ];
+  }
+  const out: AffectedInnerRow[] = [];
+  for (const acq of row.acquisitions) {
+    if (acq.reconstructions.length === 0) {
+      out.push({
+        id: acq.acquisition_id,
+        acq,
+        recon: null,
+        messages: acq.messages,
+        firstOfAcq: true
+      });
+    } else {
+      acq.reconstructions.forEach((recon, j) => {
+        out.push({
+          id: `${acq.acquisition_id}/${recon.reconstruction_alignment_id}`,
+          acq,
+          recon,
+          messages: recon.messages,
+          firstOfAcq: j === 0
+        });
+      });
+    }
+  }
+  return out;
+}
+
+// The Acquisition / Reconstruction / Message(s) detail sub-table, rendered in
+// each outer row's expandable detail panel. Real rows (one per reconstruction)
+// make a reconstruction line up with its message for free — the rowSpan the
+// merged CSS-grid column used to fake. Column widths are lifted to the parent
+// (`columnSizing` / `onColumnSizingChange`) so resizing one panel resizes every
+// panel in the table, keeping the sub-columns consistent.
+export function AffectedTable({
+  row,
+  columnSizing,
+  onColumnSizingChange
+}: {
+  readonly row: AffectedRow;
+  readonly columnSizing: MRT_ColumnSizingState;
+  readonly onColumnSizingChange: Dispatch<
+    SetStateAction<MRT_ColumnSizingState>
+  >;
+}) {
+  const data = useMemo(() => flattenAffected(row), [row]);
+  const columns = useMemo<MRT_ColumnDef<AffectedInnerRow>[]>(
+    () => [
+      {
+        id: 'acquisition',
+        header: 'Acquisition(s)',
+        size: 150,
+        Cell: ({ row: r }) =>
+          r.original.acq && r.original.firstOfAcq ? (
+            <AcqLabel
+              acq={r.original.acq}
+              reconOwned={r.original.recon != null}
+              row={row}
+            />
+          ) : (
+            <EntityDash />
+          )
+      },
+      {
+        id: 'reconstruction',
+        header: 'Reconstruction(s)',
+        size: 150,
+        Cell: ({ row: r }) =>
+          r.original.acq && r.original.recon ? (
+            <ReconLabel
+              acq={r.original.acq}
+              recon={r.original.recon}
+              sampleId={row.sample_id}
+            />
+          ) : (
+            <EntityDash />
+          )
+      },
+      {
+        id: 'messages',
+        header: 'Message(s)',
+        size: 560,
+        muiTableBodyCellProps: { sx: { whiteSpace: 'normal' } },
+        Cell: ({ row: r }) => <MessageLines messages={r.original.messages} />
+      }
+    ],
+    [row]
+  );
+
+  const table = useMaterialReactTable<AffectedInnerRow>({
+    columns,
+    data,
+    getRowId: r => r.id,
+    layoutMode: 'grid',
+    enableColumnResizing: true,
+    columnResizeMode: 'onChange',
+    defaultColumn: { grow: 1 },
+    enableSorting: false,
+    enableColumnActions: false,
+    enableColumnFilters: false,
+    enableGlobalFilter: false,
+    enablePagination: false,
+    enableTopToolbar: false,
+    enableBottomToolbar: false,
+    muiTableBodyRowProps: { hover: false },
+    state: { columnSizing },
+    onColumnSizingChange,
+    mrtTheme: theme => ({ draggingBorderColor: theme.palette.grey[300] }),
+    initialState: { density: 'compact' },
+    // A bordered white table on the grey panel below — same visual treatment as
+    // the nested acquisition tables on the /data pages.
+    muiTablePaperProps: {
+      elevation: 0,
+      sx: {
+        border: 1,
+        borderColor: 'divider',
+        borderRadius: 1,
+        bgcolor: 'background.paper'
+      }
+    }
+  });
+
+  // Grey inset frame (like /data's AcquisitionsSubTable) so the nested table
+  // reads as a sub-table; `defaultColumn.grow` + layoutMode:grid let its columns
+  // fill most of the outer table's width by default.
+  return (
+    <Box sx={{ p: 2, bgcolor: 'action.hover', width: '100%' }}>
+      <MaterialReactTable table={table} />
+    </Box>
   );
 }
 

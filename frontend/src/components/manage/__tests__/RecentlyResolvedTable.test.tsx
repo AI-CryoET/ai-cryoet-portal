@@ -69,9 +69,10 @@ describe('RecentlyResolvedTable', () => {
     render(<RecentlyResolvedTable />);
     expect(screen.getByText('rosen_chromatin_012')).toBeInTheDocument();
     expect(screen.getByText('acq_02')).toBeInTheDocument();
-    // No Message column anymore — the acquisition's message hangs off its
-    // own info icon instead.
-    expect(screen.getByLabelText('View message')).toBeInTheDocument();
+    // The acquisition's message shows in the Message(s) column.
+    expect(
+      screen.getByText('acquisition_quality out of range')
+    ).toBeInTheDocument();
     const expected = new Date(resolvedAt * 1000).toLocaleString(undefined, {
       timeZoneName: 'short'
     });

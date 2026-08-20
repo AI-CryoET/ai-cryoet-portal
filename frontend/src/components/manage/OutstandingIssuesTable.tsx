@@ -12,6 +12,7 @@ import {
   MRT_TablePagination,
   useMaterialReactTable,
   type MRT_ColumnDef,
+  type MRT_ColumnSizingState,
   type MRT_PaginationState
 } from 'material-react-table';
 import type { IssueGroup, IssueSeverity } from '~/types';
@@ -22,8 +23,7 @@ import {
   useOutstandingIssuesQuery
 } from '~/utils/queryOptions';
 import {
-  AcquisitionListCell,
-  ReconstructionsListCell,
+  AffectedTable,
   SampleCell,
   SeverityPill,
   StillPresentCell,
@@ -69,31 +69,11 @@ function useColumns(): MRT_ColumnDef<SampleWarningRow>[] {
           <SampleCell
             fileKind={row.original.file_kind}
             mdRunId={row.original.md_run_id}
-            message={row.original.message}
             sampleId={row.original.sample_id}
             samplePath={row.original.sample_path}
             showActions={row.original.acquisitions.length === 0}
           />
         )
-      },
-      {
-        id: 'acquisitions',
-        header: 'Acquisition(s)',
-        size: 180,
-        // Zero the cell's own padding — the acquisition "bands" carry their
-        // own inset (see issueCells.tsx) so their alternating background can
-        // bleed edge-to-edge across the full column width instead of
-        // stopping short at the cell's default padding, which read as a
-        // vertical white gutter down both sides of the column.
-        muiTableBodyCellProps: { sx: { p: 0 } },
-        Cell: ({ row }) => <AcquisitionListCell row={row.original} />
-      },
-      {
-        id: 'reconstructions',
-        header: 'Reconstruction(s)',
-        size: 165,
-        muiTableBodyCellProps: { sx: { p: 0 } },
-        Cell: ({ row }) => <ReconstructionsListCell row={row.original} />
       },
       {
         accessorKey: 'first_seen_at',
@@ -142,6 +122,11 @@ export function OutstandingIssuesTable({
     pageIndex: 0,
     pageSize: 10
   });
+  // Column widths for the affected sub-table, shared across every detail panel
+  // so resizing one keeps them all consistent (see AffectedTable).
+  const [affectedSizing, setAffectedSizing] = useState<MRT_ColumnSizingState>(
+    {}
+  );
   // Bottom edge of the table (bottom toolbar) in viewport coords, captured the
   // instant the user clicks a pager — before the new rows re-render.
   const tableRef = useRef<HTMLDivElement>(null);
@@ -218,6 +203,22 @@ export function OutstandingIssuesTable({
     columnResizeMode: 'onChange',
     mrtTheme: theme => ({ draggingBorderColor: theme.palette.grey[300] }),
     defaultColumn: { grow: 1 },
+    // Acquisitions / reconstructions / messages live in an expandable detail
+    // panel (one sub-table per row), open by default so warnings stay visible.
+    renderDetailPanel: ({ row }) => (
+      <AffectedTable
+        columnSizing={affectedSizing}
+        onColumnSizingChange={setAffectedSizing}
+        row={row.original}
+      />
+    ),
+    displayColumnDefOptions: {
+      'mrt-row-expand': { size: 60, grow: false }
+    },
+    // grid layoutMode makes the panel cell display:flex; column direction
+    // stretches the panel (cross-axis) to the full cell width so its grey frame
+    // reaches the table's right edge (see SamplesPortalTable's matching note).
+    muiDetailPanelProps: { sx: { p: 0, flexDirection: 'column' } },
     muiTableBodyRowProps: { hover: false },
     enableColumnActions: false,
     enableColumnFilters: false,
@@ -232,7 +233,8 @@ export function OutstandingIssuesTable({
     enableBottomToolbar: true,
     initialState: {
       density: 'comfortable',
-      sorting: [{ id: 'severity', desc: false }]
+      sorting: [{ id: 'severity', desc: false }],
+      expanded: true
     },
     // Match the portal tables (/data, /experimental, /md-simulation).
     muiTablePaperProps: {
