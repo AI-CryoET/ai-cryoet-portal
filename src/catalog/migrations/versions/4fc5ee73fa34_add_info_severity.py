@@ -1,7 +1,7 @@
 """add info severity
 
 Revision ID: 4fc5ee73fa34
-Revises: c3d4e5f6a7b8
+Revises: 02915ef0dfac
 Create Date: 2026-08-17 12:38:00.537806
 
 """
@@ -13,7 +13,7 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision: str = '4fc5ee73fa34'
-down_revision: Union[str, Sequence[str], None] = 'c3d4e5f6a7b8'
+down_revision: Union[str, Sequence[str], None] = '02915ef0dfac'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
