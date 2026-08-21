@@ -41,7 +41,9 @@ router = APIRouter()
 
 Outcome = Literal["upserted", "skipped", "failed"]
 LogLevel = Literal["DEBUG", "INFO", "WARNING", "ERROR"]
-Severity = Literal["error", "warning"]
+Severity = Literal["error", "warning", "info"]
+# Priority order for a group's rollup severity (max-wins) and default sort.
+_SEVERITY_ORDER = ("error", "warning", "info")
 
 
 def _enum_val(v):
@@ -73,6 +75,7 @@ def _scan_run_to_out(row: orm.ScanRunORM) -> ScanRun:
         n_resolved_issues=row.n_resolved_issues,
         n_warning_active=row.n_warning_active,
         n_error_active=row.n_error_active,
+        n_info_active=row.n_info_active,
     )
 
 
@@ -86,8 +89,9 @@ def _group_issues(
     """Group issue rows by (scope, sample_id, acquisition_id, md_run_id, file_kind).
 
     Mirrors the old ``scans._scan_warnings`` Python-grouping style. ``severity``
-    is the max within the group (error wins). When ``resolved`` is True, the
-    group also carries ``resolved_at`` (max) + its ``resolved_run_id``.
+    is the max within the group (error wins over warning wins over info). When
+    ``resolved`` is True, the group also carries ``resolved_at`` (max) + its
+    ``resolved_run_id``.
     """
     groups: dict[tuple, dict] = {}
     for r in rows:
@@ -107,7 +111,7 @@ def _group_issues(
                 "md_run_id": r.md_run_id,
                 "file_kind": _enum_val(r.file_kind),
                 "file_path": r.file_path,
-                "has_error": False,
+                "severity_rank": len(_SEVERITY_ORDER) - 1,
                 "issues": [],
                 "first_seen_at": r.first_seen_at,
                 "last_seen_at": r.last_seen_at,
@@ -117,8 +121,9 @@ def _group_issues(
             }
             groups[key] = g
 
-        if _enum_val(r.severity) == "error":
-            g["has_error"] = True
+        rank = _SEVERITY_ORDER.index(_enum_val(r.severity))
+        if rank < g["severity_rank"]:
+            g["severity_rank"] = rank
         g["issues"].append(IssueItem(category=r.category, message=r.message))
 
         if r.first_seen_at < g["first_seen_at"]:
@@ -143,7 +148,7 @@ def _group_issues(
             md_run_id=g["md_run_id"],
             file_kind=g["file_kind"],
             file_path=g["file_path"],
-            severity="error" if g["has_error"] else "warning",
+            severity=_SEVERITY_ORDER[g["severity_rank"]],
             issues=g["issues"],
             first_seen_at=g["first_seen_at"],
             last_seen_at=g["last_seen_at"],
@@ -155,8 +160,8 @@ def _group_issues(
         )
         for g in groups.values()
     ]
-    # Sort by severity (errors first) then sample_id.
-    out.sort(key=lambda gr: (0 if gr.severity == "error" else 1, gr.sample_id or ""))
+    # Sort by severity (errors first, then warnings, then info) then sample_id.
+    out.sort(key=lambda gr: (_SEVERITY_ORDER.index(gr.severity), gr.sample_id or ""))
     return out
 
 
@@ -201,6 +206,7 @@ def get_summary(session: Session = Depends(get_session)):
     outstanding = OutstandingCounts(
         errors=counts.get("error", 0),
         warnings=counts.get("warning", 0),
+        infos=counts.get("info", 0),
     )
 
     # Deletion events from the latest completed run (badge count, §08a).

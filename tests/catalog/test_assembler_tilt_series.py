@@ -356,6 +356,32 @@ def test_assembler_warns_undeclared_tilt_series_folder(tmp_path: Path) -> None:
     ]
     assert len(undeclared) == 1
     assert "ts_x" in undeclared[0].location
+    assert undeclared[0].severity == "warning"
+
+
+def test_assembler_infos_template_placeholder_tilt_series_folder(
+    tmp_path: Path,
+) -> None:
+    """A ``TiltSeries/tilt_series_id/`` folder — the literal placeholder name
+    shipped in templates/sample_id_experimental — is a leftover, un-renamed
+    template copy, not a real data problem, so it warns at "info" instead of
+    "warning"."""
+    sample_dir = tmp_path / "sample_undeclared"
+    _write_minimal_sample_toml(sample_dir)
+    _write_minimal_acquisition_toml(sample_dir)
+    (sample_dir / "Pos1" / "TiltSeries" / "tilt_series_id" / "stack").mkdir(
+        parents=True
+    )
+
+    result = assemble_sample(_sample_loc(sample_dir))
+
+    undeclared = [
+        w
+        for w in result.warnings
+        if w.category == "undeclared_tilt_series_folder"
+    ]
+    assert len(undeclared) == 1
+    assert undeclared[0].severity == "info"
 
 
 def test_assembler_warns_acquisition_without_tilt_series(tmp_path: Path) -> None:

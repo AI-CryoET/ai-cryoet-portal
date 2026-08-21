@@ -31,6 +31,14 @@ import {
   issueRowId
 } from './issueCells';
 
+// Priority order (most to least severe) — plain alphabetical sort would put
+// "info" between "error" and "warning".
+const SEVERITY_RANK: Record<IssueGroup['severity'], number> = {
+  error: 0,
+  warning: 1,
+  info: 2
+};
+
 function useColumns(): MRT_ColumnDef<IssueGroup>[] {
   return useMemo(
     () => [
@@ -50,6 +58,9 @@ function useColumns(): MRT_ColumnDef<IssueGroup>[] {
         accessorKey: 'severity',
         header: 'Severity',
         size: 110,
+        sortingFn: (a, b) =>
+          SEVERITY_RANK[a.original.severity] -
+          SEVERITY_RANK[b.original.severity],
         Cell: ({ row }) => <SeverityPill severity={row.original.severity} />
       },
       {
@@ -209,6 +220,7 @@ export function OutstandingIssuesTable({
             <MenuItem value="">All severities</MenuItem>
             <MenuItem value="error">Errors only</MenuItem>
             <MenuItem value="warning">Warnings only</MenuItem>
+            <MenuItem value="info">Info only</MenuItem>
           </TextField>
         </Stack>
         {/* ml:auto (on a wrapper Box we control, so the margin is reliably a

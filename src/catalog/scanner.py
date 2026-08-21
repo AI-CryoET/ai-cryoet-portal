@@ -67,6 +67,7 @@ class ScanReport:
     n_resolved_issues: int = 0
     n_warning_active: int | None = None
     n_error_active: int | None = None
+    n_info_active: int | None = None
 
 
 def scan_root(
@@ -263,7 +264,7 @@ def scan_root(
 
         # Outstanding-issue snapshot for the scan_runs row.
         with session.begin():
-            report.n_warning_active, report.n_error_active = (
+            report.n_warning_active, report.n_error_active, report.n_info_active = (
                 _count_active_issues(session)
             )
 
@@ -316,14 +317,15 @@ def scan_root(
     return report
 
 
-def _count_active_issues(session) -> tuple[int, int]:
-    """Return (n_warning_active, n_error_active) over outstanding issues."""
+def _count_active_issues(session) -> tuple[int, int, int]:
+    """Return (n_warning_active, n_error_active, n_info_active) over outstanding issues."""
     rows = session.execute(
         select(orm.IssueORM.severity).where(orm.IssueORM.resolved_at.is_(None))
     ).scalars().all()
     n_warning = sum(1 for s in rows if s == "warning")
     n_error = sum(1 for s in rows if s == "error")
-    return n_warning, n_error
+    n_info = sum(1 for s in rows if s == "info")
+    return n_warning, n_error, n_info
 
 
 def _persist_logs_and_prune(SessionFactory, log_buffer: list[dict]) -> None:

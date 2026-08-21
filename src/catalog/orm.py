@@ -520,6 +520,7 @@ class ScanRunORM(Base):
     n_resolved_issues: Mapped[int | None] = mapped_column(Integer, nullable=True)
     n_warning_active: Mapped[int | None] = mapped_column(Integer, nullable=True)
     n_error_active: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    n_info_active: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
 
 class ScanLogLineORM(Base):
@@ -661,7 +662,7 @@ class IssueORM(Base):
         String, nullable=False, unique=True, index=True
     )
     severity: Mapped[str] = mapped_column(
-        SAEnum("error", "warning", name="issue_severity"),
+        SAEnum("error", "warning", "info", name="issue_severity"),
         nullable=False,
         index=True,
     )
