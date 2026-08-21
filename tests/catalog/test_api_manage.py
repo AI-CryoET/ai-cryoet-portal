@@ -86,9 +86,22 @@ def client(tmp_path):
             ended_at=None, root="/data", status="running",
         ))
 
+        # sample-1 + its acq1 acquisition have on-disk paths recorded; sample-2
+        # has no SampleORM row at all (path lookup must tolerate that).
+        s.add(orm.SampleORM(
+            sample_id="sample-1", data_source="experimental", project="chromatin",
+            path="/data/scratch/sample-1",
+        ))
+        s.add(orm.AcquisitionORM(
+            sample_id="sample-1", acquisition_id="acq1",
+            path="/data/scratch/sample-1/acq1",
+        ))
+
         # Outstanding issues:
-        #  - sample-1: a warning + an error at the SAME (scope,file_kind) group
-        #    so severity=max(error) and 2 issue items appear.
+        #  - sample-1: a warning + an error at the same (scope, file_kind) but
+        #    different categories — category is part of the group key, so
+        #    these stay in separate groups (each keeping its own severity)
+        #    rather than merging into one group with severity=max(error).
         _issue(s, severity="warning", category="extra_field",
                message="extra field", first_seen_at=_NOW - 1000)
         _issue(s, severity="error", category="assembly_failed",
@@ -104,7 +117,7 @@ def client(tmp_path):
         _issue(s, sample_id="sample-1", scope="acquisition",
                acquisition_id="acq1", file_kind="acquisition_toml",
                location="acquisitions.acq1", category="undeclared_tomogram_folder",
-               message="stray tomo")
+               message="stray tomo", reconstruction_alignment_id="grp1")
         #  - two md_run-scoped issues on the same sample, different runs: must
         #    group separately (md_run_id is part of the group key) so a
         #    manage-page link can target the right run's authoring form.
@@ -215,20 +228,63 @@ def test_summary_latest_scan_and_counts(client):
 
 def test_outstanding_issues_grouping_and_severity_max(client):
     body = client.get("/manage/issues").json()
-    # sample-1 sample_toml group merges the warning + error → severity error,
-    # 2 issue items.
-    g = next(
+    # category is part of the group key: the sample-1 sample_toml warning and
+    # error stay in separate groups, each with its own severity — one
+    # doesn't mask the other behind a group-wide max.
+    sample_toml_groups = [
+        x for x in body
+        if x["sample_id"] == "sample-1" and x["file_kind"] == "sample_toml"
+    ]
+    assert {g["severity"] for g in sample_toml_groups} == {"warning", "error"}
+    warning_group = next(
+        g for g in sample_toml_groups if g["severity"] == "warning"
+    )
+    error_group = next(g for g in sample_toml_groups if g["severity"] == "error")
+    assert [i["category"] for i in warning_group["issues"]] == ["extra_field"]
+    assert [i["category"] for i in error_group["issues"]] == ["assembly_failed"]
+    # first_seen_at is that group's own value, not shared across categories.
+    assert error_group["first_seen_at"] == pytest.approx(_NOW - 2000)
+    assert warning_group["first_seen_at"] == pytest.approx(_NOW - 1000)
+    # Errors sort first.
+    assert body[0]["severity"] == "error"
+
+
+def test_outstanding_issues_carry_sample_and_acquisition_path(client):
+    """Path fields come from a batch join, not the issue row itself — sample-1
+    (SampleORM row exists) and its acq1 acquisition both resolve; sample-2
+    (no SampleORM row) resolves to null rather than erroring."""
+    body = client.get("/manage/issues").json()
+    sample_group = next(
         x for x in body
         if x["sample_id"] == "sample-1" and x["file_kind"] == "sample_toml"
     )
-    assert g["severity"] == "error"
-    assert {i["category"] for i in g["issues"]} == {
-        "extra_field", "assembly_failed"
-    }
-    # first_seen_at is the min within the group.
-    assert g["first_seen_at"] == pytest.approx(_NOW - 2000)
-    # Errors sort first.
-    assert body[0]["severity"] == "error"
+    assert sample_group["sample_path"] == "/data/scratch/sample-1"
+    assert sample_group["acquisition_path"] is None
+    acq_group = next(x for x in body if x["acquisition_id"] == "acq1")
+    assert acq_group["sample_path"] == "/data/scratch/sample-1"
+    assert acq_group["acquisition_path"] == "/data/scratch/sample-1/acq1"
+    no_row = next(x for x in body if x["sample_id"] == "sample-2")
+    assert no_row["sample_path"] is None
+
+
+def test_outstanding_issues_carry_reconstruction_alignment_id(client):
+    """The undeclared_tomogram_folder issue seeded on acq1 carries a
+    reconstruction_alignment_id through to IssueItem; other issues in the
+    fixture (which don't set it) round-trip as null."""
+    body = client.get("/manage/issues").json()
+    acq_group = next(x for x in body if x["acquisition_id"] == "acq1")
+    tomo_issue = next(
+        i for i in acq_group["issues"] if i["category"] == "undeclared_tomogram_folder"
+    )
+    assert tomo_issue["reconstruction_alignment_id"] == "grp1"
+
+    sample_group = next(
+        x for x in body
+        if x["sample_id"] == "sample-1" and x["file_kind"] == "sample_toml"
+    )
+    assert all(
+        i["reconstruction_alignment_id"] is None for i in sample_group["issues"]
+    )
 
 
 def test_outstanding_issues_excludes_resolved(client):
@@ -255,6 +311,14 @@ def test_outstanding_filter_by_severity(client):
     # Only groups containing an error remain; here just sample-1 sample_toml.
     assert all(g["severity"] == "error" for g in body)
     assert len(body) == 1
+
+
+def test_outstanding_filter_by_category(client):
+    body = client.get("/manage/issues", params={"category": "assembly_failed"}).json()
+    # Only the issue rows of that category survive (the warnings-page warning-type
+    # dropdown filter).
+    cats = {i["category"] for g in body for i in g["issues"]}
+    assert cats == {"assembly_failed"}
 
 
 def _bare_issue(**kw):

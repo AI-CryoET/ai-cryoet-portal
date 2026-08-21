@@ -124,6 +124,7 @@ export function useManageSummaryQuery() {
 export type IssueFilters = {
   severity?: 'error' | 'warning' | 'info';
   file_kind?: string;
+  category?: string;
   q?: string;
 };
 
@@ -134,6 +135,9 @@ function buildIssueQueryString(filters: IssueFilters): string {
   }
   if (filters.file_kind) {
     params.set('file_kind', filters.file_kind);
+  }
+  if (filters.category) {
+    params.set('category', filters.category);
   }
   if (filters.q) {
     params.set('q', filters.q);

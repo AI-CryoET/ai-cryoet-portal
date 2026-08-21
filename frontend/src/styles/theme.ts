@@ -30,6 +30,16 @@ export const theme = createTheme({
     }
   },
   components: {
+    MuiTooltip: {
+      styleOverrides: {
+        // Default MUI tooltip text (0.6875rem) reads smaller than the body2
+        // text used in table cells — bump it to match so warning/error
+        // messages are legible on hover, not a squint.
+        tooltip: ({ theme }) => ({
+          fontSize: theme.typography.body2.fontSize
+        })
+      }
+    },
     MuiTypography: {
       styleOverrides: {
         // Page headings render in petrol instead of the default near-black.

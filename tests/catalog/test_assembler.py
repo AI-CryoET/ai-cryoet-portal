@@ -378,6 +378,8 @@ def test_typo_warning_categorized(tmp_path):
     assert len(typos) == 1
     # location captured from "on Sample closely matches"
     assert typos[0].location == "Sample"
+    # Only the 3 reconstruction-scoped categories ever set this field.
+    assert typos[0].reconstruction_alignment_id is None
 
 
 def test_unfilled_placeholder_warning_categorized(tmp_path):
@@ -421,6 +423,42 @@ def test_undeclared_tomogram_folder_warns(tmp_path):
     assert len(undeclared) == 1
     assert "stray_tomo" in undeclared[0].location
     assert "stray_tomo" in undeclared[0].message
+    # Legacy flat-acquisition.toml path (no reconstruction.toml for this
+    # group) — the group id is ambiguous/not authoritative, so no
+    # reconstruction_alignment_id is attached.
+    assert undeclared[0].reconstruction_alignment_id is None
+
+
+def test_undeclared_tomogram_folder_in_group_warns_with_group_id(tmp_path):
+    """A stray tomogram under a group that DOES have its own
+    reconstruction.toml (the per-group authored variant) carries the group id
+    on the issue, since that group is authoritative for the tomogram."""
+    sample_dir = tmp_path / "sample_test"
+    _write_minimal_sample_toml(sample_dir)
+    _write(
+        sample_dir / "acq1" / "acquisition.toml",
+        """
+        [acquisition]
+        microscope = "Krios"
+        """,
+    )
+    _write(
+        sample_dir / "acq1" / "Reconstructions" / "grp1" / "reconstruction.toml",
+        """
+        [reconstruction_alignment]
+        """,
+    )
+    _make_mrc(
+        sample_dir / "acq1" / "Reconstructions" / "grp1" / "Tomograms" / "stray.mrc"
+    )
+
+    result = assemble_sample(_sample_loc(sample_dir))
+    undeclared = [
+        w for w in result.warnings if w.category == "undeclared_tomogram_folder"
+    ]
+    assert len(undeclared) == 1
+    assert undeclared[0].reconstruction_alignment_id == "grp1"
+    assert "Reconstructions/grp1/reconstruction.toml" in undeclared[0].message
 
 
 def test_undeclared_annotation_folder_warns(tmp_path):
@@ -446,6 +484,39 @@ def test_undeclared_annotation_folder_warns(tmp_path):
     assert len(undeclared) == 1
     assert "stray_ann" in undeclared[0].location
     assert "stray_ann" in undeclared[0].message
+    # Legacy flat-acquisition.toml path — same reasoning as tomograms above.
+    assert undeclared[0].reconstruction_alignment_id is None
+
+
+def test_undeclared_annotation_folder_in_group_warns_with_group_id(tmp_path):
+    """Same as the tomogram case: a stray annotation under a group with its
+    own reconstruction.toml carries that group's id on the issue."""
+    sample_dir = tmp_path / "sample_test"
+    _write_minimal_sample_toml(sample_dir)
+    _write(
+        sample_dir / "acq1" / "acquisition.toml",
+        """
+        [acquisition]
+        microscope = "Krios"
+        """,
+    )
+    _write(
+        sample_dir / "acq1" / "Reconstructions" / "grp1" / "reconstruction.toml",
+        """
+        [reconstruction_alignment]
+        """,
+    )
+    anns = sample_dir / "acq1" / "Reconstructions" / "grp1" / "Annotations"
+    anns.mkdir(parents=True)
+    (anns / "stray_ann.mrc").write_bytes(b"")
+
+    result = assemble_sample(_sample_loc(sample_dir))
+    undeclared = [
+        w for w in result.warnings if w.category == "undeclared_annotation_folder"
+    ]
+    assert len(undeclared) == 1
+    assert undeclared[0].reconstruction_alignment_id == "grp1"
+    assert "Reconstructions/grp1/reconstruction.toml" in undeclared[0].message
 
 
 def test_reconstruction_alignment_enriched_from_folder(tmp_path):
@@ -556,6 +627,7 @@ def test_undeclared_reconstruction_alignment_folder_warns(tmp_path):
     assert len(warned) == 1
     assert "grp_ghost" in warned[0].message
     assert warned[0].severity == "warning"
+    assert warned[0].reconstruction_alignment_id == "grp_ghost"
 
 
 def test_undeclared_reconstruction_alignment_folder_infos_template_placeholder(

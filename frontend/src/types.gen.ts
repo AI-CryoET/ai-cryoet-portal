@@ -915,6 +915,10 @@ export interface components {
             file_kind: string;
             /** File Path */
             file_path?: string | null;
+            /** Sample Path */
+            sample_path?: string | null;
+            /** Acquisition Path */
+            acquisition_path?: string | null;
             /** Severity */
             severity: string;
             /**
@@ -943,6 +947,8 @@ export interface components {
             category: string;
             /** Message */
             message: string;
+            /** Reconstruction Alignment Id */
+            reconstruction_alignment_id?: string | null;
         };
         /** LabelOut */
         LabelOut: {
@@ -1556,6 +1562,7 @@ export interface operations {
             query?: {
                 severity?: ("error" | "warning" | "info") | null;
                 file_kind?: string | null;
+                category?: string | null;
                 q?: string | null;
             };
             header?: never;

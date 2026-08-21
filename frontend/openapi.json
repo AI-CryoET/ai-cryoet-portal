@@ -223,6 +223,22 @@
             }
           },
           {
+            "name": "category",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Category"
+            }
+          },
+          {
             "name": "q",
             "in": "query",
             "required": false,
@@ -2584,6 +2600,28 @@
             ],
             "title": "File Path"
           },
+          "sample_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sample Path"
+          },
+          "acquisition_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Acquisition Path"
+          },
           "severity": {
             "type": "string",
             "title": "Severity"
@@ -2674,6 +2712,17 @@
           "message": {
             "type": "string",
             "title": "Message"
+          },
+          "reconstruction_alignment_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reconstruction Alignment Id"
           }
         },
         "type": "object",
