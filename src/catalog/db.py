@@ -24,13 +24,21 @@ def make_engine(url: str = DEFAULT_DB_URL) -> Engine:
     """Create a SQLAlchemy engine. Accepts any URL — sqlite:// or postgresql://."""
     engine = create_engine(url, future=True)
     if engine.dialect.name == "sqlite":
-        # WAL + a busy timeout are cheap insurance for the scanner's
-        # per-sample write transactions (and the run-end log bulk insert);
-        # set on every connection. SQLite only — Postgres ignores these.
+        # DELETE (rollback) journal + a busy timeout, set on every connection.
+        # SQLite only — Postgres ignores these.
+        #
+        # NOT WAL: in prod the scanner (writer) and api (reader) run as separate
+        # pods sharing one DB file on a network (RWX) PVC. WAL coordinates
+        # readers/writers through a shared-memory index (-shm) that SQLite
+        # requires all connections to reach on the same host; across pods it
+        # can't, which silently corrupted the catalog ("database disk image is
+        # malformed"). Rollback-journal mode has no -shm and uses POSIX locks
+        # (with busy_timeout to ride out the scanner's brief exclusive writes),
+        # which is safe for this single-writer / one-reader layout.
         @event.listens_for(engine, "connect")
         def _set_sqlite_pragmas(dbapi_conn, _record):  # noqa: ANN001
             cursor = dbapi_conn.cursor()
-            cursor.execute("PRAGMA journal_mode=WAL")
+            cursor.execute("PRAGMA journal_mode=DELETE")
             cursor.execute("PRAGMA busy_timeout=5000")
             cursor.close()
 
