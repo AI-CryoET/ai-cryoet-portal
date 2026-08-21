@@ -59,6 +59,10 @@ export function FilterPanel({
               )
           ).map(group => {
             const disabled = disabledGroups?.has(group.id) ?? false;
+            // group.id ('general', ...) repeats across the sample and
+            // acquisition sections; namespace the open-state key by section so
+            // the two "General" groups toggle independently.
+            const openKey = `${section}:${group.id}`;
             const fields = group.fields.filter(
               f => !(f.key === 'data_source' && lockedDataSource)
             );
@@ -72,9 +76,9 @@ export function FilterPanel({
                 // its remembered open state — MUI's `disabled` freezes the
                 // toggle, so without this it'd be stuck open and its checkboxes
                 // (which MUI does NOT auto-disable) would stay clickable.
-                expanded={openGroups[group.id] ? !disabled : false}
+                expanded={openGroups[openKey] ? !disabled : false}
                 key={group.id}
-                onToggle={() => toggleGroup(group.id)}
+                onToggle={() => toggleGroup(openKey)}
                 title={group.title}
               >
                 {fields.map(field => (
