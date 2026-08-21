@@ -313,6 +313,14 @@ def test_outstanding_filter_by_severity(client):
     assert len(body) == 1
 
 
+def test_outstanding_filter_by_category(client):
+    body = client.get("/manage/issues", params={"category": "assembly_failed"}).json()
+    # Only the issue rows of that category survive (the warnings-page warning-type
+    # dropdown filter).
+    cats = {i["category"] for g in body for i in g["issues"]}
+    assert cats == {"assembly_failed"}
+
+
 def _bare_issue(**kw):
     """A standalone (unsaved) IssueORM row for exercising ``_group_issues``
     directly — its severity-rollup logic doesn't touch the DB."""

@@ -279,6 +279,7 @@ def get_summary(session: Session = Depends(get_session)):
 def get_outstanding_issues(
     severity: Severity | None = Query(None),
     file_kind: str | None = Query(None),
+    category: str | None = Query(None),
     q: str | None = Query(None),
     session: Session = Depends(get_session),
 ):
@@ -288,6 +289,8 @@ def get_outstanding_issues(
         stmt = stmt.where(orm.IssueORM.severity == severity)
     if file_kind is not None:
         stmt = stmt.where(orm.IssueORM.file_kind == file_kind)
+    if category is not None:
+        stmt = stmt.where(orm.IssueORM.category == category)
     if q:
         # Each whitespace-separated term must match some field (AND across
         # terms, OR across fields) so "sample-1 acq1" narrows to that
