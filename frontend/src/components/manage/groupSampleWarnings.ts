@@ -233,7 +233,9 @@ export interface WarningInnerRow {
   // The acquisition owns a message of its own → its name gets copy/edit
   // actions. False when the name is only a group header for reconstructions.
   acqActions: boolean;
-  // Part of a multi-row acquisition group → lightly shaded to tie the rows.
+  // Alternates per acquisition (including all its reconstruction rows) so
+  // consecutive acquisitions read as distinct bands, regardless of how many
+  // rows each one spans.
   shaded: boolean;
   messages: WarningMessage[];
   reEvaluated: boolean;
@@ -266,7 +268,10 @@ export function flattenBand(band: SampleBand): WarningInnerRow[] {
   }
 
   // 3. acquisitions: an acquisition-scoped row (if any) then its
-  //    reconstruction rows. >1 row in the group → shade + name once.
+  //    reconstruction rows. A multi-row group shows the name once; every
+  //    row in the group shares one shade, alternating acquisition to
+  //    acquisition.
+  let acqIndex = 0;
   for (const acq of band.acquisitions) {
     const recons = acq.reconstructions.filter(r => r.messages.length > 0);
     const hasAcqMsg = acq.messages.length > 0;
@@ -274,7 +279,8 @@ export function flattenBand(band: SampleBand): WarningInnerRow[] {
     if (groupSize === 0) {
       continue;
     }
-    const shaded = groupSize > 1;
+    const shaded = acqIndex % 2 === 1;
+    acqIndex++;
     let first = true;
 
     if (hasAcqMsg) {

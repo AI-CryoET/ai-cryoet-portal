@@ -114,7 +114,7 @@ describe('flattenBand', () => {
     ]);
   });
 
-  it('shades and names once when an acquisition has multiple reconstructions', () => {
+  it('names once and shares one shade across an acquisition with multiple reconstructions', () => {
     const rows = flattenBand(
       band({
         acquisitions: [
@@ -125,7 +125,7 @@ describe('flattenBand', () => {
       })
     );
     expect(rows).toHaveLength(2);
-    expect(rows.every(r => r.shaded)).toBe(true);
+    expect(rows[0].shaded).toBe(rows[1].shaded);
     expect(rows[0].showAcqLabel).toBe(true);
     // Name is a group header only — reconstruction owns the message, so the
     // acquisition gets no copy/edit actions.
@@ -133,14 +133,25 @@ describe('flattenBand', () => {
     expect(rows[1].showAcqLabel).toBe(false);
   });
 
-  it('does not shade a single-reconstruction acquisition', () => {
+  it('alternates shading acquisition to acquisition, regardless of group size', () => {
     const rows = flattenBand(
       band({
-        acquisitions: [acq({ reconstructions: [recon('grp1', 'only')] })]
+        acquisitions: [
+          acq({
+            acquisition_id: 'acq1',
+            reconstructions: [recon('grp1', 'first'), recon('grp2', 'second')]
+          }),
+          acq({
+            acquisition_id: 'acq2',
+            messages: [{ text: 'solo', scope: 'acquisition' }]
+          })
+        ]
       })
     );
-    expect(rows).toHaveLength(1);
+    expect(rows).toHaveLength(3);
     expect(rows[0].shaded).toBe(false);
+    expect(rows[1].shaded).toBe(false);
+    expect(rows[2].shaded).toBe(true);
   });
 });
 

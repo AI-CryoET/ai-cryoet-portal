@@ -36,8 +36,9 @@ export type BandVariant = 'outstanding' | 'resolved';
 
 // The Acquisition column for one inner row: the acquisition name/actions on the
 // first row of its group, an md_run pseudo-entity, a dash for a sample.toml
-// row, or blank on the shaded continuation rows of a multi-row acquisition
-// (the shading — not a repeated name or a dash — ties them together).
+// row, or blank on continuation rows of an acquisition group (the shading,
+// alternating acquisition to acquisition — not a repeated name or a dash —
+// ties them together).
 function AcqCell({
   r,
   sampleId
