@@ -74,16 +74,16 @@ beforeEach(() => {
 });
 
 describe('OutstandingIssuesTable', () => {
-  it('renders an issue row with its message and severity', () => {
+  it('renders a sample band with its message', () => {
     setData([group({})]);
     render(<OutstandingIssuesTable />);
     expect(screen.getByText('villa_synapse_004')).toBeInTheDocument();
-    // The row's message shows in the Message(s) column (sample-scoped row,
-    // no acquisitions).
+    // The message shows in the Message(s) column, tagged with its scope icon
+    // (severity is now a filter, not a column).
     expect(
       screen.getByText('missing required field project')
     ).toBeInTheDocument();
-    expect(screen.getByText('error')).toBeInTheDocument();
+    expect(screen.getByLabelText('Sample-level message')).toBeInTheDocument();
   });
 
   it('shows the latest-scan timestamp when the owner was re-evaluated', () => {
@@ -154,13 +154,13 @@ describe('OutstandingIssuesTable', () => {
       })
     ]);
     render(<OutstandingIssuesTable />);
-    // One sample row, both acquisitions listed under it.
+    // One sample band, both acquisitions listed under it.
     expect(screen.getAllByText('villa_synapse_004')).toHaveLength(1);
     expect(screen.getByText('acq1')).toBeInTheDocument();
     expect(screen.getByText('acq2')).toBeInTheDocument();
-    expect(
-      screen.getByText('undeclared annotation folder')
-    ).toBeInTheDocument();
+    // Each acquisition's own message shows (warning type is a filter now).
+    expect(screen.getByText("annotation 'a1' undeclared")).toBeInTheDocument();
+    expect(screen.getByText("annotation 'a2' undeclared")).toBeInTheDocument();
   });
 
   it('renders a dash in the acquisitions and reconstructions columns for a sample-only issue', () => {

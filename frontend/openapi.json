@@ -223,6 +223,22 @@
             }
           },
           {
+            "name": "category",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Category"
+            }
+          },
+          {
             "name": "q",
             "in": "query",
             "required": false,

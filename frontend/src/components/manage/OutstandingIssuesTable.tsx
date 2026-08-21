@@ -1,21 +1,13 @@
-import { useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useMemo, useState } from 'react';
 import {
   Box,
   MenuItem,
-  Stack,
+  TablePagination,
   TextField,
   Typography,
   alpha
 } from '@mui/material';
-import {
-  MaterialReactTable,
-  MRT_TablePagination,
-  useMaterialReactTable,
-  type MRT_ColumnDef,
-  type MRT_ColumnSizingState,
-  type MRT_PaginationState
-} from 'material-react-table';
-import type { IssueGroup, IssueSeverity } from '~/types';
+import type { IssueGroup } from '~/types';
 import { useDebounce } from '~/hooks/useDebounce';
 import { SectionHeader } from './SectionHeader';
 import {
@@ -23,87 +15,28 @@ import {
   useOutstandingIssuesQuery
 } from '~/utils/queryOptions';
 import {
-  AffectedTable,
-  SampleCell,
-  SeverityPill,
-  StillPresentCell,
-  WarningTypeCell,
-  formatDate
-} from './issueCells';
-import {
-  groupSampleWarnings,
-  type SampleWarningRow
-} from './groupSampleWarnings';
-
-// Priority order (most to least severe) — plain alphabetical sort would put
-// "info" between "error" and "warning".
-const SEVERITY_RANK: Record<IssueSeverity, number> = {
-  error: 0,
-  warning: 1,
-  info: 2
-};
-
-function useColumns(): MRT_ColumnDef<SampleWarningRow>[] {
-  return useMemo(
-    () => [
-      {
-        accessorKey: 'category',
-        header: 'Warning type',
-        size: 125,
-        Cell: ({ row }) => <WarningTypeCell category={row.original.category} />
-      },
-      {
-        accessorKey: 'severity',
-        header: 'Severity',
-        size: 95,
-        sortingFn: (a, b) =>
-          SEVERITY_RANK[a.original.severity] -
-          SEVERITY_RANK[b.original.severity],
-        Cell: ({ row }) => <SeverityPill severity={row.original.severity} />
-      },
-      {
-        id: 'sample',
-        header: 'Sample',
-        size: 135,
-        Cell: ({ row }) => (
-          <SampleCell
-            fileKind={row.original.file_kind}
-            mdRunId={row.original.md_run_id}
-            sampleId={row.original.sample_id}
-            samplePath={row.original.sample_path}
-            showActions={row.original.acquisitions.length === 0}
-          />
-        )
-      },
-      {
-        accessorKey: 'first_seen_at',
-        header: 'First seen',
-        size: 85,
-        Cell: ({ cell }) => formatDate(cell.getValue<number>())
-      },
-      {
-        id: 'still_present',
-        header: 'Still present as of',
-        // Wide enough for the full "M/D/YYYY, H:MM:SS AM/PM TZ" string
-        // (`formatTs`) without clipping — verified in a real browser; a
-        // narrower column silently truncated the timestamp (the cell's
-        // overflow:hidden clips with no ellipsis/tooltip fallback).
-        size: 190,
-        Cell: ({ row }) => (
-          <StillPresentCell
-            reEvaluated={row.original.reEvaluated}
-            timestamp={row.original.stillPresentAt}
-          />
-        )
-      }
-    ],
-    []
-  );
-}
+  ExpandAllToggle,
+  SampleWarningBands,
+  useBandCollapse
+} from './SampleWarningBands';
+import { groupBySample } from './groupSampleWarnings';
 
 // Local toolbar filters — everything except the free-text search, which is
 // owned by the URL (see `q`/`onQueryChange`).
 type LocalFilters = Omit<IssueFilters, 'q' | 'file_kind'>;
+
+const PAGE_SIZE = 10;
+
+// Distinct warning types present in the (unfiltered) data, for the dropdown.
+function categoryOptions(groups: IssueGroup[]): string[] {
+  const set = new Set<string>();
+  for (const g of groups) {
+    for (const issue of g.issues) {
+      set.add(issue.category);
+    }
+  }
+  return Array.from(set).sort();
+}
 
 export function OutstandingIssuesTable({
   q = '',
@@ -116,21 +49,7 @@ export function OutstandingIssuesTable({
   readonly onQueryChange?: (q: string) => void;
 }) {
   const [local, setLocal] = useState<LocalFilters>({});
-  // Controlled so we can measure the table's on-screen position before a page
-  // change and restore it after (see the layout effect below).
-  const [pagination, setPagination] = useState<MRT_PaginationState>({
-    pageIndex: 0,
-    pageSize: 10
-  });
-  // Column widths for the affected sub-table, shared across every detail panel
-  // so resizing one keeps them all consistent (see AffectedTable).
-  const [affectedSizing, setAffectedSizing] = useState<MRT_ColumnSizingState>(
-    {}
-  );
-  // Bottom edge of the table (bottom toolbar) in viewport coords, captured the
-  // instant the user clicks a pager — before the new rows re-render.
-  const tableRef = useRef<HTMLDivElement>(null);
-  const anchorBottom = useRef<number | null>(null);
+  const [page, setPage] = useState(0);
   // Input + URL update on every keystroke (responsive, shareable); the query
   // only fires 300ms after typing stops (matches SamplesBrowser).
   const debouncedQ = useDebounce(q, 300);
@@ -138,15 +57,9 @@ export function OutstandingIssuesTable({
     ...local,
     ...(debouncedQ ? { q: debouncedQ } : {})
   };
-  const {
-    data: rawData = [],
-    isFetching,
-    isError
-  } = useOutstandingIssuesQuery(filters);
-  // Unfiltered denominator (same query key as the component's filtered fetch
-  // when no filters are set, so they dedupe). Sum each group's issues to
-  // count actual warnings/errors, not table rows (rows are now regrouped by
-  // sample + warning category, so they undercount individual issues).
+  const { data: rawData = [], isError } = useOutstandingIssuesQuery(filters);
+  // Unfiltered denominator + dropdown options (same query key as the filtered
+  // fetch when no filters are set, so they dedupe).
   const { data: allIssues = [] } = useOutstandingIssuesQuery({});
   const totalIssues = allIssues.reduce(
     (n: number, g: IssueGroup) => n + g.issues.length,
@@ -156,13 +69,16 @@ export function OutstandingIssuesTable({
     (n: number, g: IssueGroup) => n + g.issues.length,
     0
   );
-  const data = useMemo(() => groupSampleWarnings(rawData), [rawData]);
-  const columns = useColumns();
+  const bands = useMemo(() => groupBySample(rawData), [rawData]);
+  const categories = useMemo(() => categoryOptions(allIssues), [allIssues]);
+  const pageBands = bands.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
+  const collapse = useBandCollapse();
 
   const setFilter = <K extends keyof LocalFilters>(
     key: K,
     value: LocalFilters[K] | ''
-  ) =>
+  ) => {
+    setPage(0);
     setLocal(prev => {
       const next = { ...prev };
       if (value === '' || value == null) {
@@ -172,143 +88,7 @@ export function OutstandingIssuesTable({
       }
       return next;
     });
-
-  const table = useMaterialReactTable<SampleWarningRow>({
-    columns,
-    data,
-    getRowId: row => row.key,
-    onPaginationChange: updater => {
-      // Row heights vary, so a page swap changes the table's total height and
-      // shoves everything below it. Remember where the bottom edge sits now;
-      // the layout effect scrolls it back there once the new page renders.
-      anchorBottom.current =
-        tableRef.current?.getBoundingClientRect().bottom ?? null;
-      setPagination(updater);
-    },
-    state: {
-      pagination,
-      showProgressBars: isFetching,
-      showAlertBanner: isError
-    },
-    muiToolbarAlertBannerProps: isError
-      ? { color: 'error', children: 'Failed to load outstanding issues.' }
-      : undefined,
-    // Fixed column widths that the user can drag-resize, sized to fit without
-    // horizontal scroll (see column `size`s above). The 1440px viewport's
-    // actual table content area is ~1150px wide (the page's centered
-    // MuiContainer + card padding eat the rest) — verified in a real browser,
-    // not just by summing the `size`s against the raw viewport width.
-    layoutMode: 'grid',
-    enableColumnResizing: true,
-    columnResizeMode: 'onChange',
-    mrtTheme: theme => ({ draggingBorderColor: theme.palette.grey[300] }),
-    defaultColumn: { grow: 1 },
-    // Acquisitions / reconstructions / messages live in an expandable detail
-    // panel (one sub-table per row), open by default so warnings stay visible.
-    renderDetailPanel: ({ row }) => (
-      <AffectedTable
-        columnSizing={affectedSizing}
-        onColumnSizingChange={setAffectedSizing}
-        row={row.original}
-      />
-    ),
-    displayColumnDefOptions: {
-      'mrt-row-expand': { size: 60, grow: false }
-    },
-    // grid layoutMode makes the panel cell display:flex; column direction
-    // stretches the panel (cross-axis) to the full cell width so its grey frame
-    // reaches the table's right edge (see SamplesPortalTable's matching note).
-    muiDetailPanelProps: { sx: { p: 0, flexDirection: 'column' } },
-    muiTableBodyRowProps: { hover: false },
-    enableColumnActions: false,
-    enableColumnFilters: false,
-    enableDensityToggle: false,
-    enableSorting: true,
-    // The toolbar is our own filter controls; MRT's built-ins are off.
-    enableGlobalFilter: false,
-    // Paginated, 10 rows by default; the page-size selector (5/10/15/20/25)
-    // lives in the top toolbar beside the filters, and the bottom toolbar
-    // duplicates the pagination bar (matches the portal tables on /data).
-    enablePagination: true,
-    enableBottomToolbar: true,
-    initialState: {
-      density: 'comfortable',
-      sorting: [{ id: 'severity', desc: false }],
-      expanded: true
-    },
-    // Match the portal tables (/data, /experimental, /md-simulation).
-    muiTablePaperProps: {
-      elevation: 0,
-      sx: { border: 1, borderColor: 'divider', borderRadius: 2 }
-    },
-    localization: { noRecordsToDisplay: 'No outstanding warnings or errors.' },
-    renderTopToolbar: ({ table }) => (
-      <Box
-        sx={{
-          p: 1.5,
-          bgcolor: t => alpha(t.palette.primary.main, 0.12),
-          borderBottom: 1,
-          borderColor: 'divider',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'flex-end',
-          gap: 1,
-          flexWrap: 'wrap'
-        }}
-      >
-        <Stack alignItems="center" direction="row" spacing={1.5} useFlexGap>
-          <TextField
-            onChange={e => onQueryChange?.(e.target.value)}
-            placeholder="Type to filter"
-            size="small"
-            sx={{
-              minWidth: { xs: 330, sm: 375, md: 480 },
-              maxWidth: 520,
-              bgcolor: 'common.white'
-            }}
-            value={q}
-          />
-          <TextField
-            label="Severity"
-            onChange={e =>
-              setFilter('severity', e.target.value as IssueFilters['severity'])
-            }
-            select
-            size="small"
-            sx={{ minWidth: 150, bgcolor: 'common.white' }}
-            value={filters.severity ?? ''}
-          >
-            <MenuItem value="">All severities</MenuItem>
-            <MenuItem value="error">Errors only</MenuItem>
-            <MenuItem value="warning">Warnings only</MenuItem>
-            <MenuItem value="info">Info only</MenuItem>
-          </TextField>
-        </Stack>
-        {/* ml:auto (on a wrapper Box we control, so the margin is reliably a
-            flex-item margin) pushes pagination to the right edge on the wide
-            single-row layout, keeping the filters left; when it wraps below,
-            the Box's justifyContent:flex-end right-aligns both rows. */}
-        <Box sx={{ ml: 'auto', alignSelf: 'flex-end' }}>
-          <MRT_TablePagination table={table} />
-        </Box>
-      </Box>
-    )
-  });
-
-  // After the new page renders, nudge the scroll position by exactly how far
-  // the table's bottom edge moved, so it looks like nothing shifted at all.
-  // useLayoutEffect (not useEffect) so the correction happens before paint — no
-  // visible flicker.
-  useLayoutEffect(() => {
-    if (anchorBottom.current == null) {
-      return;
-    }
-    const after = tableRef.current?.getBoundingClientRect().bottom;
-    if (after != null) {
-      window.scrollBy(0, after - anchorBottom.current);
-    }
-    anchorBottom.current = null;
-  }, [pagination]);
+  };
 
   return (
     <Box>
@@ -319,9 +99,92 @@ export function OutstandingIssuesTable({
       <Typography color="text.secondary" sx={{ mb: 2 }} variant="body1">
         {matchCount.toLocaleString()} match the selected filters
       </Typography>
-      <Box ref={tableRef}>
-        <MaterialReactTable table={table} />
+      <Box
+        sx={{
+          p: 1.5,
+          mb: 1.5,
+          bgcolor: t => alpha(t.palette.primary.main, 0.12),
+          border: 1,
+          borderColor: 'divider',
+          borderRadius: 2,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 1,
+          flexWrap: 'wrap'
+        }}
+      >
+        <ExpandAllToggle
+          bandKeys={pageBands.map(b => b.key)}
+          collapse={collapse}
+        />
+        <TextField
+          onChange={e => onQueryChange?.(e.target.value)}
+          placeholder="Type to filter"
+          size="small"
+          sx={{
+            minWidth: { xs: 260, sm: 320, md: 400 },
+            maxWidth: 480,
+            bgcolor: 'common.white'
+          }}
+          value={q}
+        />
+        <TextField
+          label="Severity"
+          onChange={e =>
+            setFilter('severity', e.target.value as IssueFilters['severity'])
+          }
+          select
+          size="small"
+          sx={{ minWidth: 150, bgcolor: 'common.white' }}
+          value={filters.severity ?? ''}
+        >
+          <MenuItem value="">All severities</MenuItem>
+          <MenuItem value="error">Errors only</MenuItem>
+          <MenuItem value="warning">Warnings only</MenuItem>
+          <MenuItem value="info">Info only</MenuItem>
+        </TextField>
+        <TextField
+          label="Warning type"
+          onChange={e => setFilter('category', e.target.value)}
+          select
+          size="small"
+          sx={{ minWidth: 200, bgcolor: 'common.white' }}
+          value={filters.category ?? ''}
+        >
+          <MenuItem value="">All warning types</MenuItem>
+          {categories.map(c => (
+            <MenuItem key={c} value={c}>
+              {c.replaceAll('_', ' ')}
+            </MenuItem>
+          ))}
+        </TextField>
+        <Box sx={{ ml: 'auto' }}>
+          <TablePagination
+            component="div"
+            count={bands.length}
+            labelRowsPerPage="Samples per page"
+            onPageChange={(_, p) => setPage(p)}
+            page={page}
+            rowsPerPage={PAGE_SIZE}
+            rowsPerPageOptions={[PAGE_SIZE]}
+          />
+        </Box>
       </Box>
+      {isError ? (
+        <Typography color="error" variant="body2">
+          Failed to load outstanding issues.
+        </Typography>
+      ) : bands.length === 0 ? (
+        <Typography color="text.secondary" variant="body2">
+          No outstanding warnings or errors.
+        </Typography>
+      ) : (
+        <SampleWarningBands
+          bands={pageBands}
+          collapse={collapse}
+          variant="outstanding"
+        />
+      )}
     </Box>
   );
 }

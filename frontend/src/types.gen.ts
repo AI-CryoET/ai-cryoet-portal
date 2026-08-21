@@ -1562,6 +1562,7 @@ export interface operations {
             query?: {
                 severity?: ("error" | "warning" | "info") | null;
                 file_kind?: string | null;
+                category?: string | null;
                 q?: string | null;
             };
             header?: never;

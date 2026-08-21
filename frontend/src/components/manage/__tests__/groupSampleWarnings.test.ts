@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { IssueGroup } from '~/types';
-import { groupSampleWarnings } from '../groupSampleWarnings';
+import { groupBySample } from '../groupSampleWarnings';
 
 function group(overrides: Partial<IssueGroup>): IssueGroup {
   return {
@@ -19,13 +19,16 @@ function group(overrides: Partial<IssueGroup>): IssueGroup {
     last_seen_run_id: 'r-latest',
     latest_run_id: 'r-latest',
     latest_scan_at: 200,
+    resolved_at: null,
     ...overrides
   };
 }
 
-describe('groupSampleWarnings', () => {
-  it('merges the same category across acquisitions into one row', () => {
-    const rows = groupSampleWarnings([
+const texts = (ms: { text: string }[]) => ms.map(m => m.text);
+
+describe('groupBySample', () => {
+  it('collapses every acquisition of a sample into one band', () => {
+    const bands = groupBySample([
       group({
         acquisition_id: 'acq1',
         acquisition_path: '/data/samp1/acq1',
@@ -42,17 +45,17 @@ describe('groupSampleWarnings', () => {
       })
     ]);
 
-    expect(rows).toHaveLength(1);
-    expect(rows[0].acquisitions.map(a => a.acquisition_id)).toEqual([
+    expect(bands).toHaveLength(1);
+    expect(bands[0].acquisitions.map(a => a.acquisition_id)).toEqual([
       'acq1',
       'acq2'
     ]);
-    expect(rows[0].acquisitions[0].messages).toEqual(["id 'a1'"]);
-    expect(rows[0].acquisitions[1].messages).toEqual(["id 'a2'"]);
+    expect(texts(bands[0].acquisitions[0].messages)).toEqual(["id 'a1'"]);
+    expect(texts(bands[0].acquisitions[1].messages)).toEqual(["id 'a2'"]);
   });
 
-  it('renders a dash-worthy empty acquisitions list for sample-only issues', () => {
-    const rows = groupSampleWarnings([
+  it('leaves the acquisitions list empty for sample-only issues', () => {
+    const bands = groupBySample([
       group({
         scope: 'sample',
         acquisition_id: null,
@@ -60,11 +63,13 @@ describe('groupSampleWarnings', () => {
         issues: [{ category: 'assembly_failed', message: 'boom' }]
       })
     ]);
-    expect(rows[0].acquisitions).toEqual([]);
+    expect(bands[0].acquisitions).toEqual([]);
+    expect(texts(bands[0].sampleEntries[0].messages)).toEqual(['boom']);
+    expect(bands[0].sampleEntries[0].messages[0].scope).toBe('sample');
   });
 
-  it('keeps different md_run_ids as separate rows, not merged', () => {
-    const rows = groupSampleWarnings([
+  it('keeps different md_run_ids as separate sample entries in the band', () => {
+    const bands = groupBySample([
       group({
         scope: 'sample',
         file_kind: 'md_run_toml',
@@ -78,56 +83,38 @@ describe('groupSampleWarnings', () => {
         issues: [{ category: 'unfilled_placeholder', message: 'run_b' }]
       })
     ]);
-    expect(rows).toHaveLength(2);
-  });
-
-  it('rolls up severity to the worst across merged acquisitions', () => {
-    const rows = groupSampleWarnings([
-      group({
-        acquisition_id: 'acq1',
-        severity: 'warning',
-        issues: [{ category: 'tilt_series_alignment_mismatch', message: 'm' }]
-      }),
-      group({
-        acquisition_id: 'acq2',
-        severity: 'error',
-        issues: [{ category: 'tilt_series_alignment_mismatch', message: 'm' }]
-      })
+    expect(bands).toHaveLength(1);
+    expect(bands[0].sampleEntries.map(e => e.md_run_id)).toEqual([
+      'run_a',
+      'run_b'
     ]);
-    expect(rows[0].severity).toBe('error');
   });
 
-  it('marks the row stale when any acquisition was skipped this scan, using the oldest stale timestamp', () => {
-    const rows = groupSampleWarnings([
+  it('rolls up band severity to the worst across acquisitions', () => {
+    const bands = groupBySample([
+      group({ acquisition_id: 'acq1', severity: 'warning' }),
+      group({ acquisition_id: 'acq2', severity: 'error' })
+    ]);
+    expect(bands[0].severity).toBe('error');
+  });
+
+  it('marks an acquisition stale (with its stale timestamp) when it was skipped this scan', () => {
+    const bands = groupBySample([
       group({
         acquisition_id: 'acq1',
-        last_seen_run_id: 'r-latest',
-        last_seen_at: 190,
-        latest_run_id: 'r-latest',
-        latest_scan_at: 200
-      }),
-      group({
-        acquisition_id: 'acq2',
         last_seen_run_id: 'r-old',
         last_seen_at: 50,
         latest_run_id: 'r-latest',
         latest_scan_at: 200
       })
     ]);
-    expect(rows[0].reEvaluated).toBe(false);
-    expect(rows[0].stillPresentAt).toBe(50);
+    const acq = bands[0].acquisitions[0];
+    expect(acq.reEvaluated).toBe(false);
+    expect(acq.stillPresentAt).toBe(50);
   });
 
-  it('uses the earliest first_seen_at across merged acquisitions', () => {
-    const rows = groupSampleWarnings([
-      group({ acquisition_id: 'acq1', first_seen_at: 500 }),
-      group({ acquisition_id: 'acq2', first_seen_at: 100 })
-    ]);
-    expect(rows[0].first_seen_at).toBe(100);
-  });
-
-  it('groups issues carrying a reconstruction_alignment_id under that acquisition', () => {
-    const rows = groupSampleWarnings([
+  it('groups a reconstruction-scoped issue under its acquisition', () => {
+    const bands = groupBySample([
       group({
         acquisition_id: 'acq1',
         acquisition_path: '/data/samp1/acq1',
@@ -140,43 +127,39 @@ describe('groupSampleWarnings', () => {
         ]
       })
     ]);
-    expect(rows[0].acquisitions[0].reconstructions).toEqual([
-      {
-        reconstruction_alignment_id: 'grp1',
-        acquisition_id: 'acq1',
-        messages: ['group grp1 undeclared']
-      }
-    ]);
+    const recon = bands[0].acquisitions[0].reconstructions[0];
+    expect(recon.reconstruction_alignment_id).toBe('grp1');
+    expect(texts(recon.messages)).toEqual(['group grp1 undeclared']);
+    expect(recon.messages[0].scope).toBe('reconstruction');
   });
 
-  it('collects two distinct reconstruction groups under the same acquisition separately', () => {
-    const rows = groupSampleWarnings([
+  it('sorts reconstructions alphabetically', () => {
+    const bands = groupBySample([
       group({
         acquisition_id: 'acq1',
         issues: [
           {
-            category: 'undeclared_reconstruction_alignment_folder',
-            message: 'group grp_b undeclared',
+            category: 'c',
+            message: 'b',
             reconstruction_alignment_id: 'grp_b'
           },
           {
-            category: 'undeclared_reconstruction_alignment_folder',
-            message: 'group grp_a undeclared',
+            category: 'c',
+            message: 'a',
             reconstruction_alignment_id: 'grp_a'
           }
         ]
       })
     ]);
-    // Sorted alphabetically, same as acquisitions.
     expect(
-      rows[0].acquisitions[0].reconstructions.map(
+      bands[0].acquisitions[0].reconstructions.map(
         r => r.reconstruction_alignment_id
       )
     ).toEqual(['grp_a', 'grp_b']);
   });
 
   it('keeps a reconstruction-owned message off the parent acquisition', () => {
-    const rows = groupSampleWarnings([
+    const bands = groupBySample([
       group({
         acquisition_id: 'acq1',
         issues: [
@@ -188,16 +171,15 @@ describe('groupSampleWarnings', () => {
         ]
       })
     ]);
-    // The acquisition is still listed (grouping parent) but carries no
-    // message of its own — the text lives only on the reconstruction.
-    expect(rows[0].acquisitions[0].messages).toEqual([]);
-    expect(rows[0].acquisitions[0].reconstructions[0].messages).toEqual([
+    const acq = bands[0].acquisitions[0];
+    expect(acq.messages).toEqual([]);
+    expect(texts(acq.reconstructions[0].messages)).toEqual([
       'group grp1 undeclared'
     ]);
   });
 
-  it('skips reconstructions for issues with a null reconstruction_alignment_id', () => {
-    const rows = groupSampleWarnings([
+  it('keeps acquisition-scoped messages on the acquisition (no reconstruction)', () => {
+    const bands = groupBySample([
       group({
         acquisition_id: 'acq1',
         issues: [
@@ -209,6 +191,9 @@ describe('groupSampleWarnings', () => {
         ]
       })
     ]);
-    expect(rows[0].acquisitions[0].reconstructions).toEqual([]);
+    const acq = bands[0].acquisitions[0];
+    expect(acq.reconstructions).toEqual([]);
+    expect(texts(acq.messages)).toEqual(['no group here']);
+    expect(acq.messages[0].scope).toBe('acquisition');
   });
 });

@@ -1,18 +1,13 @@
-import { useMemo, type Dispatch, type SetStateAction } from 'react';
 import { Box, Chip, Stack, Tooltip, Typography } from '@mui/material';
-import {
-  MaterialReactTable,
-  useMaterialReactTable,
-  type MRT_ColumnDef,
-  type MRT_ColumnSizingState
-} from 'material-react-table';
 import EditNoteIcon from '@mui/icons-material/EditNote';
 import { CustomLink, IconButtonLink } from '~/components/CustomLink';
 import { CopyIconButton } from '~/components/common/CopyIconButton';
 import type { IssueGroup } from '~/types';
 import type {
   AffectedAcquisition,
-  AffectedReconstruction
+  AffectedReconstruction,
+  MessageScope,
+  WarningMessage
 } from './groupSampleWarnings';
 
 // Path convention baked into the (shortened) assembler.py message strings:
@@ -38,19 +33,9 @@ export function formatTs(seconds: number | null | undefined): string {
   });
 }
 
-// First-seen wants a date-only reading (matches the wireframe's "2026-06-18").
-export function formatDate(seconds: number | null | undefined): string {
-  if (seconds == null) {
-    return '—';
-  }
-  return new Date(seconds * 1000).toLocaleDateString();
-}
-
 // Single-line ellipsis truncation for cells that shouldn't wrap (name/id
 // columns) — pairs with a Tooltip showing the full value. Also used inside a
-// flex row (Stack), so callers should give the wrapping Box `minWidth: 0` (a
-// flex child otherwise refuses to shrink below its content width, which
-// silently defeats the ellipsis).
+// flex row (Stack), so callers should give the wrapping Box `minWidth: 0`.
 const ellipsisSx = {
   overflow: 'hidden',
   textOverflow: 'ellipsis',
@@ -58,9 +43,7 @@ const ellipsisSx = {
   minWidth: 0
 } as const;
 
-// Wrap normally, then clamp to a fixed number of lines with an ellipsis —
-// for free text (warning type / message) that should read in full when short
-// but not blow out the row height when long.
+// Wrap normally, then clamp to a fixed number of lines with an ellipsis.
 const lineClampSx = (lines: number) =>
   ({
     display: '-webkit-box',
@@ -92,12 +75,9 @@ export function SeverityPill({
 }
 
 // Edit link for an authorable file: a sample.toml / acquisition.toml /
-// md_run.toml warning row jumps straight into the matching authoring form,
-// auto-loaded by id (issue 07). Acquisition identity is composite, so the
-// link carries both ids (mirrors the acquisition detail-page "Edit
-// acquisition.toml" link). An md_run_toml row without a resolvable md_run_id
-// (e.g. a deprecated legacy [[md_run]] block, which names no single run) has
-// no link either. Other file kinds (mdoc, mrc, run-scope, …) have no form —
+// md_run.toml warning jumps straight into the matching authoring form,
+// auto-loaded by id (issue 07). Acquisition identity is composite, so the link
+// carries both ids. Other file kinds (mdoc, mrc, run-scope, …) have no form —
 // returns null.
 export function authorLinkFor(
   group: Pick<
@@ -135,7 +115,7 @@ export function authorLinkFor(
 }
 
 // Warning type — plain wrapped text (no chip/pill), clamped to a couple of
-// lines so a long category name can't blow out the row height.
+// lines. Kept for the toolbar's warning-type filter labels and legacy callers.
 export function WarningTypeCell({ category }: { readonly category: string }) {
   return (
     <Typography sx={lineClampSx(2)} variant="body2">
@@ -144,11 +124,26 @@ export function WarningTypeCell({ category }: { readonly category: string }) {
   );
 }
 
-// Sample link for a regrouped SampleWarningRow. Truncates to one line
-// (ellipsis) rather than wrapping. When the row is sample/md_run-scoped
-// (`showActions`, i.e. `row.acquisitions.length === 0`) the row-level
-// "Edit file" action folds in here (copy-path + edit-metadata icons) — the
-// message itself lives in the Message(s) column (see MessagesListCell).
+const EditMetadataLink = ({
+  search
+}: {
+  readonly search: Record<string, string>;
+}) => (
+  <Tooltip title="Edit metadata">
+    <IconButtonLink
+      aria-label="Edit metadata"
+      search={search}
+      size="small"
+      to="/manage/author"
+    >
+      <EditNoteIcon fontSize="small" />
+    </IconButtonLink>
+  </Tooltip>
+);
+
+// Sample link + (optional) copy-path/edit-metadata actions — used as a band
+// header. `showActions` folds the sample.toml copy/edit in when the sample has
+// a message of its own.
 export function SampleCell({
   sampleId,
   samplePath = null,
@@ -193,23 +188,12 @@ export function SampleCell({
       {showActions && samplePath ? (
         <CopyIconButton text={samplePath} tooltip="Copy path" />
       ) : null}
-      {editLink ? (
-        <Tooltip title="Edit metadata">
-          <IconButtonLink
-            aria-label="Edit metadata"
-            search={editLink.search}
-            size="small"
-            to={editLink.to}
-          >
-            <EditNoteIcon fontSize="small" />
-          </IconButtonLink>
-        </Tooltip>
-      ) : null}
+      {editLink ? <EditMetadataLink search={editLink.search} /> : null}
     </Stack>
   );
 }
 
-function EntityDash() {
+export function EntityDash() {
   return (
     <Typography color="text.secondary" variant="body2">
       —
@@ -217,30 +201,111 @@ function EntityDash() {
   );
 }
 
-// Acquisition name + actions. When the issue is reconstruction-owned the
-// acquisition is only grouping context — its copy-path/edit icons would point
-// at acquisition.toml, but the fix lives in the reconstruction, so drop them.
-function AcqLabel({
+// A small circled S / A / R marking which data level a message applies to,
+// replacing the plain bullet. Color-keyed by scope (not severity — that's a
+// filter now).
+const SCOPE_META: Record<
+  MessageScope,
+  { letter: string; label: string; color: string }
+> = {
+  sample: { letter: 'S', label: 'Sample-level message', color: 'grey.600' },
+  acquisition: {
+    letter: 'A',
+    label: 'Acquisition-level message',
+    color: 'primary.main'
+  },
+  reconstruction: {
+    letter: 'R',
+    label: 'Reconstruction-level message',
+    color: 'secondary.main'
+  }
+};
+
+export function ScopeIcon({ scope }: { readonly scope: MessageScope }) {
+  const { letter, label, color } = SCOPE_META[scope];
+  return (
+    <Tooltip title={label}>
+      <Box
+        aria-label={label}
+        sx={{
+          flex: '0 0 auto',
+          width: 18,
+          height: 18,
+          mt: '2px',
+          borderRadius: '50%',
+          bgcolor: color,
+          color: 'common.white',
+          fontSize: 11,
+          fontWeight: 700,
+          lineHeight: '18px',
+          textAlign: 'center'
+        }}
+      >
+        {letter}
+      </Box>
+    </Tooltip>
+  );
+}
+
+// One or more warning messages, each on its own line with its scope icon.
+// Wrapping, no truncation (the row grows taller instead).
+export function MessageList({
+  messages
+}: {
+  readonly messages: WarningMessage[];
+}) {
+  if (messages.length === 0) {
+    return <EntityDash />;
+  }
+  return (
+    <Stack spacing={0.5} sx={{ minWidth: 0 }}>
+      {messages.map((m, i) => (
+        <Stack
+          direction="row"
+          key={`${i}-${m.text}`}
+          spacing={0.75}
+          sx={{ minWidth: 0 }}
+        >
+          <ScopeIcon scope={m.scope} />
+          <Typography
+            sx={{
+              minWidth: 0,
+              whiteSpace: 'normal',
+              // Messages embed long, space-less file/folder paths; break them
+              // mid-token so they wrap instead of overflowing the column.
+              overflowWrap: 'anywhere'
+            }}
+            variant="body2"
+          >
+            {m.text}
+          </Typography>
+        </Stack>
+      ))}
+    </Stack>
+  );
+}
+
+// Acquisition name + (optional) actions. `withActions` is true only when the
+// acquisition owns a message of its own; when its name is merely a group header
+// for reconstruction rows, the copy/edit icons (which would point at
+// acquisition.toml) are dropped — the fix lives on the reconstruction.
+export function AcqLabel({
   acq,
-  reconOwned,
-  row
+  sampleId,
+  withActions
 }: {
   readonly acq: AffectedAcquisition;
-  readonly reconOwned: boolean;
-  readonly row: {
-    sample_id: string | null;
-    file_kind: string;
-    md_run_id: string | null;
-  };
+  readonly sampleId: string | null;
+  readonly withActions: boolean;
 }) {
-  const editLink = reconOwned
-    ? null
-    : authorLinkFor({
-        file_kind: row.file_kind,
-        sample_id: row.sample_id,
+  const editLink = withActions
+    ? authorLinkFor({
+        file_kind: acq.file_kind,
+        sample_id: sampleId,
         acquisition_id: acq.acquisition_id,
-        md_run_id: row.md_run_id
-      });
+        md_run_id: null
+      })
+    : null;
   return (
     <Stack
       alignItems="center"
@@ -251,35 +316,23 @@ function AcqLabel({
       <Box sx={ellipsisSx}>
         <CustomLink
           params={{ acquisitionId: acq.acquisition_id }}
-          search={{ sampleId: row.sample_id ?? '' }}
+          search={{ sampleId: sampleId ?? '' }}
           to="/acquisitions/$acquisitionId"
         >
           {acq.acquisition_id}
         </CustomLink>
       </Box>
-      {acq.acquisition_path && !reconOwned ? (
+      {withActions && acq.acquisition_path ? (
         <CopyIconButton text={acq.acquisition_path} tooltip="Copy path" />
       ) : null}
-      {editLink ? (
-        <Tooltip title="Edit metadata">
-          <IconButtonLink
-            aria-label="Edit metadata"
-            search={editLink.search}
-            size="small"
-            to={editLink.to}
-          >
-            <EditNoteIcon fontSize="small" />
-          </IconButtonLink>
-        </Tooltip>
-      ) : null}
+      {editLink ? <EditMetadataLink search={editLink.search} /> : null}
     </Stack>
   );
 }
 
 // Reconstruction name (plain text, no detail page) + copy-path (derived,
-// skipped when acquisition_path is null) + edit-metadata (author form's
-// "reconstruction" tab).
-function ReconLabel({
+// skipped when acquisition_path is null) + edit-metadata (reconstruction tab).
+export function ReconLabel({
   acq,
   recon,
   sampleId
@@ -303,231 +356,52 @@ function ReconLabel({
         {recon.reconstruction_alignment_id}
       </Typography>
       {path ? <CopyIconButton text={path} tooltip="Copy path" /> : null}
-      <Tooltip title="Edit metadata">
-        <IconButtonLink
-          aria-label="Edit metadata"
-          search={{
-            tab: 'reconstruction',
-            id: recon.reconstruction_alignment_id,
-            sampleId: sampleId ?? '',
-            acquisitionId: recon.acquisition_id
-          }}
-          size="small"
-          to="/manage/author"
-        >
-          <EditNoteIcon fontSize="small" />
-        </IconButtonLink>
-      </Tooltip>
+      <EditMetadataLink
+        search={{
+          tab: 'reconstruction',
+          id: recon.reconstruction_alignment_id,
+          sampleId: sampleId ?? '',
+          acquisitionId: recon.acquisition_id
+        }}
+      />
     </Stack>
   );
 }
 
-// One or more warning messages as bullet lines — wrapping, no truncation (the
-// table row grows taller instead), so several warnings on one entity read as
-// distinct items. A dash when the entity has no message of its own.
-function MessageLines({ messages }: { readonly messages: string[] }) {
-  if (messages.length === 0) {
-    return <EntityDash />;
-  }
-  // Column stack so multiple messages on one entity sit one above the other
-  // (the cell's own layout would otherwise lay these siblings out in a row).
-  return (
-    <Stack spacing={0.5} sx={{ minWidth: 0 }}>
-      {messages.map((m, i) => (
-        <Stack
-          direction="row"
-          key={`${i}-${m}`}
-          spacing={0.75}
-          sx={{ minWidth: 0 }}
-        >
-          <Typography color="text.secondary" variant="body2">
-            •
-          </Typography>
-          <Typography
-            sx={{
-              minWidth: 0,
-              whiteSpace: 'normal',
-              // Messages embed long, space-less file/folder paths; break them
-              // mid-token so they wrap instead of overflowing the column.
-              overflowWrap: 'anywhere'
-            }}
-            variant="body2"
-          >
-            {m}
-          </Typography>
-        </Stack>
-      ))}
-    </Stack>
-  );
-}
-
-// The scalar fields of a SampleWarningRow that the affected sub-table needs
-// (edit links are keyed off sample/acquisition/run identity).
-export interface AffectedRow {
-  sample_id: string | null;
-  md_run_id: string | null;
-  file_kind: string;
-  message: string;
-  acquisitions: AffectedAcquisition[];
-}
-
-// One flattened line of the affected sub-table: a real row per reconstruction
-// (or per acquisition-owned warning, or one line for a sample/run-scoped row).
-// `firstOfAcq` renders the acquisition label only on its first line so it reads
-// as a group header without a rowSpan.
-interface AffectedInnerRow {
-  id: string;
-  acq: AffectedAcquisition | null;
-  recon: AffectedReconstruction | null;
-  messages: string[];
-  firstOfAcq: boolean;
-}
-
-function flattenAffected(row: AffectedRow): AffectedInnerRow[] {
-  if (row.acquisitions.length === 0) {
-    return [
-      {
-        id: 'scalar',
-        acq: null,
-        recon: null,
-        messages: row.message ? [row.message] : [],
-        firstOfAcq: true
-      }
-    ];
-  }
-  const out: AffectedInnerRow[] = [];
-  for (const acq of row.acquisitions) {
-    if (acq.reconstructions.length === 0) {
-      out.push({
-        id: acq.acquisition_id,
-        acq,
-        recon: null,
-        messages: acq.messages,
-        firstOfAcq: true
-      });
-    } else {
-      acq.reconstructions.forEach((recon, j) => {
-        out.push({
-          id: `${acq.acquisition_id}/${recon.reconstruction_alignment_id}`,
-          acq,
-          recon,
-          messages: recon.messages,
-          firstOfAcq: j === 0
-        });
-      });
-    }
-  }
-  return out;
-}
-
-// The Acquisition / Reconstruction / Message(s) detail sub-table, rendered in
-// each outer row's expandable detail panel. Real rows (one per reconstruction)
-// make a reconstruction line up with its message for free — the rowSpan the
-// merged CSS-grid column used to fake. Column widths are lifted to the parent
-// (`columnSizing` / `onColumnSizingChange`) so resizing one panel resizes every
-// panel in the table, keeping the sub-columns consistent.
-export function AffectedTable({
-  row,
-  columnSizing,
-  onColumnSizingChange
+// An md_run pseudo-entity, rendered in the Acquisition column (md_run isn't an
+// acquisition, but it's sample-level context that needs its own edit link).
+// Plain text id + edit-metadata (md_run tab); no detail page, no stored path.
+export function MdRunLabel({
+  mdRunId,
+  sampleId
 }: {
-  readonly row: AffectedRow;
-  readonly columnSizing: MRT_ColumnSizingState;
-  readonly onColumnSizingChange: Dispatch<
-    SetStateAction<MRT_ColumnSizingState>
-  >;
+  readonly mdRunId: string;
+  readonly sampleId: string | null;
 }) {
-  const data = useMemo(() => flattenAffected(row), [row]);
-  const columns = useMemo<MRT_ColumnDef<AffectedInnerRow>[]>(
-    () => [
-      {
-        id: 'acquisition',
-        header: 'Acquisition(s)',
-        size: 150,
-        Cell: ({ row: r }) =>
-          r.original.acq && r.original.firstOfAcq ? (
-            <AcqLabel
-              acq={r.original.acq}
-              reconOwned={r.original.recon != null}
-              row={row}
-            />
-          ) : (
-            <EntityDash />
-          )
-      },
-      {
-        id: 'reconstruction',
-        header: 'Reconstruction(s)',
-        size: 150,
-        Cell: ({ row: r }) =>
-          r.original.acq && r.original.recon ? (
-            <ReconLabel
-              acq={r.original.acq}
-              recon={r.original.recon}
-              sampleId={row.sample_id}
-            />
-          ) : (
-            <EntityDash />
-          )
-      },
-      {
-        id: 'messages',
-        header: 'Message(s)',
-        size: 560,
-        muiTableBodyCellProps: { sx: { whiteSpace: 'normal' } },
-        Cell: ({ row: r }) => <MessageLines messages={r.original.messages} />
-      }
-    ],
-    [row]
-  );
-
-  const table = useMaterialReactTable<AffectedInnerRow>({
-    columns,
-    data,
-    getRowId: r => r.id,
-    layoutMode: 'grid',
-    enableColumnResizing: true,
-    columnResizeMode: 'onChange',
-    defaultColumn: { grow: 1 },
-    enableSorting: false,
-    enableColumnActions: false,
-    enableColumnFilters: false,
-    enableGlobalFilter: false,
-    enablePagination: false,
-    enableTopToolbar: false,
-    enableBottomToolbar: false,
-    muiTableBodyRowProps: { hover: false },
-    state: { columnSizing },
-    onColumnSizingChange,
-    mrtTheme: theme => ({ draggingBorderColor: theme.palette.grey[300] }),
-    initialState: { density: 'compact' },
-    // A bordered white table on the grey panel below — same visual treatment as
-    // the nested acquisition tables on the /data pages.
-    muiTablePaperProps: {
-      elevation: 0,
-      sx: {
-        border: 1,
-        borderColor: 'divider',
-        borderRadius: 1,
-        bgcolor: 'background.paper'
-      }
-    }
+  const editLink = authorLinkFor({
+    file_kind: 'md_run_toml',
+    sample_id: sampleId,
+    acquisition_id: null,
+    md_run_id: mdRunId
   });
-
-  // Grey inset frame (like /data's AcquisitionsSubTable) so the nested table
-  // reads as a sub-table; `defaultColumn.grow` + layoutMode:grid let its columns
-  // fill most of the outer table's width by default.
   return (
-    <Box sx={{ p: 2, bgcolor: 'action.hover', width: '100%' }}>
-      <MaterialReactTable table={table} />
-    </Box>
+    <Stack
+      alignItems="center"
+      direction="row"
+      spacing={0.25}
+      sx={{ minWidth: 0 }}
+    >
+      <Typography sx={ellipsisSx} variant="body2">
+        {mdRunId}
+      </Typography>
+      {editLink ? <EditMetadataLink search={editLink.search} /> : null}
+    </Stack>
   );
 }
 
 // "Still present as of" (plan §9.7): when the owner was re-evaluated this run
-// (`last_seen_run_id === latest_run_id`) show the global latest-scan timestamp;
-// otherwise the owner was skipped — show its stale `last_seen_at` with a
-// tooltip explaining it wasn't re-checked.
+// show the global latest-scan timestamp; otherwise show its stale `last_seen_at`
+// with a tooltip explaining it wasn't re-checked.
 export function StillPresentCell({
   reEvaluated,
   timestamp
@@ -544,10 +418,7 @@ export function StillPresentCell({
   }
   return (
     <Tooltip title="owner skipped — not re-checked">
-      <Typography
-        sx={{ whiteSpace: 'nowrap', color: 'warning.main' }}
-        variant="body2"
-      >
+      <Typography sx={{ whiteSpace: 'nowrap' }} variant="body2">
         {formatTs(timestamp)}
       </Typography>
     </Tooltip>
